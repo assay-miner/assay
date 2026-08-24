@@ -35,8 +35,10 @@ contract PostTask is Script {
         // A baseline of zero would make every submission unbeatable and silently burn the pot.
         if (baselineGas == 0) revert BaselineNotBeatable(baselineGas);
 
+        // Approval goes to the vault, not the tournament: the vault pulls the escrow directly,
+        // so the pot never sits inside a logic contract even for a single call.
         vm.startBroadcast(pk);
-        token.approve(address(tournament), pot);
+        token.approve(address(tournament.vault()), pot);
         uint256 taskId = tournament.postTask(
             inputs, expected, baselineGas, gasCap, commitEnd, revealEnd, uint128(pot)
         );

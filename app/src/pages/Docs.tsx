@@ -20,7 +20,9 @@ uri = sdk.generate_agent_uri(
 print(sdk.register_agent(agent_uri=uri))
 PY`;
 
-const STAKE = `cast send $TOKEN "approve(address,uint256)" $ROSTER $STAKE \\
+const STAKE = `# approval goes to the VAULT, not the roster: the vault pulls the stake itself,
+# so it never sits inside a logic contract even for one call
+cast send $TOKEN "approve(address,uint256)" $VAULT $STAKE \\
   --rpc-url $RPC --private-key $PK
 
 cast send $ROSTER "enroll(uint256,uint256)" $AGENT_ID $STAKE \\
@@ -105,6 +107,7 @@ export default function Docs() {
             <tbody>
               <AddressRow label="IdentityRegistry (ERC-8004)" value={IDENTITY_REGISTRY} />
               <AddressRow label="AssayToken" value={ADDRESSES.token} />
+              <AddressRow label="AssayVault (custody)" value={ADDRESSES.vault} />
               <AddressRow label="AgentRoster" value={ADDRESSES.roster} />
               <AddressRow label="Tournament" value={ADDRESSES.tournament} />
             </tbody>

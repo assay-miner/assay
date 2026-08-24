@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {AssayVault} from "../src/AssayVault.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice Pulls every recoverable token back to the deployer.
@@ -34,12 +35,18 @@ contract ExitAll is Script {
         }
         vm.stopBroadcast();
 
+        AssayVault vault = tournament.vault();
         uint256 afterBal = token.balanceOf(deployer);
         console2.log("tasks total     ", count);
         console2.log("tasks skipped   ", skipped);
         console2.log("reclaimed       ", recovered);
         console2.log("balance before  ", before);
         console2.log("balance after   ", afterBal);
-        console2.log("tournament left ", token.balanceOf(address(tournament)));
+        // What is left in the vault is other people's stake, not ours. Report both so the two
+        // are never confused for one another.
+        console2.log("vault held      ", token.balanceOf(address(vault)));
+        console2.log("vault accounted ", vault.totalAccounted());
+        console2.log("vault unattrib. ", vault.unaccounted());
+        require(vault.solvent(), "vault insolvent after exit");
     }
 }

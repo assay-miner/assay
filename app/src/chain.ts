@@ -42,6 +42,8 @@ export const ADDRESSES = {
   tournament: envAddress(import.meta.env.VITE_TOURNAMENT),
   roster: envAddress(import.meta.env.VITE_ROSTER),
   token: envAddress(import.meta.env.VITE_TOKEN),
+  /** Custody. Every token the protocol holds lives here and nowhere else. */
+  vault: envAddress(import.meta.env.VITE_VAULT),
 };
 
 export const isDeployed = ADDRESSES.tournament !== null && ADDRESSES.token !== null;

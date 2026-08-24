@@ -6,9 +6,9 @@ export const tournamentAbi = [
     "type": "constructor",
     "inputs": [
       {
-        "name": "rewardToken_",
+        "name": "vault_",
         "type": "address",
-        "internalType": "contract IERC20"
+        "internalType": "contract AssayVault"
       },
       {
         "name": "roster_",
@@ -32,6 +32,19 @@ export const tournamentAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "KIND_POT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -213,6 +226,25 @@ export const tournamentAbi = [
   },
   {
     "type": "function",
+    "name": "potAccount",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "reclaim",
     "inputs": [
       {
@@ -252,19 +284,6 @@ export const tournamentAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rewardToken",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -415,6 +434,19 @@ export const tournamentAbi = [
         "name": "reclaimed",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "vault",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract AssayVault"
       }
     ],
     "stateMutability": "view"
@@ -783,17 +815,6 @@ export const tournamentAbi = [
   },
   {
     "type": "error",
-    "name": "SafeERC20FailedOperation",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "TooManyVectors",
     "inputs": [
       {
@@ -826,9 +847,9 @@ export const agentrosterAbi = [
         "internalType": "contract IIdentityRegistry"
       },
       {
-        "name": "token",
+        "name": "vault_",
         "type": "address",
-        "internalType": "contract IERC20"
+        "internalType": "contract AssayVault"
       },
       {
         "name": "minStake_",
@@ -842,6 +863,19 @@ export const agentrosterAbi = [
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "KIND_STAKE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1046,13 +1080,32 @@ export const agentrosterAbi = [
   },
   {
     "type": "function",
-    "name": "stakeToken",
+    "name": "stakeAccount",
+    "inputs": [
+      {
+        "name": "miner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "vault",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IERC20"
+        "internalType": "contract AssayVault"
       }
     ],
     "stateMutability": "view"
@@ -1235,17 +1288,6 @@ export const agentrosterAbi = [
     "inputs": [
       {
         "name": "miner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "SafeERC20FailedOperation",
-    "inputs": [
-      {
-        "name": "token",
         "type": "address",
         "internalType": "address"
       }
