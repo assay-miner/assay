@@ -15,6 +15,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract Deploy is Script {
     error UnsupportedChain(uint256 chainId);
     error NothingDeployed(string what, address where);
+    error WrongRegistry(address where, string name, string version);
+
+    string internal constant EXPECTED_REGISTRY_NAME = "AgentIdentity";
+    string internal constant EXPECTED_REGISTRY_VERSION = "2.0.0";
 
     function registryFor(uint256 chainId) public pure returns (address) {
         if (chainId == 56) return 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432;
@@ -22,14 +26,36 @@ contract Deploy is Script {
         revert UnsupportedChain(chainId);
     }
 
+    /// @dev Fails closed: an unreadable name() or a version that is not the one this code was
+    ///      written against both abort the launch.
+    function assertCanonicalRegistry(address registry) public view {
+        (bool nameOk, bytes memory nameRet) =
+            registry.staticcall(abi.encodeWithSelector(IIdentityRegistry.name.selector));
+        (bool verOk, bytes memory verRet) =
+            registry.staticcall(abi.encodeWithSelector(IIdentityRegistry.getVersion.selector));
+
+        string memory gotName = nameOk && nameRet.length > 0 ? abi.decode(nameRet, (string)) : "";
+        string memory gotVer = verOk && verRet.length > 0 ? abi.decode(verRet, (string)) : "";
+
+        if (
+            keccak256(bytes(gotName)) != keccak256(bytes(EXPECTED_REGISTRY_NAME))
+                || keccak256(bytes(gotVer)) != keccak256(bytes(EXPECTED_REGISTRY_VERSION))
+        ) {
+            revert WrongRegistry(registry, gotName, gotVer);
+        }
+    }
+
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address registry = registryFor(block.chainid);
 
-        // A registry with no code means the chain id is right but the deployment is not there;
-        // fail before spending anything rather than wire a dead address into the tournament.
+        // Having code is NOT enough to identify the registry. On mainnet the *testnet* registry
+        // address also holds 130 bytes of code, answers getVersion() = "0.0.1", and reverts on
+        // name() -- so a paste of the wrong address lands on a real-but-incompatible contract
+        // instead of failing cleanly. Identify it by what it answers, not by whether it exists.
         if (registry.code.length == 0) revert NothingDeployed("identityRegistry", registry);
+        assertCanonicalRegistry(registry);
 
         uint256 minStake = vm.envOr("MIN_STAKE", uint256(1_000e18));
 

@@ -25,4 +25,21 @@ contract MockIdentityRegistry is IIdentityRegistry {
     function ownerOf(uint256 agentId) external view returns (address) {
         return _owner[agentId];
     }
+
+    string private _name = "AgentIdentity";
+    string private _version = "2.0.0";
+
+    /// @notice Lets a test impersonate the wrong-but-existing registry the launch guard screens for.
+    function setIdentity(string calldata name_, string calldata version_) external {
+        _name = name_;
+        _version = version_;
+    }
+
+    function name() external view returns (string memory) {
+        return _name;
+    }
+
+    function getVersion() external view returns (string memory) {
+        return _version;
+    }
 }

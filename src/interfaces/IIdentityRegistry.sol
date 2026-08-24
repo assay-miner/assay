@@ -15,4 +15,15 @@ interface IIdentityRegistry {
 
     /// @notice ERC-721 owner of the agent identity. selector 0x6352211e
     function ownerOf(uint256 agentId) external view returns (address);
+
+    /// @notice Collection name; the canonical registry answers "AgentIdentity". selector 0x06fdde03
+    function name() external view returns (string memory);
+
+    /// @notice Registry version; the canonical registry answers "2.0.0". selector 0x0d8e6e2c
+    /// @dev Load-bearing. On BNB Smart Chain *mainnet* the address that is the registry on
+    ///      testnet also holds 130 bytes of code, but it is a different and incompatible
+    ///      deployment that answers "0.0.1" here and reverts on `name()`. A has-code check
+    ///      therefore does not distinguish the right registry from the wrong one — measured
+    ///      directly against both addresses, not assumed.
+    function getVersion() external view returns (string memory);
 }
