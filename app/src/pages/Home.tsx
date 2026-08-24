@@ -94,7 +94,7 @@ export default function Home() {
       <section className="section">
         <div className="shell stack-l">
           <h2 className="display display-l">{t("home.loop.title")}</h2>
-          <div className="grid-2">
+          <div className="grid-pair">
             {steps.map((s, i) => (
               <div key={s.t} className="stack" style={{ gap: 10 }}>
                 <span className="label mono">{String(i + 1).padStart(2, "0")}</span>

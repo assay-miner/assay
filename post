@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Posts one task and funds its pot. Reads the tournament and token addresses from the
+# manifest; nothing is pasted.
+set -euo pipefail
+cd "$(dirname "$0")"
+export PATH="$HOME/.foundry/bin:$PATH"
+
+CHAIN_ID="${CHAIN_ID:-97}"
+RPC="${RPC_URL:-}"
+if [ -z "$RPC" ]; then
+  case "$CHAIN_ID" in
+    97) RPC="https://bsc-testnet-rpc.publicnode.com" ;;
+    56) RPC="https://bsc-dataseed.binance.org" ;;
+  esac
+fi
+if [ -z "${PRIVATE_KEY:-}" ]; then echo "PRIVATE_KEY is empty or unset." >&2; exit 1; fi
+
+MANIFEST="deployments/${CHAIN_ID}-latest.json"
+[ -s "$MANIFEST" ] || { echo "no manifest at $MANIFEST — run ./launch first" >&2; exit 1; }
+
+export TOURNAMENT="$(jq -r .tournament "$MANIFEST")"
+export TOKEN="$(jq -r .token "$MANIFEST")"
+export TASK_SPEC="${TASK_SPEC:-tasks/square.json}"
+[ -s "$TASK_SPEC" ] || { echo "task spec not found: $TASK_SPEC" >&2; exit 1; }
+
+echo "tournament $TOURNAMENT"
+echo "spec       $TASK_SPEC"
+forge script script/PostTask.s.sol:PostTask \
+  --rpc-url "$RPC" --broadcast -g 300 --slow "$@"

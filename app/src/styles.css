@@ -76,6 +76,14 @@ body {
   min-height: 100%;
   background: var(--field);
   isolation: isolate;
+  /* Column layout so a short page (an empty ledger, a 404) still pins its footer to the
+     bottom instead of leaving the footer floating in the middle of the viewport. */
+  display: flex;
+  flex-direction: column;
+}
+
+.field > main {
+  flex: 1 0 auto;
 }
 
 .field::before {
@@ -264,7 +272,20 @@ a:hover {
 .grid-2 {
   display: grid;
   gap: clamp(18px, calc(5 * var(--u)), 34px);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+}
+
+/* A fixed two-up, for lists whose item count is even and must not orphan a last row. */
+.grid-pair {
+  display: grid;
+  gap: clamp(22px, calc(6 * var(--u)), 40px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .grid-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .grid-3 {

@@ -37,7 +37,7 @@ const NAV = [
 ] as const;
 
 export default function Layout() {
-  const { t, lang, toggle } = useI18n();
+  const { t, toggle } = useI18n();
 
   return (
     <div className="field">
@@ -58,7 +58,7 @@ export default function Layout() {
               </NavLink>
             ))}
             <button className="lang" onClick={toggle} aria-label="Switch language">
-              {lang === "zh" ? "EN" : "中文"}
+              {t("nav.switchTo")}
             </button>
           </nav>
         </div>

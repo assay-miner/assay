@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/sync-abi.mjs --check && tsc -b && vite build",
+    "build": "node scripts/sync-abi.mjs --check && node scripts/check-i18n.mjs && tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "sync-abi": "node scripts/sync-abi.mjs",
-    "check-abi": "node scripts/sync-abi.mjs --check"
+    "check-abi": "node scripts/sync-abi.mjs --check",
+    "check-i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

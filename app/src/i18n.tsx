@@ -14,6 +14,7 @@ const zh = {
   "nav.docs": "文档",
   "nav.faq": "问答",
   "nav.enter": "开始挖矿",
+  "nav.switchTo": "EN",
 
   "common.notDeployed": "尚未部署",
   "common.empty": "链上暂无记录",
@@ -140,6 +141,7 @@ const en: Dict = {
   "nav.docs": "Docs",
   "nav.faq": "FAQ",
   "nav.enter": "Start mining",
+  "nav.switchTo": "中文",
 
   "common.notDeployed": "Not deployed",
   "common.empty": "Nothing on chain yet",
