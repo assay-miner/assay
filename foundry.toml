@@ -1,0 +1,26 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+solc_version = "0.8.26"
+# Pinned. An unpinned evm_version drifts to a target BSC cannot execute.
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+remappings = [
+  "forge-std/=lib/forge-std/src/",
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+]
+
+[fmt]
+line_length = 100
+tab_width = 4
+
+[rpc_endpoints]
+bsc = "https://bsc-dataseed.binance.org"
+bsc_testnet = "https://bsc-testnet-rpc.publicnode.com"
