@@ -40,10 +40,51 @@
   color-scheme: dark;
 }
 
-/* Chinese needs far less tracking than Michroma's latin caps, and a little more leading. */
+/* --- CJK corrections ---------------------------------------------------------------------
+   Measured, not guessed: none of Michroma, Chakra Petch or IBM Plex Mono carries a single Han
+   codepoint, so every Chinese glyph is served by the CJK companion faces named in the stacks
+   above. Three things break if the latin settings are simply inherited:
+
+   1. Tracking. The latin identity leans on 0.26-0.34em to build hierarchy. A Han glyph is
+      already a full-em square, so it reads as pre-tracked; anything past ~0.1em turns a line
+      into a ransom note.
+   2. Weight. Han packs far more stroke into the same em, so 300 goes muddy below ~14px.
+      Body copy floors at 400 in Chinese, while display sizes go the other way -- the same
+      numeric weight looks heavier in Han, so the display face is not bumped.
+   3. Optical size. A full-em square looks larger than latin at an identical font-size, so the
+      CJK faces are scaled back slightly rather than left to overpower the latin around them. */
 :root[lang="zh"] {
-  --ls-display: 0.1em;
-  --ls-label: 0.2em;
+  --ls-display: 0.06em;
+  --ls-label: 0.08em;
+}
+
+:root[lang="zh"] body {
+  font-weight: 400;
+  font-size-adjust: 0.52;
+}
+
+/* `text-transform: uppercase` is a no-op in Chinese, which costs the label half of its
+   hierarchy signal. A short gold rule restores the "this is chrome, not prose" cue that
+   capitals and wide tracking carry in the latin design. */
+:root[lang="zh"] .label {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7em;
+}
+
+:root[lang="zh"] .label::before {
+  content: "";
+  width: 1.6em;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
+  flex: none;
+}
+
+/* The wordmark is latin in both languages; keep its latin tracking. */
+:root[lang="zh"] .wordmark {
+  letter-spacing: 0.3em;
 }
 
 *,
