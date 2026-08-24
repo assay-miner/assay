@@ -15,6 +15,7 @@ function Glyph() {
 const NAV = [
   { to: "/mechanism", key: "nav.mechanism" },
   { to: "/tasks", key: "nav.tasks" },
+  { to: "/vault", key: "nav.vault" },
   { to: "/docs", key: "nav.docs" },
   { to: "/contact", key: "nav.contact" },
 ] as const;

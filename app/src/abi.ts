@@ -153,6 +153,156 @@ export const tournamentAbi = [
   },
   {
     "type": "function",
+    "name": "description",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMiners",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "offset",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "page",
+        "type": "tuple[]",
+        "internalType": "struct Tournament.MinerCard[]",
+        "components": [
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "agentId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "gasUsed",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "score",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reward",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getTasks",
+    "inputs": [
+      {
+        "name": "you",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "offset",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "page",
+        "type": "tuple[]",
+        "internalType": "struct Tournament.TaskCard[]",
+        "components": [
+          {
+            "name": "taskId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "baselineGas",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "gasCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "pot",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "vectors",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "entrants",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "phase",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "endsAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "yourScore",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "yourClaimable",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pendingReward",
     "inputs": [
       {
@@ -242,6 +392,40 @@ export const tournamentAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "previewAssay",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "runtime",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "passed",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "gasUsed",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "score",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -440,6 +624,19 @@ export const tournamentAbi = [
   },
   {
     "type": "function",
+    "name": "taxToken",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "vault",
     "inputs": [],
     "outputs": [
@@ -450,6 +647,134 @@ export const tournamentAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "vaultUISchema",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "schema",
+        "type": "tuple",
+        "internalType": "struct VaultUISchema",
+        "components": [
+          {
+            "name": "vaultType",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "methods",
+            "type": "tuple[]",
+            "internalType": "struct VaultMethodSchema[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "description",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "inputs",
+                "type": "tuple[]",
+                "internalType": "struct FieldDescriptor[]",
+                "components": [
+                  {
+                    "name": "name",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "fieldType",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "description",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "decimals",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  }
+                ]
+              },
+              {
+                "name": "outputs",
+                "type": "tuple[]",
+                "internalType": "struct FieldDescriptor[]",
+                "components": [
+                  {
+                    "name": "name",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "fieldType",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "description",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "decimals",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  }
+                ]
+              },
+              {
+                "name": "approvals",
+                "type": "tuple[]",
+                "internalType": "struct ApproveAction[]",
+                "components": [
+                  {
+                    "name": "tokenType",
+                    "type": "string",
+                    "internalType": "string"
+                  },
+                  {
+                    "name": "amountFieldName",
+                    "type": "string",
+                    "internalType": "string"
+                  }
+                ]
+              },
+              {
+                "name": "isInputArray",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "isOutputArray",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "isWriteMethod",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",

@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import Mechanism from "./pages/Mechanism";
 import Tasks from "./pages/Tasks";
 import Docs from "./pages/Docs";
+import Vault from "./pages/Vault";
 import Contact from "./pages/Contact";
 import NotFound from "./pages/NotFound";
 import "./styles.css";
@@ -21,6 +22,7 @@ createRoot(document.getElementById("root")!).render(
           <Route element={<Sheet />}>
             <Route path="mechanism" element={<Mechanism />} />
             <Route path="tasks" element={<Tasks />} />
+            <Route path="vault" element={<Vault />} />
             <Route path="docs" element={<Docs />} />
             <Route path="contact" element={<Contact />} />
             <Route path="*" element={<NotFound />} />

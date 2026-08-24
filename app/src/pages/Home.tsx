@@ -39,6 +39,8 @@ export default function Home() {
       <span className="sep">—</span>
       <Link to="/tasks">{t("nav.tasks")}</Link>
       <span className="sep">—</span>
+      <Link to="/vault">{t("nav.vault")}</Link>
+      <span className="sep">—</span>
       <Link to="/docs">{t("nav.docs")}</Link>
       <span className="sep">—</span>
       <Link to="/contact">{t("nav.contact")}</Link>
@@ -111,6 +113,7 @@ export default function Home() {
         <nav className="m-nav">
           <Link to="/mechanism">{t("nav.mechanism")}</Link>
           <Link to="/tasks">{t("nav.tasks")}</Link>
+          <Link to="/vault">{t("nav.vault")}</Link>
           <Link to="/docs">{t("nav.docs")}</Link>
           <Link to="/contact">{t("nav.contact")}</Link>
         </nav>
