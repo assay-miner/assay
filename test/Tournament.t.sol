@@ -210,7 +210,7 @@ contract TournamentTest is BaseTest {
         uint256 before = token.balanceOf(CURATOR);
         tournament.reclaim(taskId);
         assertEq(token.balanceOf(CURATOR) - before, POT, "an unwon pot returns in full");
-        assertEq(token.balanceOf(address(tournament)), 0, "no tokens stranded");
+        assertEq(vault.balanceOf(tournament.potAccount(taskId)), 0, "pot account empty");
     }
 
     function test_PotFullyAccountedAfterClaimsAndReclaim() public {
@@ -231,7 +231,9 @@ contract TournamentTest is BaseTest {
         // Integer-division dust is the only thing that can be left, and it is reclaimable.
         vm.warp(revealEnd + tournament.CLAIM_WINDOW());
         tournament.reclaim(taskId);
-        assertEq(token.balanceOf(address(tournament)), 0, "no tokens stranded after settlement");
+        assertEq(vault.balanceOf(tournament.potAccount(taskId)), 0, "pot account empty");
+        assertEq(vault.unaccounted(), 0, "nothing unattributed");
+        assertTrue(vault.solvent(), "vault solvent");
     }
 
     function test_ReclaimBlockedWhileClaimWindowOpen() public {

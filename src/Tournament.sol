@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Crucible} from "./Crucible.sol";
 import {AgentRoster} from "./AgentRoster.sol";
+import {AssayVault} from "./AssayVault.sol";
 
 /// @title Tournament
 /// @notice Gas-optimisation tournaments settled entirely on-chain.
@@ -24,8 +23,12 @@ import {AgentRoster} from "./AgentRoster.sol";
 ///      - Cheating is not available. Only output *hashes* live on-chain, so an answer cannot be
 ///        copied out of storage; and commitments are sealed before any submission is revealed,
 ///        so an answer cannot be copied off a competitor either.
+///      Prize money is never held here. Each task's pot lives in `AssayVault`, in an account
+///      namespaced to this contract and keyed by task id, so one task can never be paid out of
+///      another task's escrow and no operator key can reach any of it.
 contract Tournament {
-    using SafeERC20 for IERC20;
+    /// @notice Account namespace for task pots inside the vault.
+    bytes32 public constant KIND_POT = "pot";
 
     /// @notice Fixed-point base for scores. A submission exactly matching the baseline scores 0;
     ///         one using half the baseline's gas scores 2 * SCORE_SCALE.
@@ -37,7 +40,7 @@ contract Tournament {
     /// @notice How long after reveal closes a winner has to claim before the poster may reclaim.
     uint256 public constant CLAIM_WINDOW = 30 days;
 
-    IERC20 public immutable rewardToken;
+    AssayVault public immutable vault;
     AgentRoster public immutable roster;
     address public immutable curator;
 
@@ -112,10 +115,15 @@ contract Tournament {
     error ClaimWindowOpen();
     error AlreadyReclaimed();
 
-    constructor(IERC20 rewardToken_, AgentRoster roster_, address curator_) {
-        rewardToken = rewardToken_;
+    constructor(AssayVault vault_, AgentRoster roster_, address curator_) {
+        vault = vault_;
         roster = roster_;
         curator = curator_;
+    }
+
+    /// @notice The vault account escrowing a task's pot. Anyone can read its balance directly.
+    function potAccount(uint256 taskId) public view returns (bytes32) {
+        return vault.accountId(address(this), KIND_POT, bytes32(taskId));
     }
 
     // ---------------------------------------------------------------------------------------
@@ -166,7 +174,7 @@ contract Tournament {
             v.push(Crucible.Vector({input: inputs[i], expected: expected[i]}));
         }
 
-        rewardToken.safeTransferFrom(msg.sender, address(this), pot);
+        vault.deposit(KIND_POT, bytes32(taskId), msg.sender, pot);
         emit TaskPosted(taskId, msg.sender, baselineGas, gasCap, n, pot, commitEnd, revealEnd);
     }
 
@@ -250,7 +258,7 @@ contract Tournament {
         amount = (uint256(t.pot) * s.score) / t.totalScore;
         t.paidOut += uint128(amount);
 
-        rewardToken.safeTransfer(msg.sender, amount);
+        vault.payOut(KIND_POT, bytes32(taskId), msg.sender, amount);
         emit Claimed(taskId, msg.sender, amount);
     }
 
@@ -269,7 +277,7 @@ contract Tournament {
         t.reclaimed = true;
 
         amount = uint256(t.pot) - t.paidOut;
-        if (amount != 0) rewardToken.safeTransfer(t.poster, amount);
+        if (amount != 0) vault.payOut(KIND_POT, bytes32(taskId), t.poster, amount);
         emit Reclaimed(taskId, t.poster, amount);
     }
 

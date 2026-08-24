@@ -10,7 +10,7 @@ contract RosterTest is BaseTest {
     function test_EnrolRequiresErc8004Authorisation() public {
         // Alice does not own agent 99 and was never authorised for it.
         vm.startPrank(ALICE);
-        token.approve(address(roster), MIN_STAKE);
+        token.approve(address(vault), type(uint256).max);
         vm.expectRevert(abi.encodeWithSelector(AgentRoster.NotAuthorizedForAgent.selector, ALICE, 99));
         roster.enroll(99, MIN_STAKE);
         vm.stopPrank();
@@ -26,7 +26,7 @@ contract RosterTest is BaseTest {
         token.transfer(hotKey, MIN_STAKE);
 
         vm.startPrank(hotKey);
-        token.approve(address(roster), MIN_STAKE);
+        token.approve(address(vault), type(uint256).max);
         roster.enroll(AGENT_ALICE, MIN_STAKE);
         vm.stopPrank();
 
@@ -37,7 +37,7 @@ contract RosterTest is BaseTest {
     function test_OneIdentityCannotBackTwoMiners() public {
         _enroll(ALICE, AGENT_ALICE);
         vm.startPrank(BOB);
-        token.approve(address(roster), MIN_STAKE);
+        token.approve(address(vault), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(AgentRoster.AgentAlreadyBound.selector, AGENT_ALICE, ALICE)
         );
@@ -47,7 +47,7 @@ contract RosterTest is BaseTest {
 
     function test_StakeBelowMinimumRejected() public {
         vm.startPrank(ALICE);
-        token.approve(address(roster), MIN_STAKE);
+        token.approve(address(vault), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(AgentRoster.StakeBelowMinimum.selector, MIN_STAKE - 1, MIN_STAKE)
         );

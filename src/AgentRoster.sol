@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
+import {AssayVault} from "./AssayVault.sol";
 
 /// @title AgentRoster
 /// @notice Binds a mining address to an ERC-8004 agent identity and holds its stake.
@@ -14,11 +13,15 @@ import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
 ///      A miner's operating key never has to hold the identity NFT: enrolment is checked with
 ///      `isAuthorizedOrOwner`, so the NFT can stay in cold storage while a disposable hot key
 ///      does the mining.
+///
+///      This contract never holds a token. Stake lives in `AssayVault`, in an account namespaced
+///      to this contract, so the tournament cannot reach it and neither can anybody's admin key.
 contract AgentRoster {
-    using SafeERC20 for IERC20;
+    /// @notice Account namespace for miner stake inside the vault.
+    bytes32 public constant KIND_STAKE = "stake";
 
     IIdentityRegistry public immutable identityRegistry;
-    IERC20 public immutable stakeToken;
+    AssayVault public immutable vault;
     uint256 public immutable minStake;
 
     /// @notice The tournament permitted to extend stake locks. Set once, then frozen forever.
@@ -54,11 +57,16 @@ contract AgentRoster {
     error StakeBelowMinimum(uint256 provided, uint256 required);
     error StakeLockedUntil(uint64 lockedUntil);
 
-    constructor(IIdentityRegistry registry, IERC20 token, uint256 minStake_, address curator_) {
+    constructor(IIdentityRegistry registry, AssayVault vault_, uint256 minStake_, address curator_) {
         identityRegistry = registry;
-        stakeToken = token;
+        vault = vault_;
         minStake = minStake_;
         curator = curator_;
+    }
+
+    /// @notice The vault account holding `miner`'s stake. Anyone can read its balance directly.
+    function stakeAccount(address miner) public view returns (bytes32) {
+        return vault.accountId(address(this), KIND_STAKE, bytes32(uint256(uint160(miner))));
     }
 
     /// @notice Names the tournament allowed to lock stake, once.
@@ -85,7 +93,7 @@ contract AgentRoster {
         _enrolments[msg.sender] = Enrolment({agentId: agentId, stake: stake, lockedUntil: 0});
         minerOf[agentId] = msg.sender;
 
-        stakeToken.safeTransferFrom(msg.sender, address(this), stake);
+        vault.deposit(KIND_STAKE, bytes32(uint256(uint160(msg.sender))), msg.sender, stake);
         emit Enrolled(msg.sender, agentId, stake);
     }
 
@@ -94,7 +102,7 @@ contract AgentRoster {
         Enrolment storage e = _enrolments[msg.sender];
         if (e.agentId == 0) revert NotEnrolled(msg.sender);
         e.stake += amount;
-        stakeToken.safeTransferFrom(msg.sender, address(this), amount);
+        vault.deposit(KIND_STAKE, bytes32(uint256(uint160(msg.sender))), msg.sender, amount);
         emit StakeIncreased(msg.sender, amount, e.stake);
     }
 
@@ -121,7 +129,7 @@ contract AgentRoster {
         delete _enrolments[msg.sender];
         delete minerOf[e.agentId];
 
-        stakeToken.safeTransfer(msg.sender, e.stake);
+        vault.payOut(KIND_STAKE, bytes32(uint256(uint160(msg.sender))), msg.sender, e.stake);
         emit Withdrawn(msg.sender, e.agentId, e.stake);
     }
 

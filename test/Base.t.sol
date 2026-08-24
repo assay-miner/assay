@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {AssayToken} from "../src/AssayToken.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {AssayVault} from "../src/AssayVault.sol";
 import {Crucible} from "../src/Crucible.sol";
 import {MockIdentityRegistry} from "../src/mocks/MockIdentityRegistry.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
@@ -19,6 +20,7 @@ abstract contract BaseTest is Test {
     address internal constant ALICE = address(0xA1);
     address internal constant BOB = address(0xB0);
     address internal constant CAROL = address(0xCA);
+    address internal constant SALVAGE = address(0x5A);
 
     uint256 internal constant AGENT_ALICE = 11;
     uint256 internal constant AGENT_BOB = 22;
@@ -30,6 +32,7 @@ abstract contract BaseTest is Test {
 
     MockIdentityRegistry internal registry;
     AssayToken internal token;
+    AssayVault internal vault;
     AgentRoster internal roster;
     Tournament internal tournament;
     CrucibleHarness internal harness;
@@ -52,8 +55,13 @@ abstract contract BaseTest is Test {
         vm.prank(CURATOR);
         token = new AssayToken(CURATOR);
 
-        roster = new AgentRoster(IIdentityRegistry(address(registry)), IERC20(address(token)), MIN_STAKE, CURATOR);
-        tournament = new Tournament(IERC20(address(token)), roster, CURATOR);
+        // Custody is a separate contract; the logic contracts only ever instruct it.
+        vault = new AssayVault(IERC20(address(token)), SALVAGE);
+        roster = new AgentRoster(IIdentityRegistry(address(registry)), vault, MIN_STAKE, CURATOR);
+        tournament = new Tournament(vault, roster, CURATOR);
+        vault.addController(address(roster));
+        vault.addController(address(tournament));
+        vault.freeze();
 
         vm.prank(CURATOR);
         roster.setConsumer(address(tournament));
@@ -79,7 +87,7 @@ abstract contract BaseTest is Test {
         revealEnd = uint64(block.timestamp + 2 hours);
 
         vm.startPrank(CURATOR);
-        token.approve(address(tournament), POT);
+        token.approve(address(vault), type(uint256).max);
         taskId = tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnd, revealEnd, POT);
         // Seed miners so they can stake.
         token.transfer(ALICE, MIN_STAKE * 10);
@@ -97,7 +105,7 @@ abstract contract BaseTest is Test {
 
     function _enroll(address miner, uint256 agentId) internal {
         vm.startPrank(miner);
-        token.approve(address(roster), MIN_STAKE);
+        token.approve(address(vault), type(uint256).max);
         roster.enroll(agentId, MIN_STAKE);
         vm.stopPrank();
     }

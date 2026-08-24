@@ -6,6 +6,7 @@ import {console2} from "forge-std/console2.sol";
 import {AssayToken} from "../src/AssayToken.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {AssayVault} from "../src/AssayVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -59,11 +60,21 @@ contract Deploy is Script {
 
         uint256 minStake = vm.envOr("MIN_STAKE", uint256(1_000e18));
 
+        // Salvage is where a mistaken transfer into the vault can be swept. It can never reach
+        // accounted funds, but it is still a named destination, so it is fixed at deploy.
+        address salvage = vm.envOr("SALVAGE", deployer);
+
         vm.startBroadcast(pk);
         AssayToken token = new AssayToken(deployer);
-        AgentRoster roster =
-            new AgentRoster(IIdentityRegistry(registry), IERC20(address(token)), minStake, deployer);
-        Tournament tournament = new Tournament(IERC20(address(token)), roster, deployer);
+        AssayVault vault = new AssayVault(IERC20(address(token)), salvage);
+        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), vault, minStake, deployer);
+        Tournament tournament = new Tournament(vault, roster, deployer);
+
+        // Custody wiring, then sealed. After `freeze()` no address can be added to the vault.
+        vault.addController(address(roster));
+        vault.addController(address(tournament));
+        vault.freeze();
+
         roster.setConsumer(address(tournament));
         vm.stopBroadcast();
 
@@ -74,14 +85,21 @@ contract Deploy is Script {
         if (address(tournament).code.length == 0) {
             revert NothingDeployed("Tournament", address(tournament));
         }
+        if (address(vault).code.length == 0) revert NothingDeployed("AssayVault", address(vault));
         require(roster.consumer() == address(tournament), "consumer not wired");
         require(roster.consumerFrozen(), "consumer not frozen");
+        require(vault.isController(address(roster)), "roster not a vault controller");
+        require(vault.isController(address(tournament)), "tournament not a vault controller");
+        require(vault.controllersFrozen(), "vault controllers not frozen");
+        require(vault.solvent(), "vault must start solvent");
 
         string memory json = "manifest";
         vm.serializeUint(json, "chainId", block.chainid);
         vm.serializeAddress(json, "deployer", deployer);
         vm.serializeAddress(json, "identityRegistry", registry);
         vm.serializeAddress(json, "token", address(token));
+        vm.serializeAddress(json, "vault", address(vault));
+        vm.serializeAddress(json, "salvage", salvage);
         vm.serializeAddress(json, "roster", address(roster));
         vm.serializeUint(json, "minStake", minStake);
         vm.serializeUint(json, "maxSupply", token.MAX_SUPPLY());
@@ -95,6 +113,8 @@ contract Deploy is Script {
         console2.log("deployer         ", deployer);
         console2.log("identityRegistry ", registry);
         console2.log("token            ", address(token));
+        console2.log("vault            ", address(vault));
+        console2.log("salvage          ", salvage);
         console2.log("roster           ", address(roster));
         console2.log("tournament       ", address(tournament));
         console2.log("manifest         ", path);
