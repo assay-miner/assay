@@ -1,147 +1,121 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import heroSvg from "../generated/hero.svg?raw";
+import medallionSvg from "../generated/medallion.svg?raw";
 import { useI18n } from "../i18n";
-import {
-  IDENTITY_REGISTRY,
-  EXPLORER,
-  formatUnits,
-  isDeployed,
-  readProtocol,
-  shortAddress,
-  type Protocol,
-} from "../chain";
+import { useRetype } from "../useRetype";
 
-function Readout({ label, value, empty }: { label: string; value: string; empty?: boolean }) {
-  return (
-    <div className="readout">
-      <span className="label label-muted">{label}</span>
-      <span className={`readout-value${empty ? " is-empty" : ""}`}>{value}</span>
-    </div>
-  );
-}
+/**
+ * One screen, welded to the plate.
+ *
+ * The engraving underneath is a 2000x1080 SVG drawn at `object-fit: cover`; every element on top
+ * of it is positioned in plate coordinates via `--u`, so the lockup keeps sitting inside the
+ * engraved oval whatever the window is doing. It is inlined rather than served as an <img>
+ * because the retype animation has to reach the individual <text> nodes inside it.
+ */
+
+/** Plate x-coordinates for the three seals struck along the bottom of the engraving. */
+const SEAL_X = [620, 1000, 1380] as const;
 
 export default function Home() {
-  const { t } = useI18n();
-  const [protocol, setProtocol] = useState<Protocol | null>(null);
-  const [loading, setLoading] = useState(isDeployed);
+  const { t, toggle } = useI18n();
+  const plateRef = useRef<HTMLDivElement>(null);
+  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null);
 
   useEffect(() => {
-    if (!isDeployed) return;
-    let live = true;
-    readProtocol()
-      .then((p) => live && setProtocol(p))
-      .catch(() => live && setProtocol(null))
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
+    document.body.classList.add("home");
+    return () => document.body.classList.remove("home");
   }, []);
 
-  // Nothing deployed means nothing to show. The dash is the honest reading; a placeholder number
-  // here would be indistinguishable from a real one.
-  const dash = loading ? t("common.loading") : t("common.notDeployed");
+  useEffect(() => {
+    setSvgEl(plateRef.current?.querySelector("svg") ?? null);
+  }, []);
 
-  const claims = [
-    { label: t("home.claim1.label"), body: t("home.claim1.body") },
-    { label: t("home.claim2.label"), body: t("home.claim2.body") },
-    { label: t("home.claim3.label"), body: t("home.claim3.body") },
-  ];
+  useRetype(svgEl);
 
-  const steps = [
-    { t: t("home.loop.s1.t"), b: t("home.loop.s1.b") },
-    { t: t("home.loop.s2.t"), b: t("home.loop.s2.b") },
-    { t: t("home.loop.s3.t"), b: t("home.loop.s3.b") },
-    { t: t("home.loop.s4.t"), b: t("home.loop.s4.b") },
-  ];
+  const nav = (
+    <>
+      <Link to="/mechanism">{t("nav.mechanism")}</Link>
+      <span className="sep">—</span>
+      <Link to="/tasks">{t("nav.tasks")}</Link>
+      <span className="sep">—</span>
+      <Link to="/docs">{t("nav.docs")}</Link>
+      <span className="sep">—</span>
+      <Link to="/contact">{t("nav.contact")}</Link>
+    </>
+  );
 
   return (
     <>
-      <section className="section">
-        <div className="shell stack-l">
-          <div className="stack rise">
-            <span className="label">{t("home.eyebrow")}</span>
-            <h1 className="display display-xl">{t("home.title")}</h1>
-          </div>
-          <p className="lede rise rise-2">{t("home.lede")}</p>
-          <div className="rise rise-3" style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <Link className="btn" to="/docs">
-              {t("home.ctaPrimary")}
-            </Link>
-            <Link className="btn btn-quiet" to="/mining">
-              {t("home.ctaSecondary")}
-            </Link>
-          </div>
-        </div>
-      </section>
+      {/* --- desktop: the plate --- */}
+      <div
+        className="hero"
+        aria-hidden="true"
+        ref={plateRef}
+        dangerouslySetInnerHTML={{ __html: heroSvg }}
+      />
 
-      <hr className="rule rule-gold" />
+      <button className="lang-toggle" onClick={toggle}>
+        {t("nav.switchTo")}
+      </button>
 
-      <section className="section-tight">
-        <div className="shell grid-3">
-          {claims.map((c, i) => (
-            <div key={c.label} className={`plate rise rise-${i + 2}`}>
-              <div className="stack">
-                <span className="label">{c.label}</span>
-                <p style={{ margin: 0, fontSize: "0.96em" }}>{c.body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <Link className="aureus-btn demo-cta" to="/docs">
+        {t("home.cta")}
+      </Link>
 
-      <hr className="rule" />
+      <div className="hero-mark" dangerouslySetInnerHTML={{ __html: medallionSvg }} />
 
-      <section className="section">
-        <div className="shell stack-l">
-          <h2 className="display display-l">{t("home.loop.title")}</h2>
-          <div className="grid-pair">
-            {steps.map((s, i) => (
-              <div key={s.t} className="stack" style={{ gap: 10 }}>
-                <span className="label mono">{String(i + 1).padStart(2, "0")}</span>
-                <h3 className="display display-m">{s.t}</h3>
-                <p style={{ margin: 0, fontSize: "0.96em" }}>{s.b}</p>
-              </div>
-            ))}
+      <div className="hero-stack">
+        <h1 className="hero-word">Assay</h1>
+        <p className="hero-tagline">{t("home.tagline")}</p>
+        <nav className="bond-nav">{nav}</nav>
+        <div className="endorsements">
+        <p className="caption">{t("home.builtOn")}</p>
+        <div className="row">
+          <span className="chip" title="BNB Smart Chain">
+            BNB
+          </span>
+          <span className="chip" title="ERC-8004 Agent Identity">
+            8004
+          </span>
+          <span className="chip" title="Binance Agent OS">
+            MCP
+          </span>
           </div>
         </div>
-      </section>
+      </div>
 
-      <hr className="rule" />
+      <div className="seals">
+        {(
+          [
+            [t("home.seal1.name"), t("home.seal1.role")],
+            [t("home.seal2.name"), t("home.seal2.role")],
+            [t("home.seal3.name"), t("home.seal3.role")],
+          ] as const
+        ).map(([name, role], i) => (
+          <div key={name} className="seal" style={{ "--cx": SEAL_X[i] } as React.CSSProperties}>
+            <span className="seal-ink">{name}</span>
+            <span className="seal-role">{role}</span>
+          </div>
+        ))}
+      </div>
 
-      <section className="section">
-        <div className="shell stack-l">
-          <h2 className="display display-l">{t("home.stats.title")}</h2>
-          <div className="grid-3">
-            <Readout
-              label={t("home.stats.tasks")}
-              value={protocol ? protocol.taskCount.toString() : dash}
-              empty={!protocol}
-            />
-            <Readout
-              label={t("home.stats.supply")}
-              value={protocol ? `${formatUnits(protocol.totalSupply, 0)} ${protocol.symbol}` : dash}
-              empty={!protocol}
-            />
-            <Readout
-              label={t("home.stats.minStake")}
-              value={protocol ? `${formatUnits(protocol.minStake, 0)} ${protocol.symbol}` : dash}
-              empty={!protocol}
-            />
-          </div>
-          <div className="stack" style={{ gap: 8 }}>
-            <span className="label label-muted">{t("home.stats.registry")}</span>
-            <a
-              className="mono"
-              style={{ fontSize: "0.9em" }}
-              href={`${EXPLORER}/address/${IDENTITY_REGISTRY}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {shortAddress(IDENTITY_REGISTRY)} · ERC-8004
-            </a>
-          </div>
-        </div>
-      </section>
+      <p className="hero-foot">{t("foot.legal")}</p>
+
+      {/* --- mobile: its own composition; the plate cannot letterbox onto a phone --- */}
+      <div className="mobile-home">
+        <div className="m-frame" />
+        <div className="m-mark" dangerouslySetInnerHTML={{ __html: medallionSvg }} />
+        <h1 className="m-word">Assay</h1>
+        <p className="m-tagline">{t("home.tagline")}</p>
+        <nav className="m-nav">
+          <Link to="/mechanism">{t("nav.mechanism")}</Link>
+          <Link to="/tasks">{t("nav.tasks")}</Link>
+          <Link to="/docs">{t("nav.docs")}</Link>
+          <Link to="/contact">{t("nav.contact")}</Link>
+        </nav>
+        <p className="m-foot">{t("foot.legal")}</p>
+      </div>
     </>
   );
 }

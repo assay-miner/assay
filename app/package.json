@@ -11,7 +11,9 @@
     "sync-abi": "node scripts/sync-abi.mjs",
     "check-abi": "node scripts/sync-abi.mjs --check",
     "check-i18n": "node scripts/check-i18n.mjs",
-    "verify": "node scripts/sync-abi.mjs --check && node scripts/check-i18n.mjs && tsc -b && vite build"
+    "verify": "node scripts/sync-abi.mjs --check && node scripts/check-i18n.mjs && tsc -b && vite build",
+    "gen": "node tools/gen-hero.mjs && node tools/gen-medallion.mjs",
+    "check-layout": "node scripts/check-layout.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

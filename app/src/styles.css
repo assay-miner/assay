@@ -1,210 +1,73 @@
 /* ===========================================================================================
-   ASSAY design system
-   Dark-committed, warm-black field with an ivory/gold hallmark palette. Everything sizes off
-   --u, a viewport-derived unit, so the page keeps its proportions instead of its pixel sizes.
+   ASSAY
+
+   The desktop layout is pinned to a 2000x1080 plate (public/hero.svg) drawn at `object-fit:
+   cover` across the viewport. `--u` is exactly one plate unit on screen, so an element that
+   belongs at plate coordinate (X, Y) is placed with:
+
+       left: calc(50vw + (X - 1000) * var(--u));
+       top:  calc(50vh + (Y -  540) * var(--u));
+
+   That is what keeps the HTML overlays welded to the engraving underneath them at every
+   viewport size, instead of drifting the way a percentage-based layout would.
    =========================================================================================== */
 
 :root {
-  /* --- unit ------------------------------------------------------------------------------ */
   --u: max(0.05vw, 0.0925926vh);
 
-  /* --- palette --------------------------------------------------------------------------- */
   --black: #000000;
   --field: #0a0a0b;
-  --field-raised: #101012;
   --text-1: #f0ede0;
   --text-2: #b4b0a4;
   --text-3: #928f84;
   --muted: #66635a;
   --gold: #cea64a;
-  --gold-bright: #eac652;
   --gold-deep: #8a6e22;
+  --gold-bright: #eac652;
   --rule: #33322b;
-  --rule-soft: #1e1d1a;
-  --fail: #b4553a;
-  --pass: #7d9a5e;
 
-  /* --- type ------------------------------------------------------------------------------ */
-  --font-display: "Michroma", "ZCOOL QingKe HuangYou", "Noto Sans SC", system-ui, sans-serif;
-  --font-body: "Chakra Petch", "Noto Sans SC", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+  --font-display: "Michroma", "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+  --font-body: "Chakra Petch", "Noto Sans SC", sans-serif;
+  --font-mono: "IBM Plex Mono", "Noto Sans SC", monospace;
 
-  --ls-display: 0.26em;
-  --ls-label: 0.34em;
-
-  /* --- layout ---------------------------------------------------------------------------- */
-  --page: 1240px;
-  --gutter: clamp(20px, 4vw, 56px);
-  --bar: 68px;
+  /* Latin leans on wide tracking for hierarchy. Chinese is overridden below. */
+  --ls-wide: 0.26em;
+  --ls-title: 0.32em;
 
   color-scheme: dark;
 }
 
-/* --- CJK corrections ---------------------------------------------------------------------
-   Measured, not guessed: none of Michroma, Chakra Petch or IBM Plex Mono carries a single Han
-   codepoint, so every Chinese glyph is served by the CJK companion faces named in the stacks
-   above. Three things break if the latin settings are simply inherited:
-
-   1. Tracking. The latin identity leans on 0.26-0.34em to build hierarchy. A Han glyph is
-      already a full-em square, so it reads as pre-tracked; anything past ~0.1em turns a line
-      into a ransom note.
-   2. Weight. Han packs far more stroke into the same em, so 300 goes muddy below ~14px.
-      Body copy floors at 400 in Chinese, while display sizes go the other way -- the same
-      numeric weight looks heavier in Han, so the display face is not bumped.
-   3. Optical size. A full-em square looks larger than latin at an identical font-size, so the
-      CJK faces are scaled back slightly rather than left to overpower the latin around them. */
+/* --- CJK corrections ------------------------------------------------------------------------
+   None of Michroma, Chakra Petch or IBM Plex Mono carries a single Han codepoint, so every
+   Chinese glyph is served by the companion faces in the stacks above. A Han glyph is already a
+   full-em square and reads as pre-tracked, so the latin tracking has to come down hard; it also
+   packs more stroke into the same em, so weight has to come up. */
 :root[lang="zh"] {
-  --ls-display: 0.06em;
-  --ls-label: 0.08em;
+  --ls-wide: 0.08em;
+  --ls-title: 0.1em;
 }
 
 :root[lang="zh"] body {
   font-weight: 400;
-  font-size-adjust: 0.52;
 }
 
-/* `text-transform: uppercase` is a no-op in Chinese, which costs the label half of its
-   hierarchy signal. A short gold rule restores the "this is chrome, not prose" cue that
-   capitals and wide tracking carry in the latin design. */
-:root[lang="zh"] .label {
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.7em;
-}
-
-:root[lang="zh"] .label::before {
-  content: "";
-  width: 1.6em;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.55;
-  flex: none;
-}
-
-/* The wordmark is latin in both languages; keep its latin tracking. */
-:root[lang="zh"] .wordmark {
-  letter-spacing: 0.3em;
-}
-
-*,
-*::before,
-*::after {
+* {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
+  background: var(--black);
 }
 
 body {
-  margin: 0;
-  background: var(--black);
   color: var(--text-1);
   font-family: var(--font-body);
   font-weight: 300;
-  font-size: clamp(15px, calc(3.4 * var(--u)), 17px);
-  line-height: 1.7;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-/* The field: a warm near-black plate over pure black, lit from below by a slow gold bloom. */
-.field {
-  position: relative;
-  min-height: 100%;
-  background: var(--field);
-  isolation: isolate;
-  /* Column layout so a short page (an empty ledger, a 404) still pins its footer to the
-     bottom instead of leaving the footer floating in the middle of the viewport. */
-  display: flex;
-  flex-direction: column;
-}
-
-.field > main {
-  flex: 1 0 auto;
-}
-
-.field::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  background:
-    radial-gradient(120% 80% at 50% 108%, rgba(206, 166, 74, 0.1) 0%, rgba(206, 166, 74, 0) 62%),
-    radial-gradient(90% 60% at 50% -10%, rgba(234, 198, 82, 0.05) 0%, rgba(234, 198, 82, 0) 55%),
-    var(--field);
-}
-
-/* Fine etched grain. Kept low enough to read as paper tooth, not as noise. */
-.field::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.035;
-  mix-blend-mode: screen;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-.shell {
-  width: min(100% - var(--gutter) * 2, var(--page));
-  margin-inline: auto;
-}
-
-/* --- type scale -------------------------------------------------------------------------- */
-
-.display {
-  font-family: var(--font-display);
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: var(--ls-display);
-  line-height: 1.18;
-  color: var(--text-1);
-  margin: 0;
-  /* Michroma is very wide; long Chinese headings must be allowed to break. */
-  overflow-wrap: anywhere;
-}
-
-.display-xl {
-  font-size: clamp(30px, calc(11 * var(--u)), 62px);
-}
-
-.display-l {
-  font-size: clamp(22px, calc(7 * var(--u)), 38px);
-}
-
-.display-m {
-  font-size: clamp(17px, calc(4.6 * var(--u)), 24px);
-}
-
-.label {
-  font-family: var(--font-mono);
-  font-size: clamp(10px, calc(2.2 * var(--u)), 12px);
-  font-weight: 400;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--gold);
-}
-
-.label-muted {
-  color: var(--muted);
-}
-
-.lede {
-  font-size: clamp(16px, calc(4 * var(--u)), 20px);
-  line-height: 1.72;
-  color: var(--text-2);
-  max-width: 62ch;
-  margin: 0;
-}
-
-p {
-  color: var(--text-2);
-  max-width: 68ch;
 }
 
 a {
@@ -212,153 +75,618 @@ a {
   text-decoration: none;
 }
 
-a:hover {
-  color: var(--gold-bright);
+/* ===========================================================================================
+   Gold-etch ink
+   The identity's signature move: a scan of etched gold leaf clipped to the glyphs themselves,
+   so type reads as struck metal rather than as coloured text.
+   =========================================================================================== */
+
+.etch {
+  background: url("/assets/gold-etch.webp") center / 40px;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0.25px rgba(234, 198, 82, 0.95);
+  filter: drop-shadow(0 0 2px rgba(234, 198, 82, 0.35));
 }
 
-.mono {
+/* ===========================================================================================
+   Aureus button — a struck plate: solid gold rule outside, dashed rule inside
+   =========================================================================================== */
+
+.aureus-btn {
+  position: relative;
+  display: inline-block;
   font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- rules and plates -------------------------------------------------------------------- */
-
-.rule {
-  height: 1px;
-  border: 0;
-  margin: 0;
-  background: linear-gradient(90deg, transparent, var(--rule) 12%, var(--rule) 88%, transparent);
-}
-
-.rule-gold {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--gold-deep) 20%,
-    var(--gold) 50%,
-    var(--gold-deep) 80%,
-    transparent
-  );
-  opacity: 0.55;
-}
-
-.plate {
-  border: 1px solid var(--rule);
-  background: linear-gradient(180deg, rgba(255, 253, 247, 0.022), rgba(255, 253, 247, 0));
-  padding: clamp(18px, calc(5 * var(--u)), 30px);
-}
-
-.plate-gold {
-  border-color: rgba(138, 110, 34, 0.55);
-}
-
-/* --- controls ---------------------------------------------------------------------------- */
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6em;
-  font-family: var(--font-mono);
-  font-size: clamp(11px, calc(2.5 * var(--u)), 13px);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  padding: 0.95em 1.6em;
-  border: 1px solid var(--gold-deep);
+  font-size: 11px;
+  letter-spacing: var(--ls-wide);
+  text-indent: var(--ls-wide);
   color: var(--gold-bright);
-  background: transparent;
+  background:
+    linear-gradient(180deg, #eac6521a, #8a6e222e),
+    #0a0a0be0;
+  border: 1px solid var(--gold);
+  border-radius: 0;
+  padding: 13px 24px;
   cursor: pointer;
+  text-transform: uppercase;
   transition:
-    background-color 220ms ease,
-    border-color 220ms ease,
-    color 220ms ease;
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
-.btn:hover {
-  background: rgba(206, 166, 74, 0.09);
-  border-color: var(--gold);
-  color: var(--gold-bright);
+.aureus-btn::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px dashed rgba(206, 166, 74, 0.45);
+  pointer-events: none;
+  transition: border-color 0.18s ease;
 }
 
-.btn-quiet {
-  border-color: var(--rule);
+.aureus-btn:hover {
+  background: url("/assets/gold-etch.webp") center / 56px repeat;
+  color: #17110a;
+  text-shadow:
+    0 0 3px rgba(234, 198, 82, 0.95),
+    0 0 7px rgba(234, 198, 82, 0.7);
+}
+
+.aureus-btn:hover::before {
+  border-color: #0a0a0b66;
+}
+
+.aureus-btn:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 4px;
+}
+
+/* ===========================================================================================
+   HOME — one screen, welded to the plate
+   =========================================================================================== */
+
+body.home {
+  overflow: hidden;
+}
+
+.hero {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--black);
+}
+
+.hero .plate {
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  display: block;
+}
+
+/* Plate coordinate (1873, 143), but never allowed off-screen: under `cover` the plate
+   overflows horizontally on wide viewports, which would push an edge-anchored element out
+   of the window. `max()` keeps it registered with the engraving when there is room and
+   pinned to the margin when there is not. */
+.demo-cta {
+  position: fixed;
+  top: max(24px, calc(50vh + (143 - 540) * var(--u)));
+  right: max(24px, calc(50vw - (1873 - 1000) * var(--u)));
+  z-index: 5;
+}
+
+.hero-mark {
+  position: fixed;
+  left: 50vw;
+  top: calc(50vh + (300 - 540) * var(--u));
+  transform: translate(-50%, -50%);
+  width: calc(240 * var(--u));
+  height: calc(240 * var(--u));
+  z-index: 4;
+}
+
+/* One column, pinned by its top edge to plate y = 452 — inside the engraved oval.
+   Lockup, nav and endorsements flow within it, so they can never overlap each other however
+   long the copy gets or which script it is set in. */
+.hero-stack {
+  position: fixed;
+  left: 50vw;
+  top: calc(50vh + (452 - 540) * var(--u));
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.hero-word {
+  font-family: var(--font-display);
+  font-size: calc(46 * var(--u));
+  letter-spacing: var(--ls-title);
+  margin-right: var(--ls-title);
+  color: var(--text-1);
+  line-height: 1;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.hero-tagline {
+  font-family: var(--font-display);
+  font-size: calc(13.5 * var(--u));
+  letter-spacing: calc(6.4 * var(--u));
+  margin-top: calc(26 * var(--u));
+  color: var(--text-3);
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+/* Han needs more size and far less tracking: at the latin settings the same line collapses
+   into an illegible band beside the wordmark. Measured against the rendered box, not guessed. */
+:root[lang="zh"] .hero-tagline {
+  font-size: calc(20 * var(--u));
+  letter-spacing: calc(3.4 * var(--u));
   color: var(--text-2);
 }
 
-.btn-quiet:hover {
-  border-color: var(--text-3);
-  color: var(--text-1);
-  background: rgba(240, 237, 224, 0.04);
-}
-
-/* --- section rhythm ---------------------------------------------------------------------- */
-
-.section {
-  padding-block: clamp(52px, calc(15 * var(--u)), 108px);
-}
-
-.section-tight {
-  padding-block: clamp(34px, calc(9 * var(--u)), 64px);
-}
-
-.stack {
-  display: grid;
-  gap: clamp(14px, calc(3.4 * var(--u)), 22px);
-}
-
-.stack-l {
-  display: grid;
-  gap: clamp(26px, calc(7 * var(--u)), 46px);
-}
-
-.grid-2 {
-  display: grid;
-  gap: clamp(18px, calc(5 * var(--u)), 34px);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
-}
-
-/* A fixed two-up, for lists whose item count is even and must not orphan a last row. */
-.grid-pair {
-  display: grid;
-  gap: clamp(22px, calc(6 * var(--u)), 40px);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-@media (max-width: 760px) {
-  .grid-pair {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.grid-3 {
-  display: grid;
-  gap: clamp(16px, calc(4 * var(--u)), 26px);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
-}
-
-/* --- data readout ------------------------------------------------------------------------ */
-
-.readout {
-  display: grid;
-  gap: 6px;
-}
-
-.readout-value {
+.bond-nav {
+  margin-top: calc(52 * var(--u));
   font-family: var(--font-mono);
-  font-size: clamp(20px, calc(6 * var(--u)), 30px);
-  color: var(--text-1);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  font-size: calc(21.5 * var(--u));
+  letter-spacing: calc(5 * var(--u));
+  line-height: 1;
+  color: var(--text-3);
 }
 
-.readout-value.is-empty {
+.bond-nav a {
+  color: #e8e5d6;
+  transition: color 0.15s ease;
+  text-transform: uppercase;
+}
+
+.bond-nav a:hover {
+  background: url("/assets/gold-etch.webp") center / 40px;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0.25px rgba(234, 198, 82, 0.95);
+  filter: drop-shadow(0 0 3px rgba(234, 198, 82, 0.55));
+}
+
+.bond-nav a:focus-visible {
+  color: var(--gold);
+  outline: 1px solid var(--gold);
+  outline-offset: 5px;
+}
+
+.bond-nav .sep {
+  color: var(--muted);
+  padding: 0 calc(10 * var(--u));
+}
+
+.endorsements {
+  margin-top: calc(60 * var(--u));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(11 * var(--u));
+}
+
+.endorsements .caption {
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: calc(9.5 * var(--u));
+  letter-spacing: calc(3 * var(--u));
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: center;
+  line-height: 1.85;
+  text-transform: uppercase;
+}
+
+.endorsements .row {
+  display: flex;
+  gap: calc(16 * var(--u));
+}
+
+.endorsements .chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(40 * var(--u));
+  height: calc(40 * var(--u));
+  border: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: calc(8.5 * var(--u));
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.endorsements .chip:hover {
+  border-color: var(--gold-deep);
+  color: var(--gold-bright);
+  background: rgba(206, 166, 74, 0.08);
+}
+
+/* Three seals across plate y = 856, at plate x given per-item by --cx */
+.seals .seal {
+  position: fixed;
+  left: calc(50vw + (var(--cx) - 1000) * var(--u));
+  top: calc(50vh + (856 - 540) * var(--u));
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.seal-ink {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: calc(16.5 * var(--u));
+  letter-spacing: calc(1 * var(--u));
+  background: url("/assets/gold-etch.webp") center / 40px;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-transform: uppercase;
+}
+
+.seal-role {
+  display: block;
+  margin-top: calc(5 * var(--u));
+  font-family: var(--font-mono);
+  font-size: calc(10 * var(--u));
+  letter-spacing: calc(2.4 * var(--u));
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* Viewport-anchored: a legal line has to stay on screen at every aspect ratio. */
+.hero-foot {
+  position: fixed;
+  left: 26px;
+  bottom: 22px;
+  z-index: 6;
+  font-family: var(--font-display);
+  font-size: calc(12 * var(--u));
+  letter-spacing: calc(3 * var(--u));
   color: var(--muted);
 }
+
+.lang-toggle {
+  position: fixed;
+  left: 26px;
+  top: 24px;
+  z-index: 6;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  border: 1px solid var(--rule);
+  background: rgba(10, 10, 11, 0.7);
+  color: var(--text-2);
+  padding: 8px 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.lang-toggle:hover {
+  border-color: var(--gold-deep);
+  color: var(--gold-bright);
+}
+
+/* ===========================================================================================
+   INNER PAGES — hairline frame, glyph left, nav right
+   =========================================================================================== */
+
+.sheet {
+  position: relative;
+  min-height: 100vh;
+  background:
+    url("/assets/paper.webp") center / cover no-repeat,
+    var(--black);
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-frame {
+  position: fixed;
+  inset: 18px;
+  border: 1px solid rgba(206, 166, 74, 0.22);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.sheet-bar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  padding: 34px 52px;
+}
+
+.sheet-glyph {
+  width: 34px;
+  height: 34px;
+  display: block;
+}
+
+.sheet-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.sheet-nav a {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--ls-wide);
+  color: var(--text-3);
+  text-transform: uppercase;
+  transition: color 0.15s ease;
+}
+
+.sheet-nav a:hover {
+  color: var(--text-1);
+}
+
+.sheet-nav a.active {
+  color: var(--gold-bright);
+}
+
+.sheet-body {
+  position: relative;
+  z-index: 4;
+  flex: 1;
+  width: min(100% - 104px, 1340px);
+  margin-inline: auto;
+  padding-block: clamp(20px, 4vh, 60px) 74px;
+}
+
+.plate-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(22px, calc(30 * var(--u)), 44px);
+  letter-spacing: var(--ls-wide);
+  line-height: 1.3;
+  color: var(--text-1);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: calc(var(--ls-wide) + 0.04em);
+  color: var(--text-3);
+  text-transform: uppercase;
+  line-height: 2;
+}
+
+.prose {
+  font-family: var(--font-body);
+  font-size: clamp(13px, calc(14 * var(--u)), 15.5px);
+  line-height: 2.05;
+  color: var(--text-2);
+  text-align: justify;
+  hyphens: auto;
+}
+
+.prose h3 {
+  font-family: var(--font-display);
+  font-size: clamp(13px, calc(15 * var(--u)), 17px);
+  letter-spacing: var(--ls-wide);
+  color: var(--text-1);
+  text-transform: uppercase;
+  margin: 30px 0 10px;
+  font-weight: 400;
+}
+
+.cols-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 62px;
+  margin-top: 40px;
+}
+
+/* --- the coin row -------------------------------------------------------------------------- */
+
+.coinrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 38px;
+}
+
+.coinrow .coin {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+}
+
+.coinrow .disc {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-deep);
+  background: url("/assets/gold-etch-chip.webp") center / cover;
+  filter: saturate(0.35) brightness(0.55);
+  transition:
+    filter 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+.coinrow .coin.is-live .disc {
+  filter: none;
+  box-shadow:
+    0 0 14px rgba(234, 198, 82, 0.45),
+    0 0 34px rgba(234, 198, 82, 0.18);
+}
+
+.coinrow .cap {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.coinrow .coin.is-live .cap {
+  color: var(--gold-bright);
+}
+
+.coinrow .arrow {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 22px;
+}
+
+/* --- slide deck ----------------------------------------------------------------------------- */
+
+.deck {
+  position: relative;
+  padding-bottom: 22px;
+}
+
+.deck-dots {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -18px;
+  display: flex;
+  gap: 12px;
+}
+
+.deck-dots button {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-deep);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s ease;
+}
+
+.deck-dots button[aria-current="true"] {
+  background: var(--gold-bright);
+}
+
+.deck-dots button:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 3px;
+}
+
+/* --- accordion ------------------------------------------------------------------------------- */
+
+.rowlist {
+  margin-top: 30px;
+  border-top: 1px solid var(--rule);
+}
+
+.rowlist details {
+  border-bottom: 1px solid var(--rule);
+}
+
+.rowlist summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 22px 0;
+  font-family: var(--font-display);
+  font-size: clamp(12px, calc(14 * var(--u)), 16px);
+  letter-spacing: var(--ls-wide);
+  color: var(--text-1);
+  text-transform: uppercase;
+  transition: color 0.15s ease;
+}
+
+.rowlist summary::-webkit-details-marker {
+  display: none;
+}
+
+.rowlist summary::before {
+  content: "+";
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  transition: transform 0.22s ease;
+}
+
+.rowlist details[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.rowlist summary:hover {
+  color: var(--gold-bright);
+}
+
+.rowlist .panel {
+  padding: 0 0 26px 44px;
+}
+
+.rowlist p {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.95;
+  color: var(--text-2);
+  max-width: 74ch;
+}
+
+.rowlist pre {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.85;
+  color: var(--text-2);
+  background: rgba(255, 253, 247, 0.02);
+  border: 1px solid var(--rule);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin-top: 14px;
+  white-space: pre;
+}
+
+/* --- circular gold-framed plate --------------------------------------------------------------- */
+
+.roundel {
+  position: relative;
+  width: min(100%, 380px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  padding: 30px;
+  background: url("/assets/gold-etch.webp") center / 120px;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.roundel img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+/* --- ledger table ------------------------------------------------------------------------------ */
 
 table.ledger {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-mono);
-  font-size: clamp(11px, calc(2.6 * var(--u)), 13px);
+  font-size: 12px;
+  margin-top: 28px;
 }
 
 table.ledger th {
@@ -367,15 +695,15 @@ table.ledger th {
   font-weight: 400;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: clamp(9px, calc(2.1 * var(--u)), 11px);
-  padding: 10px 14px 10px 0;
+  font-size: 10px;
+  padding: 10px 18px 10px 0;
   border-bottom: 1px solid var(--rule);
   white-space: nowrap;
 }
 
 table.ledger td {
-  padding: 12px 14px 12px 0;
-  border-bottom: 1px solid var(--rule-soft);
+  padding: 13px 18px 13px 0;
+  border-bottom: 1px solid rgba(51, 50, 43, 0.5);
   color: var(--text-2);
   white-space: nowrap;
 }
@@ -388,166 +716,215 @@ table.ledger td.strong {
   overflow-x: auto;
 }
 
-/* --- empty state -------------------------------------------------------------------------- */
 /* Deliberately literal. An empty chain reads as empty, never as sample data. */
-
 .empty {
   border: 1px dashed var(--rule);
-  padding: clamp(26px, calc(7 * var(--u)), 44px);
+  padding: 46px;
   text-align: center;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: clamp(11px, calc(2.5 * var(--u)), 13px);
+  font-size: 12px;
   letter-spacing: 0.12em;
+  margin-top: 28px;
 }
 
-/* --- header / footer ---------------------------------------------------------------------- */
+/* --- form ---------------------------------------------------------------------------------------- */
 
-.bar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  height: var(--bar);
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--rule);
-  background: rgba(10, 10, 11, 0.86);
-  backdrop-filter: blur(14px);
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 40px;
 }
 
-.bar-inner {
-  display: flex;
-  align-items: center;
-  gap: clamp(14px, calc(4 * var(--u)), 34px);
-  width: 100%;
-}
-
-.wordmark {
-  font-family: var(--font-display);
-  font-size: clamp(13px, calc(3.2 * var(--u)), 16px);
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--text-1);
-  display: flex;
-  align-items: center;
-  gap: 0.7em;
-}
-
-.wordmark:hover {
-  color: var(--gold-bright);
-}
-
-.nav {
-  display: flex;
-  gap: clamp(10px, calc(2.6 * var(--u)), 22px);
-  margin-left: auto;
-  align-items: center;
-}
-
-.nav a {
+.field label {
+  display: block;
   font-family: var(--font-mono);
-  font-size: clamp(10px, calc(2.3 * var(--u)), 12px);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  padding: 4px 0;
-  border-bottom: 1px solid transparent;
-}
-
-.nav a:hover {
-  color: var(--text-1);
-}
-
-.nav a.active {
-  color: var(--gold);
-  border-bottom-color: var(--gold-deep);
-}
-
-.lang {
-  font-family: var(--font-mono);
-  font-size: clamp(10px, calc(2.3 * var(--u)), 12px);
-  letter-spacing: 0.16em;
-  border: 1px solid var(--rule);
-  background: transparent;
+  font-size: 10px;
+  letter-spacing: 0.24em;
   color: var(--text-2);
-  padding: 5px 10px;
-  cursor: pointer;
-  transition:
-    border-color 200ms ease,
-    color 200ms ease;
+  text-transform: uppercase;
+  margin-bottom: 14px;
 }
 
-.lang:hover {
-  border-color: var(--gold-deep);
-  color: var(--gold-bright);
+.field label .req {
+  color: var(--gold);
 }
 
-.foot {
-  border-top: 1px solid var(--rule);
-  padding-block: clamp(26px, calc(7 * var(--u)), 44px);
+.field input,
+.field select {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text-1);
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 6px 0 10px;
+  transition: border-color 0.2s ease;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-bottom-color: var(--gold);
+}
+
+.field select option {
+  background: var(--field);
+}
+
+.field .hint {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
   color: var(--muted);
+  margin-top: 10px;
+  text-transform: uppercase;
 }
 
-.foot .label {
-  color: var(--muted);
+.consent {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 34px;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  color: var(--text-2);
 }
 
-/* --- motion ------------------------------------------------------------------------------- */
-
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.consent input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--gold);
 }
 
-.rise {
-  animation: rise 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-
-.rise-2 {
-  animation-delay: 90ms;
-}
-
-.rise-3 {
-  animation-delay: 180ms;
-}
-
-.rise-4 {
-  animation-delay: 270ms;
-}
+/* --- motion --------------------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .rise {
-    animation: none;
-  }
-
   * {
     transition-duration: 1ms !important;
+    animation: none !important;
   }
 }
 
-/* --- mobile ------------------------------------------------------------------------------- */
+/* ===========================================================================================
+   MOBILE — the plate cannot letterbox down to a phone, so the home page gets its own
+   composition rather than a scaled-down one.
+   =========================================================================================== */
 
-@media (max-width: 760px) {
-  .bar {
-    height: auto;
-    padding-block: 12px;
+.mobile-home {
+  display: none;
+}
+
+@media (max-width: 900px), (orientation: portrait) {
+  body.home {
+    overflow: auto;
+    overflow-x: hidden;
   }
 
-  .bar-inner {
-    flex-wrap: wrap;
-    gap: 10px;
+  .hero,
+  .hero-stack,
+  .seals,
+  .hero-mark,
+  .hero-foot {
+    display: none;
   }
 
-  .nav {
-    margin-left: 0;
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 12px;
+  .demo-cta {
+    top: 20px;
+    right: 20px;
+    padding: 11px 16px;
+    font-size: 10px;
+  }
+
+  .lang-toggle {
+    top: 20px;
+    left: 20px;
+  }
+
+  .mobile-home {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 92px 28px 56px;
+    background:
+      url("/assets/paper.webp") center / cover no-repeat,
+      var(--black);
+    text-align: center;
+  }
+
+  .mobile-home .m-frame {
+    position: absolute;
+    inset: 14px;
+    border: 1px solid rgba(206, 166, 74, 0.22);
+    pointer-events: none;
+  }
+
+  .mobile-home .m-mark {
+    width: 148px;
+    height: 148px;
+    margin-bottom: 40px;
+  }
+
+  .mobile-home .m-word {
+    font-family: var(--font-display);
+    font-size: clamp(17px, 5.6vw, 22px);
+    letter-spacing: var(--ls-title);
+    margin-right: var(--ls-title);
+    color: var(--text-1);
+  }
+
+  .mobile-home .m-tagline {
+    font-family: var(--font-display);
+    font-size: clamp(8px, 2.4vw, 9.5px);
+    letter-spacing: calc(var(--ls-wide) + 0.02em);
+    line-height: 2.2;
+    margin-top: 16px;
+    color: var(--text-3);
+  }
+
+  .mobile-home .m-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 52px 0 36px;
+  }
+
+  .mobile-home .m-nav a {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    letter-spacing: var(--ls-wide);
+    color: #e8e5d6;
+    padding: 12px 20px;
+    text-transform: uppercase;
+  }
+
+  .mobile-home .m-foot {
+    font-family: var(--font-display);
+    font-size: clamp(6.5px, 2vw, 8px);
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    margin-top: 40px;
+  }
+
+  .sheet-bar {
+    padding: 24px 26px;
+  }
+
+  .sheet-nav {
+    gap: 18px;
+  }
+
+  .sheet-body {
+    width: calc(100% - 52px);
+  }
+
+  .cols-2,
+  .field-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
   }
 }

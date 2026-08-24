@@ -4,14 +4,14 @@ import { useI18n } from "../i18n";
 export default function NotFound() {
   const { t } = useI18n();
   return (
-    <section className="section">
-      <div className="shell stack">
-        <span className="label">404</span>
-        <h1 className="display display-l">{t("common.empty")}</h1>
-        <Link className="btn btn-quiet" to="/">
-          Assay
-        </Link>
-      </div>
-    </section>
+    <>
+      <p className="eyebrow">404</p>
+      <h1 className="plate-title" style={{ marginTop: 20 }}>
+        {t("common.empty")}
+      </h1>
+      <Link className="aureus-btn" to="/" style={{ marginTop: 34 }}>
+        Assay
+      </Link>
+    </>
   );
 }
