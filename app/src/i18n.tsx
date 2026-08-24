@@ -240,7 +240,14 @@ const en: Dict = {
 
 const DICTS: Record<Lang, Dict> = { zh, en };
 
-const STORAGE_KEY = "assay.lang";
+/**
+ * Versioned on purpose. An earlier build wrote the language on mount rather than on a click, so
+ * every visitor ended up with a value stored whether or not they ever chose one — which then
+ * outranked the site default forever and made changing that default a no-op for anyone who had
+ * already loaded the page once. Bumping the key retires those non-choices; only a real click
+ * writes to this one.
+ */
+const STORAGE_KEY = "assay.lang.v2";
 
 type I18n = {
   lang: Lang;
@@ -250,23 +257,33 @@ type I18n = {
 
 const Ctx = createContext<I18n | null>(null);
 
-/** English is the default; a visitor's explicit choice is remembered and wins over it. */
+/** English is the default. Only a language the visitor actually picked outranks it. */
+const DEFAULT_LANG: Lang = "en";
+
 function initialLang(): Lang {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return DEFAULT_LANG;
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === "en" || stored === "zh" ? stored : "en";
+  return stored === "en" || stored === "zh" ? stored : DEFAULT_LANG;
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLang] = useState<Lang>(initialLang);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, lang);
+    // Reflect the language, but do NOT persist here. Writing on mount would store a preference
+    // nobody expressed, and that stored non-choice would then override the site default for good.
     // Drives the CJK tracking overrides in styles.css and tells assistive tech what it is reading.
     document.documentElement.setAttribute("lang", lang === "zh" ? "zh" : "en");
   }, [lang]);
 
-  const toggle = useCallback(() => setLang((l) => (l === "zh" ? "en" : "zh")), []);
+  /** The only place a language is written down: an actual click. */
+  const toggle = useCallback(() => {
+    setLang((l) => {
+      const next: Lang = l === "zh" ? "en" : "zh";
+      window.localStorage.setItem(STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
   const t = useCallback((key: keyof Dict) => DICTS[lang][key], [lang]);
 
   const value = useMemo(() => ({ lang, t, toggle }), [lang, t, toggle]);
