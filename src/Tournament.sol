@@ -2,10 +2,10 @@
 pragma solidity 0.8.26;
 
 import {Crucible} from "./Crucible.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {
     VaultUISchema, VaultMethodSchema, FieldDescriptor, ApproveAction
-} from "./interfaces/IVaultSchemasV1.sol";
+} from "./flap/IVaultSchemasV1.sol";
 import {AgentRoster} from "./AgentRoster.sol";
 import {AssayVault} from "./AssayVault.sol";
 

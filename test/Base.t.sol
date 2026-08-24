@@ -9,7 +9,7 @@ import {AssayVault} from "../src/AssayVault.sol";
 import {Crucible} from "../src/Crucible.sol";
 import {MockIdentityRegistry} from "../src/mocks/MockIdentityRegistry.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {CrucibleHarness} from "./CrucibleHarness.sol";
 import {Bytecode} from "./Bytecode.sol";
 

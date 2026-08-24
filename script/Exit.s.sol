@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AssayVault} from "../src/AssayVault.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice Pulls every recoverable token back to the deployer.
 /// @dev Deliberately unable to fail as a whole. Each task is reclaimed inside its own try/catch,

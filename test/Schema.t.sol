@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
-import {VaultUISchema, VaultMethodSchema} from "../src/interfaces/IVaultSchemasV1.sol";
+import {VaultUISchema, VaultMethodSchema} from "../src/flap/IVaultSchemasV1.sol";
 import {Tournament} from "../src/Tournament.sol";
 
 /// @notice The schema is what a generic UI renders from, so the tests are about shape rather than

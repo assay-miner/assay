@@ -5,7 +5,7 @@ import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice Custody: who can move the money, and who cannot.
 ///

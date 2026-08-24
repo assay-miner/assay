@@ -8,7 +8,7 @@ import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice Deploys the ASSAY stack and writes a manifest the ops scripts read addresses out of.
 /// @dev The ERC-8004 registry is resolved from the chain id rather than an environment variable,
