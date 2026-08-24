@@ -250,10 +250,11 @@ type I18n = {
 
 const Ctx = createContext<I18n | null>(null);
 
+/** English is the default; a visitor's explicit choice is remembered and wins over it. */
 function initialLang(): Lang {
-  if (typeof window === "undefined") return "zh";
+  if (typeof window === "undefined") return "en";
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === "en" || stored === "zh" ? stored : "zh";
+  return stored === "en" || stored === "zh" ? stored : "en";
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
