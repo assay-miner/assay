@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
+import { LiveCell, Skeleton, usePolled } from "../components/Live";
 import { ADDRESSES, EXPLORER, isDeployed, shortAddress } from "../chain";
 import {
   callMethod,
@@ -26,7 +27,6 @@ const INFERABLE = new Set(["offset", "limit"]);
 /** A view whose output is an array — the thing that turns a page into cards. */
 function CardList({ method, viewer }: { method: MethodSchema; viewer: string }) {
   const { t } = useI18n();
-  const [rows, setRows] = useState<unknown[][] | null>(null);
   const [page, setPage] = useState(0);
   const PER = 4;
 
@@ -52,20 +52,13 @@ function CardList({ method, viewer }: { method: MethodSchema; viewer: string }) 
       return raw ? BigInt(raw) : 0n;
     });
 
-  useEffect(() => {
-    if (!ready) {
-      setRows(null);
-      return;
-    }
-    let live = true;
-    callMethod(method, argsFor(page))
-      .then((r) => live && setRows(r))
-      .catch(() => live && setRows([]));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method.name, page, viewer, queryKey, ready]);
+  // Polled, not read once. A tournament moves between phases while somebody is looking at it,
+  // and a page that froze at first paint would quietly show a closed window as still open.
+  const { value: rows, pulse } = usePolled(
+    async () => (ready ? await callMethod(method, argsFor(page)) : []),
+    [method.name, page, viewer, queryKey, ready],
+    6000,
+  );
 
   return (
     <section className="schema-block">
@@ -106,18 +99,25 @@ function CardList({ method, viewer }: { method: MethodSchema; viewer: string }) 
       {!ready ? (
         <div className="empty">{t("vault.needsInput")}</div>
       ) : rows === null ? (
-        <div className="empty">{t("common.loading")}</div>
+        <Skeleton rows={3} />
       ) : rows.length === 0 ? (
         <div className="empty">{t("common.empty")}</div>
       ) : (
-        <div className="card-grid">
+        <div className="card-grid" key={`${page}-${queryKey}`}>
           {rows.map((row, i) => (
-            <article key={i} className="plate-card">
+            <article
+              key={i}
+              className="plate-card is-live"
+              style={{ animationDelay: `${i * 70}ms` }}
+            >
+              <span className="live-dot" aria-hidden="true" />
               <dl>
                 {method.outputs.map((f, j) => (
                   <div key={f.name} className="kv">
                     <dt title={f.description}>{f.name}</dt>
-                    <dd>{formatCell(row[j], f)}</dd>
+                    <dd>
+                      <LiveCell value={row[j]} field={f} text={formatCell(row[j], f)} />
+                    </dd>
                   </div>
                 ))}
               </dl>
@@ -127,6 +127,7 @@ function CardList({ method, viewer }: { method: MethodSchema; viewer: string }) 
       )}
 
       <div className="pager">
+        <span className={pulse > 0 ? "poll-mark is-on" : "poll-mark"} aria-hidden="true" />
         <button className="pager-btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
           ‹
         </button>
@@ -177,21 +178,18 @@ function WriteForm({ method }: { method: MethodSchema }) {
 
 /** A view with scalar outputs — a plain readout. */
 function Readout({ method, viewer }: { method: MethodSchema; viewer: string }) {
-  const [row, setRow] = useState<unknown[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    const args = method.inputs.map((f) => (f.fieldType === "address" ? viewer : 0n));
-    callMethod(method, args)
-      .then((r) => live && setRow(r[0] ?? []))
-      .catch(() => live && setRow([]));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method.name, viewer]);
+  const { value: row } = usePolled(
+    async () => {
+      const args = method.inputs.map((f) => (f.fieldType === "address" ? viewer : 0n));
+      return (await callMethod(method, args))[0] ?? [];
+    },
+    [method.name, viewer],
+    8000,
+  );
 
   return (
-    <article className="plate-card">
+    <article className="plate-card is-live">
+      <span className="live-dot" aria-hidden="true" />
       <div className="schema-head">
         <h3 className="display-m">{method.name}</h3>
         <p className="schema-desc">{method.description}</p>
@@ -200,7 +198,9 @@ function Readout({ method, viewer }: { method: MethodSchema; viewer: string }) {
         {method.outputs.map((f, j) => (
           <div key={f.name} className="kv">
             <dt title={f.description}>{f.name}</dt>
-            <dd>{row ? formatCell(row[j], f) : "…"}</dd>
+            <dd>
+              {row ? <LiveCell value={row[j]} field={f} text={formatCell(row[j], f)} /> : "…"}
+            </dd>
           </div>
         ))}
       </dl>
@@ -213,7 +213,6 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 export default function Vault() {
   const { t } = useI18n();
   const [schema, setSchema] = useState<UISchema | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -221,11 +220,13 @@ export default function Vault() {
     readSchema()
       .then((s) => live && setSchema(s))
       .catch(() => live && setFailed(true));
-    readBanner().then((b) => live && setBanner(b));
     return () => {
       live = false;
     };
   }, []);
+
+  // The schema spec asks for description() to be polled as a live status banner, so it is.
+  const { value: banner } = usePolled(readBanner, [], 5000);
 
   if (!isDeployed) {
     return (
@@ -270,7 +271,12 @@ export default function Vault() {
       <p className="prose" style={{ marginTop: 22, textAlign: "left", maxWidth: "86ch" }}>
         {schema.description}
       </p>
-      {banner && <p className="banner">{banner}</p>}
+      {banner && (
+        <p className="banner" key={banner}>
+          <span className="banner-pip" aria-hidden="true" />
+          {banner}
+        </p>
+      )}
       <p className="schema-src">
         {t("vault.readFrom")}{" "}
         <a href={`${EXPLORER}/address/${ADDRESSES.tournament}`} target="_blank" rel="noreferrer">

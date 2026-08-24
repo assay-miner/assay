@@ -1142,3 +1142,180 @@ table.ledger td.strong {
 .query-row .write-field {
   min-width: 160px;
 }
+
+/* ===========================================================================================
+   Live schema page
+   Motion here is load-bearing, not decorative: a countdown that ticks tells you a window is
+   still open, and a value that flashes tells you the chain moved while you were looking.
+   =========================================================================================== */
+
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.plate-card.is-live {
+  position: relative;
+  animation: card-rise 520ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* A slow gold sweep across the card edge — the page breathing rather than sitting. */
+.plate-card.is-live::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 42%,
+    rgba(234, 198, 82, 0.07) 50%,
+    transparent 58%
+  );
+  background-size: 280% 100%;
+  animation: sheen 7s linear infinite;
+}
+
+@keyframes sheen {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+@keyframes pip {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.live-dot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  animation: pip 2.4s ease-in-out infinite;
+}
+
+.banner-pip {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  margin-right: 12px;
+  vertical-align: middle;
+  animation: pip 2.4s ease-in-out infinite;
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.banner {
+  animation: banner-in 420ms ease both;
+}
+
+/* A value that just changed is briefly struck in gold, then settles back to ink. */
+.rolling {
+  transition: color 700ms ease;
+}
+
+.rolling.is-changed {
+  color: var(--gold-bright);
+  text-shadow: 0 0 9px rgba(234, 198, 82, 0.45);
+  transition: none;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.clock.is-live {
+  color: var(--gold-bright);
+}
+
+.clock.is-past {
+  color: var(--muted);
+}
+
+.dim {
+  color: var(--muted);
+}
+
+/* The poll indicator on the pager: one blink per successful read. */
+.poll-mark {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--rule);
+  transition: background 400ms ease;
+}
+
+.poll-mark.is-on {
+  background: var(--gold-deep);
+  animation: pip 2.4s ease-in-out infinite;
+}
+
+/* Loading placeholders. A shimmering block reads as "coming", an empty box reads as "nothing". */
+.plate-card.is-skeleton {
+  pointer-events: none;
+}
+
+.shimmer {
+  display: inline-block;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(240, 237, 224, 0.05) 0%,
+    rgba(240, 237, 224, 0.12) 50%,
+    rgba(240, 237, 224, 0.05) 100%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plate-card.is-live,
+  .plate-card.is-live::after,
+  .live-dot,
+  .banner-pip,
+  .banner,
+  .poll-mark.is-on,
+  .shimmer {
+    animation: none !important;
+  }
+}

@@ -45,6 +45,12 @@ function stripCode(src) {
       .replace(/\b(className|style|href|to|rel|target|key|id|aria-hidden|focusable|viewBox|fill|stroke|strokeWidth|strokeLinejoin|strokeLinecap|d|width|height|type|value|name|path)\s*=\s*("[^"]*"|\{[^}]*\})/g, "")
       // template/expression braces holding identifiers
       .replace(/\{`[^`]*`\}/g, "")
+      // TypeScript generics. `() => Promise<T>` reads to the JSX-text pattern below as
+      // ">" then "Promise" then "<" — indistinguishable from a JSX text node. An identifier
+      // immediately followed by angle brackets is a type argument, never JSX (a JSX element
+      // opens with the bracket), so strip those. Stripping code keeps the rule's teeth;
+      // allow-listing the word "Promise" would have blinded it everywhere that word appears.
+      .replace(/\b([A-Za-z_$][\w$.]*)\s*<[^<>;{}]*>/g, "$1")
   );
 }
 
