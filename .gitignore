@@ -5,3 +5,4 @@ broadcast/
 .env
 app/.env.local
 app/dist/
+app/.vercel
