@@ -2463,6 +2463,57 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "payouts",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "stats",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "tasks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "openTasks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "unassignedBnb",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "committedBnb",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "paidBnb",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minersPaid",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "taxToken",
     "inputs": [],
     "outputs": [
@@ -2470,6 +2521,19 @@ export const assayflapvaultAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalPaid",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"

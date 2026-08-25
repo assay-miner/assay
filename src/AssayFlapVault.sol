@@ -25,6 +25,9 @@ import {Tournament} from "./Tournament.sol";
 ///      endowed, and can only ever leave to an address the tournament has already recorded a
 ///      score for. There is no owner, no upgrade path, and no sweep of endowed funds.
 contract AssayFlapVault is VaultBaseV2 {
+    /// @notice How far back `stats()` looks when counting still-open tasks.
+    uint256 private constant STATS_SCAN = 64;
+
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
 
@@ -43,6 +46,14 @@ contract AssayFlapVault is VaultBaseV2 {
 
     /// @notice Sum of every task's unpaid bounty. Revenue above this is not yet assigned.
     uint256 public endowed;
+
+    /// @notice BNB this vault has paid out across every task.
+    /// @dev Accumulated rather than summed on read: `stats()` is polled by a UI, and a view that
+    ///      walks every task would get slower for exactly the vaults that are doing well.
+    uint256 public totalPaid;
+
+    /// @notice How many miner payouts have been made.
+    uint256 public payouts;
 
     event RevenueReceived(address indexed from, uint256 amount);
     event Endowed(uint256 indexed taskId, uint256 amount, uint256 unassignedLeft);
@@ -119,10 +130,52 @@ contract AssayFlapVault is VaultBaseV2 {
         collected[taskId][msg.sender] = true;
         paid[taskId] += amount;
         endowed -= amount;
+        totalPaid += amount;
+        ++payouts;
 
         (bool ok, ) = msg.sender.call{value: amount}("");
         if (!ok) revert TransferFailed();
         emit BountyPaid(taskId, msg.sender, amount);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Headline numbers — the shape a generic vault UI can actually read
+    // -------------------------------------------------------------------------------------
+
+    /// @notice Everything a visitor should see at a glance, in one argument-free call.
+    ///
+    /// @dev Deliberately takes no arguments. Flap's generic vault renderer sorts a schema's
+    ///      methods into exactly two buckets — argument-free reads, and writes — and silently
+    ///      drops every read that needs a parameter. `getBounties` below is therefore invisible
+    ///      there however useful it is on our own page, so the numbers that matter have to be
+    ///      reachable from a call that asks for nothing.
+    ///
+    ///      `openTasks` scans the tail of the task list rather than all of it, so this stays
+    ///      cheap to poll no matter how many tournaments have already settled.
+    function stats()
+        external
+        view
+        returns (
+            uint256 tasks,
+            uint256 openTasks,
+            uint256 unassignedBnb,
+            uint256 committedBnb,
+            uint256 paidBnb,
+            uint256 minersPaid
+        )
+    {
+        tasks = tournament.taskCount();
+
+        uint256 from = tasks > STATS_SCAN ? tasks - STATS_SCAN : 0;
+        for (uint256 id = tasks; id > from; --id) {
+            (, , uint64 revealEnd, , , , , , ) = tournament.tasks(id);
+            if (block.timestamp < revealEnd) ++openTasks;
+        }
+
+        unassignedBnb = unassigned();
+        committedBnb = endowed;
+        paidBnb = totalPaid;
+        minersPaid = payouts;
     }
 
     // -------------------------------------------------------------------------------------
@@ -197,16 +250,36 @@ contract AssayFlapVault is VaultBaseV2 {
     // -------------------------------------------------------------------------------------
 
     /// @notice Describes this vault's interactive surface so a generic UI can render it.
-    /// @dev The pairing that produces cards with buttons: `getBounties` returns an array, and
-    ///      `collect` sits beside it as the action on each row. `getMiners` does the same for the
-    ///      leaderboard. A schema of scalar views alone renders as one flat column of numbers.
+    ///
+    /// @dev Written for two readers at once, which is why the order matters.
+    ///
+    ///      Our own page renders the whole schema: `getBounties` returns an array and `collect`
+    ///      sits beside it, which is the pairing that produces cards with a button on each row.
+    ///
+    ///      Flap's generic renderer is narrower — it shows argument-free reads and write methods,
+    ///      and drops everything else — so `stats` leads, carrying the same headline numbers in a
+    ///      form that survives there. Neither reader is given a schema shaped only for the other.
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
         schema.description = unicode"Trading tax becomes prize money for verified gas-optimisation work. Miners submit EVM runtime bytecode; the chain deploys it, runs every test vector and reads the meter. / 交易税变成可验证优化工作的奖金。矿工提交 EVM 运行时字节码,链把它部署、跑完全部测试向量、读取计量表。";
         schema.methods = new VaultMethodSchema[](4);
 
-        // 0 — the bounty cards.
+        // 0 — the headline numbers, argument-free so every UI can read them.
         VaultMethodSchema memory m = schema.methods[0];
+        m.name = "stats";
+        m.description = unicode"Prize money at a glance / 奖金总览";
+        m.inputs = new FieldDescriptor[](0);
+        m.outputs = new FieldDescriptor[](6);
+        m.outputs[0] = FieldDescriptor("tasks", "uint256", unicode"Tasks posted / 已发布任务", 0);
+        m.outputs[1] = FieldDescriptor("openTasks", "uint256", unicode"Still open / 进行中", 0);
+        m.outputs[2] = FieldDescriptor("unassignedBnb", "uint256", unicode"Tax awaiting a task / 待投入任务的税", 18);
+        m.outputs[3] = FieldDescriptor("committedBnb", "uint256", unicode"Behind live bounties / 已投入赏金", 18);
+        m.outputs[4] = FieldDescriptor("paidBnb", "uint256", unicode"Paid to miners / 已付给矿工", 18);
+        m.outputs[5] = FieldDescriptor("minersPaid", "uint256", unicode"Payouts made / 支付笔数", 0);
+        m.approvals = new ApproveAction[](0);
+
+        // 1 — the bounty cards.
+        m = schema.methods[1];
         m.name = "getBounties";
         m.description = unicode"Every task and its BNB bounty, newest first / 全部任务及其 BNB 赏金,最新在前";
         m.inputs = new FieldDescriptor[](3);
@@ -226,8 +299,8 @@ contract AssayFlapVault is VaultBaseV2 {
         m.approvals = new ApproveAction[](0);
         m.isOutputArray = true;
 
-        // 1 — the button on every card.
-        m = schema.methods[1];
+        // 2 — the button on every card.
+        m = schema.methods[2];
         m.name = "collect";
         m.description = unicode"Collect your share of a task's BNB bounty / 领取你在该任务 BNB 赏金中的份额";
         m.inputs = new FieldDescriptor[](1);
@@ -235,15 +308,6 @@ contract AssayFlapVault is VaultBaseV2 {
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
-
-        // 2 — revenue readout.
-        m = schema.methods[2];
-        m.name = "unassigned";
-        m.description = unicode"Trading tax received but not yet put behind a task / 已收到但尚未投入任务的交易税";
-        m.inputs = new FieldDescriptor[](0);
-        m.outputs = new FieldDescriptor[](1);
-        m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"BNB / BNB", 18);
-        m.approvals = new ApproveAction[](0);
 
         // 3 — putting revenue behind a task.
         m = schema.methods[3];
