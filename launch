@@ -39,16 +39,25 @@ echo "manifest $MANIFEST"
 cat "$MANIFEST"
 
 # Chain the addresses into the frontend rather than asking anyone to copy them.
+# jq prints the string "null" for a key that is absent and the zero address for one that was
+# skipped; neither is an address, and either would make the site read a contract that is not
+# there. Write the key only when there is something real behind it.
+FLAP_VAULT="$(jq -r '.flapVault // ""' "$MANIFEST")"
+case "$FLAP_VAULT" in
+  0x0000000000000000000000000000000000000000|null|"") FLAP_VAULT="" ;;
+esac
+
 {
   echo "VITE_CHAIN_ID=$CHAIN_ID"
   echo "VITE_TOURNAMENT=$(jq -r .tournament "$MANIFEST")"
   echo "VITE_ROSTER=$(jq -r .roster "$MANIFEST")"
   echo "VITE_VAULT=$(jq -r .vault "$MANIFEST")"
   echo "VITE_TOKEN=$(jq -r .token "$MANIFEST")"
+  [ -n "$FLAP_VAULT" ] && echo "VITE_FLAP_VAULT=$FLAP_VAULT"
 } > app/.env.local
 echo
 echo "wrote app/.env.local:"
 cat app/.env.local
 echo
 echo "NOTE: a hosted build reads the HOST's environment variables, not this file."
-echo "      Set the same four in the hosting dashboard before deploying the site."
+echo "      Set the same ones in the hosting dashboard before deploying the site."

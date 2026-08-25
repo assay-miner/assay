@@ -20,6 +20,15 @@ MANIFEST="deployments/${CHAIN_ID}-latest.json"
 
 export TOURNAMENT="$(jq -r .tournament "$MANIFEST")"
 export TOKEN="$(jq -r .token "$MANIFEST")"
+
+# The tax layer is optional and its address is chained, never pasted. jq prints "null" for an
+# absent key; that is not an address, and neither is the zero one.
+FLAP_VAULT="$(jq -r '.flapVault // ""' "$MANIFEST")"
+case "$FLAP_VAULT" in
+  0x0000000000000000000000000000000000000000|null|"") FLAP_VAULT="" ;;
+esac
+[ -n "$FLAP_VAULT" ] && export FLAP_VAULT
+
 export TASK_SPEC="${TASK_SPEC:-tasks/square.json}"
 [ -s "$TASK_SPEC" ] || { echo "task spec not found: $TASK_SPEC" >&2; exit 1; }
 
