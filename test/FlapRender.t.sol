@@ -29,7 +29,13 @@ import {VaultUISchema, VaultMethodSchema, FieldDescriptor} from "../src/flap/IVa
 contract FlapRenderTest is Test {
     AssayFlapVault vault;
 
+    /// @dev Forked, and deliberately not skipped when the fork fails. The vault resolves its
+    ///      reward token and router from `block.chainid` at construction, so on a bare local
+    ///      chain it cannot exist at all — a version of this that quietly passed without a fork
+    ///      would be reporting on a contract it never built.
     function setUp() public {
+        vm.createSelectFork(vm.envOr("BSC_RPC", string("https://bsc-rpc.publicnode.com")));
+
         AssayToken token = new AssayToken(address(this));
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18, address(this));

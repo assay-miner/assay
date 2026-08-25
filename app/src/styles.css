@@ -166,15 +166,30 @@ body.home {
   display: block;
 }
 
-/* Plate coordinate (1873, 143), but never allowed off-screen: under `cover` the plate
-   overflows horizontally on wide viewports, which would push an edge-anchored element out
-   of the window. `max()` keeps it registered with the engraving when there is room and
-   pinned to the margin when there is not. */
-.demo-cta {
-  position: fixed;
-  top: max(24px, calc(50vh + (143 - 540) * var(--u)));
-  right: max(24px, calc(50vw - (1873 - 1000) * var(--u)));
-  z-index: 5;
+/* Both controls used to be pinned to the window corners, which put them on the code-rain
+   outside the engraved frame — the primary action of the site rendered as its faintest mark.
+   They now sit inside the plate, in the stack, and scale in plate units with everything else. */
+.hero-actions {
+  margin-top: calc(30 * var(--u));
+  display: flex;
+  align-items: stretch;
+  gap: calc(14 * var(--u));
+}
+
+.hero-actions .demo-cta {
+  font-size: calc(13 * var(--u));
+  padding: calc(15 * var(--u)) calc(30 * var(--u));
+}
+
+.hero-actions .lang-toggle,
+.m-actions .lang-toggle {
+  position: static;
+}
+
+.hero-actions .lang-toggle {
+  font-size: calc(12 * var(--u));
+  padding: calc(15 * var(--u)) calc(18 * var(--u));
+  letter-spacing: calc(2 * var(--u));
 }
 
 .hero-mark {
@@ -193,7 +208,7 @@ body.home {
 .hero-stack {
   position: fixed;
   left: 50vw;
-  top: calc(50vh + (452 - 540) * var(--u));
+  top: calc(50vh + (438 - 540) * var(--u));
   transform: translateX(-50%);
   z-index: 5;
   display: flex;
@@ -217,7 +232,7 @@ body.home {
   font-family: var(--font-display);
   font-size: calc(13.5 * var(--u));
   letter-spacing: calc(6.4 * var(--u));
-  margin-top: calc(26 * var(--u));
+  margin-top: calc(18 * var(--u));
   color: var(--text-3);
   line-height: 1.2;
   text-transform: uppercase;
@@ -231,19 +246,40 @@ body.home {
   color: var(--text-2);
 }
 
+/* Struck plates rather than a line of words joined by em dashes: at plate scale the run-on
+   line read as a caption, and the five destinations of the whole site were the least
+   clickable-looking thing on the screen. The frame is what makes them read as controls —
+   so it stays hairline and neutral, leaving the gold ground to the one primary action. */
 .bond-nav {
-  margin-top: calc(52 * var(--u));
+  margin-top: calc(32 * var(--u));
   font-family: var(--font-mono);
-  font-size: calc(21.5 * var(--u));
-  letter-spacing: calc(5 * var(--u));
+  font-size: calc(15 * var(--u));
+  letter-spacing: calc(3.4 * var(--u));
   line-height: 1;
   color: var(--text-3);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(12 * var(--u));
 }
 
 .bond-nav a {
+  display: block;
   color: #e8e5d6;
-  transition: color 0.15s ease;
   text-transform: uppercase;
+  border: 1px solid var(--rule);
+  background: rgba(10, 10, 11, 0.55);
+  padding: calc(13 * var(--u)) calc(17 * var(--u));
+  text-indent: calc(3.4 * var(--u));
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.bond-nav a:hover {
+  border-color: var(--gold-deep);
+  background: rgba(206, 166, 74, 0.07);
 }
 
 .bond-nav a:hover {
@@ -262,13 +298,8 @@ body.home {
   outline-offset: 5px;
 }
 
-.bond-nav .sep {
-  color: var(--muted);
-  padding: 0 calc(10 * var(--u));
-}
-
 .endorsements {
-  margin-top: calc(60 * var(--u));
+  margin-top: calc(34 * var(--u));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -289,7 +320,7 @@ body.home {
 
 .endorsements .row {
   display: flex;
-  gap: calc(16 * var(--u));
+  gap: calc(14 * var(--u));
 }
 
 .endorsements .chip {
@@ -812,7 +843,8 @@ table.ledger td.strong {
    composition rather than a scaled-down one.
    =========================================================================================== */
 
-.mobile-home {
+.mobile-home,
+.m-actions {
   display: none;
 }
 
@@ -830,16 +862,23 @@ table.ledger td.strong {
     display: none;
   }
 
-  .demo-cta {
-    top: 20px;
-    right: 20px;
-    padding: 11px 16px;
-    font-size: 10px;
+  /* The phone composition owns the same two controls; they are laid out here rather than
+     pinned to the corners, for the same reason as on the plate. */
+  .m-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 34px;
   }
 
-  .lang-toggle {
-    top: 20px;
-    left: 20px;
+  .m-actions .demo-cta {
+    padding: 13px 20px;
+    font-size: 10.5px;
+  }
+
+  .m-actions .lang-toggle {
+    padding: 13px 15px;
+    font-size: 10.5px;
   }
 
   .mobile-home {

@@ -14,6 +14,19 @@ import { useRetype } from "../useRetype";
  * because the retype animation has to reach the individual <text> nodes inside it.
  */
 
+/**
+ * An SVG id is document-global, and the medallion is inlined twice — once on the plate, once in
+ * the phone composition. The second copy's `clip-path="url(#hmCrucible)"` therefore resolved to
+ * the *first* copy's, which sits inside a `display:none` subtree on a phone: the clip came back
+ * empty and the crucible rendered unclipped, as a solid gold-hatched square. Namespacing each
+ * instance's ids is the whole fix.
+ */
+function scopeIds(svg: string, suffix: string): string {
+  return svg
+    .replace(/id="([^"]+)"/g, `id="$1-${suffix}"`)
+    .replace(/url\(#([^)]+)\)/g, `url(#$1-${suffix})`);
+}
+
 /** Plate x-coordinates for the three seals struck along the bottom of the engraving. */
 const SEAL_X = [620, 1000, 1380] as const;
 
@@ -36,14 +49,24 @@ export default function Home() {
   const nav = (
     <>
       <Link to="/mechanism">{t("nav.mechanism")}</Link>
-      <span className="sep">—</span>
       <Link to="/tasks">{t("nav.tasks")}</Link>
-      <span className="sep">—</span>
       <Link to="/vault">{t("nav.vault")}</Link>
-      <span className="sep">—</span>
       <Link to="/docs">{t("nav.docs")}</Link>
-      <span className="sep">—</span>
       <Link to="/contact">{t("nav.contact")}</Link>
+    </>
+  );
+
+  /* The two controls live inside the plate rather than in the window corners: pinned to the
+     viewport they sat on the code-rain, outside the engraved frame the eye reads as the page,
+     and the primary action of the whole site was the faintest thing on it. */
+  const actions = (
+    <>
+      <Link className="aureus-btn demo-cta" to="/docs">
+        {t("home.cta")}
+      </Link>
+      <button className="lang-toggle" onClick={toggle}>
+        {t("nav.switchTo")}
+      </button>
     </>
   );
 
@@ -57,20 +80,13 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: heroSvg }}
       />
 
-      <button className="lang-toggle" onClick={toggle}>
-        {t("nav.switchTo")}
-      </button>
-
-      <Link className="aureus-btn demo-cta" to="/docs">
-        {t("home.cta")}
-      </Link>
-
-      <div className="hero-mark" dangerouslySetInnerHTML={{ __html: medallionSvg }} />
+      <div className="hero-mark" dangerouslySetInnerHTML={{ __html: scopeIds(medallionSvg, "plate") }} />
 
       <div className="hero-stack">
         <h1 className="hero-word">Assay</h1>
         <p className="hero-tagline">{t("home.tagline")}</p>
         <nav className="bond-nav">{nav}</nav>
+        <div className="hero-actions">{actions}</div>
         <div className="endorsements">
         <p className="caption">{t("home.builtOn")}</p>
         <div className="row">
@@ -107,7 +123,7 @@ export default function Home() {
       {/* --- mobile: its own composition; the plate cannot letterbox onto a phone --- */}
       <div className="mobile-home">
         <div className="m-frame" />
-        <div className="m-mark" dangerouslySetInnerHTML={{ __html: medallionSvg }} />
+        <div className="m-mark" dangerouslySetInnerHTML={{ __html: scopeIds(medallionSvg, "phone") }} />
         <h1 className="m-word">Assay</h1>
         <p className="m-tagline">{t("home.tagline")}</p>
         <nav className="m-nav">
@@ -117,6 +133,7 @@ export default function Home() {
           <Link to="/docs">{t("nav.docs")}</Link>
           <Link to="/contact">{t("nav.contact")}</Link>
         </nav>
+        <div className="m-actions">{actions}</div>
         <p className="m-foot">{t("foot.legal")}</p>
       </div>
     </>

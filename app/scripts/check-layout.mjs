@@ -24,12 +24,12 @@ const LEAVES = [
   ".hero-mark",
   ".hero-word",
   ".hero-tagline",
-  ".bond-nav",
+  ".bond-nav a",
+  ".hero-actions .demo-cta",
+  ".hero-actions .lang-toggle",
   ".endorsements",
   ".seals .seal",
   ".hero-foot",
-  ".demo-cta",
-  ".lang-toggle",
 ];
 
 const SIZES = [
@@ -46,7 +46,10 @@ let failed = 0;
 for (const lang of ["zh", "en"]) {
   for (const [width, height] of SIZES) {
     const page = await browser.newPage({ viewport: { width, height } });
-    await page.addInitScript((l) => localStorage.setItem("assay.lang", l), lang);
+    // The key is versioned. Seeding the old one silently ran both passes in English, so
+    // every "zh" line below was a duplicate of the "en" line above it and the Han layout
+    // — the one that actually breaks, since the tagline is set larger — went unmeasured.
+    await page.addInitScript((l) => localStorage.setItem("assay.lang.v2", l), lang);
     await page.goto(URL, { waitUntil: "networkidle" });
 
     const bad = await page.evaluate((sel) => {
@@ -83,7 +86,24 @@ for (const lang of ["zh", "en"]) {
       return { hits: [...new Set(hits)], off: [...new Set(off)] };
     }, LEAVES);
 
+    // An SVG id is document-global. Inlining the same artwork twice silently points the
+    // second copy's clip-paths at the first copy's — which is how a clipped crucible became
+    // a solid gold square on phones while every desktop check stayed green.
+    const dupes = await page.evaluate(() => {
+      const seen = new Map();
+      for (const el of document.querySelectorAll("svg [id], svg[id]")) {
+        seen.set(el.id, (seen.get(el.id) ?? 0) + 1);
+      }
+      return [...seen].filter(([, n]) => n > 1).map(([id]) => id);
+    });
+
     const tag = `${lang} ${width}x${height}`;
+    if (dupes.length) {
+      failed++;
+      console.log(`  FAIL ${tag}  duplicate svg ids=${JSON.stringify(dupes)}`);
+      await page.close();
+      continue;
+    }
     if (bad.hits.length || bad.off.length) {
       failed++;
       console.log(

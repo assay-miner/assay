@@ -2345,12 +2345,23 @@ export const assayflapvaultAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "amount",
+        "name": "bnbAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRewardOut",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "rewardOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -2403,12 +2414,12 @@ export const assayflapvaultAbi = [
             "internalType": "uint256"
           },
           {
-            "name": "bountyBnb",
+            "name": "bountyBtcb",
             "type": "uint256",
             "internalType": "uint256"
           },
           {
-            "name": "paidBnb",
+            "name": "paidBtcb",
             "type": "uint256",
             "internalType": "uint256"
           },
@@ -2433,7 +2444,7 @@ export const assayflapvaultAbi = [
             "internalType": "uint256"
           },
           {
-            "name": "yourBnb",
+            "name": "yourBtcb",
             "type": "uint256",
             "internalType": "uint256"
           }
@@ -2476,6 +2487,82 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "quote",
+    "inputs": [
+      {
+        "name": "bnbAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "rewardOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reward",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "router",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IPancakeRouter02"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "solvent",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sponsor",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "stats",
     "inputs": [],
     "outputs": [
@@ -2495,12 +2582,12 @@ export const assayflapvaultAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "committedBnb",
+        "name": "committedBtcb",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "paidBnb",
+        "name": "paidBtcb",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -2693,6 +2780,19 @@ export const assayflapvaultAbi = [
     "stateMutability": "pure"
   },
   {
+    "type": "function",
+    "name": "wrappedNative",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "BountyPaid",
     "inputs": [
@@ -2728,7 +2828,13 @@ export const assayflapvaultAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "amount",
+        "name": "bnbIn",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "rewardOut",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2762,6 +2868,31 @@ export const assayflapvaultAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "Sponsored",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "from",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AlreadyCollected",
     "inputs": []
@@ -2778,8 +2909,24 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "error",
+    "name": "NothingToSponsor",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NothingUnassigned",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2788,12 +2935,18 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "error",
-    "name": "TransferFailed",
-    "inputs": []
+    "name": "UnsupportedChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
-    "name": "UnsupportedChain",
+    "name": "UnsupportedRewardChain",
     "inputs": [
       {
         "name": "chainId",
