@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 import { LiveCell, Skeleton, usePolled } from "../components/Live";
-import { ADDRESSES, EXPLORER, isDeployed, shortAddress } from "../chain";
+import { EXPLORER, SCHEMA_TARGET, isDeployed, shortAddress } from "../chain";
 import {
   callMethod,
   formatCell,
@@ -279,8 +279,8 @@ export default function Vault() {
       )}
       <p className="schema-src">
         {t("vault.readFrom")}{" "}
-        <a href={`${EXPLORER}/address/${ADDRESSES.tournament}`} target="_blank" rel="noreferrer">
-          {shortAddress(ADDRESSES.tournament ?? ZERO)}
+        <a href={`${EXPLORER}/address/${SCHEMA_TARGET}`} target="_blank" rel="noreferrer">
+          {shortAddress(SCHEMA_TARGET ?? ZERO)}
         </a>{" "}
         · vaultUISchema() · {schema.methods.length} {t("vault.methods")}
       </p>

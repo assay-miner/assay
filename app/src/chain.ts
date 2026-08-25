@@ -44,7 +44,18 @@ export const ADDRESSES = {
   token: envAddress(import.meta.env.VITE_TOKEN),
   /** Custody. Every token the protocol holds lives here and nowhere else. */
   vault: envAddress(import.meta.env.VITE_VAULT),
+  /** The Flap-facing vault, when this deployment has one. */
+  flapVault: envAddress(import.meta.env.VITE_FLAP_VAULT),
 };
+
+/**
+ * Whose schema the vault page renders.
+ *
+ * The Flap vault when there is one, because that is the contract Flap's own UI reaches; the
+ * tournament otherwise. Both implement the same schema, which is the point — the renderer does
+ * not care which it is pointed at.
+ */
+export const SCHEMA_TARGET: Address | null = ADDRESSES.flapVault ?? ADDRESSES.tournament;
 
 export const isDeployed = ADDRESSES.tournament !== null && ADDRESSES.token !== null;
 

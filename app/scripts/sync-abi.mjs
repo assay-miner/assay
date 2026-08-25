@@ -16,7 +16,7 @@ const repo = resolve(here, "..", "..");
 const outDir = resolve(repo, "out");
 const target = resolve(here, "..", "src", "abi.ts");
 
-const CONTRACTS = ["Tournament", "AgentRoster", "AssayToken"];
+const CONTRACTS = ["Tournament", "AgentRoster", "AssayToken", "AssayFlapVault"];
 
 function loadAbi(name) {
   const path = resolve(outDir, `${name}.sol`, `${name}.json`);

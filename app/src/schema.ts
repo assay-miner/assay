@@ -1,6 +1,6 @@
 import { decodeFunctionResult, encodeFunctionData, type Abi, type Address } from "viem";
-import { ADDRESSES, client } from "./chain";
-import { tournamentAbi } from "./abi";
+import { ADDRESSES, SCHEMA_TARGET, client } from "./chain";
+import { assayflapvaultAbi, tournamentAbi } from "./abi";
 
 /**
  * The on-chain UI schema, and enough machinery to render a page from it.
@@ -45,22 +45,23 @@ export function abiTypeOf(f: FieldDescriptor): string {
   return f.fieldType === "time" ? "uint256" : f.fieldType;
 }
 
+const SCHEMA_ABI = ADDRESSES.flapVault ? assayflapvaultAbi : tournamentAbi;
+
 export async function readSchema(): Promise<UISchema | null> {
-  if (!ADDRESSES.tournament) return null;
-  const raw = (await client().readContract({
-    address: ADDRESSES.tournament,
-    abi: tournamentAbi,
+  if (!SCHEMA_TARGET) return null;
+  return (await client().readContract({
+    address: SCHEMA_TARGET,
+    abi: SCHEMA_ABI,
     functionName: "vaultUISchema",
   })) as UISchema;
-  return raw;
 }
 
 export async function readBanner(): Promise<string | null> {
-  if (!ADDRESSES.tournament) return null;
+  if (!SCHEMA_TARGET) return null;
   try {
     return (await client().readContract({
-      address: ADDRESSES.tournament,
-      abi: tournamentAbi,
+      address: SCHEMA_TARGET,
+      abi: SCHEMA_ABI,
       functionName: "description",
     })) as string;
   } catch {
@@ -77,7 +78,7 @@ export async function callMethod(
   method: MethodSchema,
   args: readonly unknown[],
 ): Promise<unknown[][]> {
-  if (!ADDRESSES.tournament) return [];
+  if (!SCHEMA_TARGET) return [];
 
   const inputTypes = method.inputs.map((f) => ({ name: f.name, type: abiTypeOf(f) }));
   const outputTuple = {
@@ -101,7 +102,7 @@ export async function callMethod(
 
     try {
       const data = encodeFunctionData({ abi, functionName: method.name, args: args as never });
-      const res = await client().call({ to: ADDRESSES.tournament as Address, data });
+      const res = await client().call({ to: SCHEMA_TARGET as Address, data });
       if (!res.data) return [];
       const decoded = decodeFunctionResult({ abi, functionName: method.name, data: res.data });
 
@@ -112,6 +113,13 @@ export async function callMethod(
         const rows = decoded as unknown as Record<string, unknown>[];
         if (!Array.isArray(rows)) return [];
         return rows.map((r) => method.outputs.map((f) => r[f.name]));
+      }
+      // A single-value return comes back unwrapped, and under the tuple shape it arrives as a
+      // named object rather than a value — rendering that straight to a cell printed
+      // "[object Object]" where a number belonged. Pull the fields out by name.
+      if (decoded && typeof decoded === "object" && !Array.isArray(decoded)) {
+        const r = decoded as Record<string, unknown>;
+        return [method.outputs.map((f) => r[f.name])];
       }
       if (Array.isArray(decoded)) {
         const first = decoded[0];
