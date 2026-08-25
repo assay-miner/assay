@@ -15,7 +15,7 @@ Four files, which is all the template permits: `Component.tsx`, `manifest.json`,
 `--check` in CI; nothing else would catch a signature change, because this package is built
 outside this repo.
 
-## What could not come across from assaymine.cash
+## What could not come across from the protocol site
 
 The runtime blocks external resources outright, and the identity leans on two of them:
 

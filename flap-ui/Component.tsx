@@ -11,9 +11,9 @@ import { vaultAbi } from "./VaultABI";
  * ASSAY's own vault surface.
  *
  * The palette, the mono-uppercase labelling, the hairline rules and the struck-plate button are
- * assaymine.cash's, carried across as CSS. Two things could not come with them and are not
- * pretended at: the site's display faces are loaded from a font host this runtime does not reach,
- * and its paper and gold-etch textures are image files, which are only admissible here through a
+ * the protocol's, carried across as CSS. Two things could not come with them and are not
+ * pretended at: the display faces are loaded from a font host this runtime does not reach, and
+ * the paper and gold-etch textures are image files, which are only admissible here through a
  * pinned IPFS CID. The gold is a gradient instead of a photograph of one, and the crucible is
  * drawn rather than placed.
  */
