@@ -162,6 +162,42 @@ contract RewardAssetTest is BaseTest {
         assertEq(flap.collect(taskId), amount, "a lone scorer takes the whole sponsored pot");
     }
 
+    /// @notice Money cannot be put behind a task that does not exist.
+    ///
+    /// @dev The failure this prevents is silent and total. There is no owner and no sweep here,
+    ///      so BTCB booked against a task id nobody will ever score on cannot be recovered by
+    ///      anyone, ever — a mistyped digit in an ops script is a permanent loss, and every
+    ///      accounting readout would still balance afterwards.
+    function test_CannotEndowBehindATaskThatDoesNotExist() public {
+        _tax(2 ether);
+        uint256 live = tournament.taskCount();
+
+        vm.prank(CURATOR);
+        vm.expectRevert(abi.encodeWithSelector(AssayFlapVault.NoSuchTask.selector, live + 1));
+        flap.endow(live + 1, 1 ether, 0);
+
+        vm.prank(CURATOR);
+        vm.expectRevert(abi.encodeWithSelector(AssayFlapVault.NoSuchTask.selector, uint256(0)));
+        flap.endow(0, 1 ether, 0);
+
+        assertEq(flap.endowed(), 0, "nothing was booked");
+        assertEq(flap.unassigned(), 2 ether, "and nothing was spent");
+    }
+
+    function test_CannotSponsorATaskThatDoesNotExist() public {
+        uint256 amount = 1e15;
+        deal(BTCB, SPONSOR, amount);
+        uint256 live = tournament.taskCount();
+
+        vm.startPrank(SPONSOR);
+        IERC20(BTCB).approve(address(flap), amount);
+        vm.expectRevert(abi.encodeWithSelector(AssayFlapVault.NoSuchTask.selector, live + 99));
+        flap.sponsor(live + 99, amount);
+        vm.stopPrank();
+
+        assertEq(IERC20(BTCB).balanceOf(SPONSOR), amount, "the sponsor keeps their tokens");
+    }
+
     /// @notice The headline numbers report the two assets separately, because they are two assets.
     function test_StatsSeparatesTheCoinFromTheToken() public {
         _tax(3 ether);

@@ -2904,6 +2904,17 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "error",
+    "name": "NoSuchTask",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "NotCurator",
     "inputs": []
   },

@@ -85,6 +85,7 @@ contract AssayFlapVault is VaultBaseV2 {
     error NotCurator();
     error NothingUnassigned();
     error NothingToSponsor();
+    error NoSuchTask(uint256 taskId);
     error UnsupportedRewardChain(uint256 chainId);
     error TaskNotSettled();
     error NoScore();
@@ -159,6 +160,7 @@ contract AssayFlapVault is VaultBaseV2 {
         returns (uint256 rewardOut)
     {
         if (msg.sender != curator && msg.sender != _getGuardian()) revert NotCurator();
+        _requireTask(taskId);
         uint256 free = unassigned();
         if (bnbAmount == 0 || bnbAmount > free) revert NothingUnassigned();
 
@@ -182,10 +184,19 @@ contract AssayFlapVault is VaultBaseV2 {
     ///      wants to make larger is a bounty that gets solved harder.
     function sponsor(uint256 taskId, uint256 amount) external {
         if (amount == 0) revert NothingToSponsor();
+        _requireTask(taskId);
         reward.safeTransferFrom(msg.sender, address(this), amount);
         bounty[taskId] += amount;
         endowed += amount;
         emit Sponsored(taskId, msg.sender, amount);
+    }
+
+    /// @dev Money behind a task that does not exist is money nobody can ever take out: no score
+    ///      is ever recorded against it, so `collectable` stays zero and `collect` reverts for
+    ///      good. There is no owner and no sweep here by design, which makes a mistyped task id
+    ///      a permanent loss rather than an inconvenience. Task ids start at one.
+    function _requireTask(uint256 taskId) internal view {
+        if (taskId == 0 || taskId > tournament.taskCount()) revert NoSuchTask(taskId);
     }
 
     /// @notice What one BNB of accumulated tax would currently convert to.
