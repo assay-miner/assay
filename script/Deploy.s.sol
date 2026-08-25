@@ -164,14 +164,15 @@ contract Deploy is Script {
         // launched until that token exists, so this is part of the launch and not a second
         // errand — which also means the vault address is chained into the manifest instead of
         // being read off a console and pasted somewhere later.
-        address flapFactory;
+        // The factory is part of the stack, not part of the token launch. Skipping the launch and
+        // skipping the factory were the same flag once, so a deploy that deliberately held the
+        // token back also produced no factory — and the factory is the contract Flap audits.
+        FlapVenue memory venue = flapVenueFor(block.chainid);
+        address flapFactory = address(new AssayFlapFactory(tournament));
         address taxToken;
         address flapVault;
-        if (!vm.envOr("SKIP_TOKEN", false)) {
-            FlapVenue memory venue = flapVenueFor(block.chainid);
-            AssayFlapFactory factory = new AssayFlapFactory(tournament);
-            flapFactory = address(factory);
 
+        if (!vm.envOr("SKIP_TOKEN", false)) {
             bytes32 salt = mineVanitySalt(
                 venue,
                 vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode("assay.v1", deployer))))
