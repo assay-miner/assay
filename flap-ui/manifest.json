@@ -1,0 +1,19 @@
+{
+  "artifactId": "vaultui_assay_01M0VSZZMEMB626W2PMXA5ZCBA",
+  "name": "ASSAY Vault UI",
+  "match": {
+    "bindings": [
+      {
+        "chainId": 97,
+        "factoryAddress": "0xD14374792Ce83A32ad4207E7cD33bB8DD9D0b744",
+        "tokenAddresses": [
+          "0x58CF2B2F576aC074dB5128Fe7CfF3F45cD557777"
+        ]
+      }
+    ]
+  },
+  "i18n": [
+    "en",
+    "zh"
+  ]
+}
