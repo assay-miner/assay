@@ -25,7 +25,7 @@ contract RewardAssetTest is BaseTest {
     AssayFlapVault internal flap;
 
     function setUp() public override {
-        vm.createSelectFork(vm.envOr("BSC_RPC", string("https://bsc-rpc.publicnode.com")));
+        vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
         flap = new AssayFlapVault(tournament, address(token), CURATOR);
     }

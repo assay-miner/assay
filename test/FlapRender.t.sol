@@ -34,7 +34,7 @@ contract FlapRenderTest is Test {
     ///      chain it cannot exist at all — a version of this that quietly passed without a fork
     ///      would be reporting on a contract it never built.
     function setUp() public {
-        vm.createSelectFork(vm.envOr("BSC_RPC", string("https://bsc-rpc.publicnode.com")));
+        vm.createSelectFork(vm.rpcUrl("bsc"));
 
         AssayToken token = new AssayToken(address(this));
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));

@@ -57,7 +57,7 @@ contract FlapGateTest is Test {
     bool internal forked;
 
     function setUp() public {
-        try vm.createSelectFork(vm.envOr("BSC_RPC", string("https://bsc-rpc.publicnode.com"))) {
+        try vm.createSelectFork(vm.rpcUrl("bsc")) {
             forked = true;
         } catch {
             forked = false;

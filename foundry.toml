@@ -28,6 +28,8 @@ line_length = 100
 tab_width = 4
 
 [rpc_endpoints]
-# bsc-dataseed.binance.org refuses connections from here; this one answers.
-bsc = "https://bsc-rpc.publicnode.com"
+# Must serve state at a recent block, not just the head: a fork test reads storage at the block
+# it pinned. bsc-rpc.publicnode.com answers `eth_blockNumber` and then 403s the storage read
+# behind an archive paywall, which fails the suite for a reason that is not the code.
+bsc = "https://bsc-dataseed.bnbchain.org"
 bsc_testnet = "https://bsc-testnet-rpc.publicnode.com"

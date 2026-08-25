@@ -32,7 +32,7 @@ contract FlapSpecTest is BaseTest {
     function setUp() public override {
         // Chain 97: the guardian, the portal and the reward venue all have to be the real ones,
         // and the vault refuses to exist anywhere they are not.
-        vm.createSelectFork(vm.envOr("BSC_TESTNET_RPC", string("https://bsc-testnet-rpc.publicnode.com")));
+        vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
         flap = new AssayFlapVault(tournament, address(token), CURATOR);
         factory = new AssayFlapFactory(tournament);
