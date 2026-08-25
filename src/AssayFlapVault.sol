@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 
 import {VaultBaseV2} from "./flap/VaultBaseV2.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
@@ -35,11 +36,18 @@ import {Tournament} from "./Tournament.sol";
 ///      Custody note: value that arrives here is assigned to a task the moment that task is
 ///      endowed, and can only ever leave to an address the tournament has already recorded a
 ///      score for. There is no owner, no upgrade path, and no sweep of endowed funds.
-contract AssayFlapVault is VaultBaseV2 {
+contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice How far back `stats()` looks when counting still-open tasks.
     uint256 private constant STATS_SCAN = 64;
+
+    /// @notice The worst conversion `endow` will accept, measured against the pool's spot price.
+    /// @dev A floor the caller picks freely is a floor the caller can set to zero, and the caller
+    ///      here is privileged. With no lower bound the curator could sandwich the vault's own
+    ///      conversion and keep the difference — the money is the token's tax, so that is value
+    ///      taken from the bounty rather than from them. This bounds it to 3%.
+    uint256 private constant MAX_ENDOW_SLIPPAGE_BPS = 300;
 
     /// @notice The asset every bounty is denominated in and paid out in.
     IERC20 public immutable reward;
@@ -81,15 +89,14 @@ contract AssayFlapVault is VaultBaseV2 {
     event Endowed(uint256 indexed taskId, uint256 bnbIn, uint256 rewardOut, uint256 unassignedLeft);
     event Sponsored(uint256 indexed taskId, address indexed from, uint256 amount);
     event BountyPaid(uint256 indexed taskId, address indexed miner, uint256 amount);
+    event EmergencyWithdrawNative(address indexed to, uint256 amount);
+    event EmergencyWithdrawToken(address indexed token, address indexed to, uint256 amount);
 
-    error NotCurator();
-    error NothingUnassigned();
-    error NothingToSponsor();
-    error NoSuchTask(uint256 taskId);
-    error UnsupportedRewardChain(uint256 chainId);
-    error TaskNotSettled();
-    error NoScore();
-    error AlreadyCollected();
+    /// @dev Every revert here is a `require` with a literal bilingual string rather than a custom
+    ///      error. Flap's renderer has no ABI to decode a selector against, so a custom error
+    ///      reaches the user as four unreadable bytes; a literal string is shown as written, and
+    ///      the protocol asks for both languages in the same one because there is no translation
+    ///      layer between this contract and the screen.
 
     /// @dev The reward token and the router are resolved from `block.chainid` and stored as
     ///      immutables, never accepted as arguments. A vault that lets its caller name the
@@ -111,7 +118,7 @@ contract AssayFlapVault is VaultBaseV2 {
             rewardToken = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8; // BTCB, BNB testnet
             routerAddr = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1; // PancakeSwap V2, testnet
         } else {
-            revert UnsupportedRewardChain(chainId);
+            revert(unicode"Reward asset is not deployed on this chain / 本链没有部署奖励资产");
         }
 
         reward = IERC20(rewardToken);
@@ -157,12 +164,31 @@ contract AssayFlapVault is VaultBaseV2 {
     /// @param minRewardOut Minimum BTCB the conversion must produce.
     function endow(uint256 taskId, uint256 bnbAmount, uint256 minRewardOut)
         external
+        nonReentrant
         returns (uint256 rewardOut)
     {
-        if (msg.sender != curator && msg.sender != _getGuardian()) revert NotCurator();
+        require(
+            msg.sender == curator || msg.sender == _getGuardian(),
+            unicode"Only the curator may convert tax / 只有策展方可以兑换交易税"
+        );
         _requireTask(taskId);
         uint256 free = unassigned();
-        if (bnbAmount == 0 || bnbAmount > free) revert NothingUnassigned();
+        require(
+            bnbAmount > 0 && bnbAmount <= free,
+            unicode"Amount exceeds the unconverted tax / 金额超过了未兑换的交易税"
+        );
+
+        // The caller still chooses the floor, but not freely: it may not sit further below the
+        // pool's own price than the protocol allows. This does not make the conversion
+        // unsandwichable — an attacker who moves the pool first also moves the reading this is
+        // measured against — but it removes the case where a privileged caller simply declares
+        // that any price is acceptable, which is the one an insider can arrange at will.
+        uint256 spot = quote(bnbAmount);
+        require(
+            minRewardOut > 0
+                && minRewardOut >= (spot * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000,
+            unicode"Slippage floor is too low / 滑点下限过低"
+        );
 
         address[] memory path = new address[](2);
         path[0] = wrappedNative;
@@ -182,8 +208,8 @@ contract AssayFlapVault is VaultBaseV2 {
     /// @dev Deliberately unpermissioned. The money can only ever leave to a miner the tournament
     ///      has scored, so there is nothing to protect against here — and a bounty someone else
     ///      wants to make larger is a bounty that gets solved harder.
-    function sponsor(uint256 taskId, uint256 amount) external {
-        if (amount == 0) revert NothingToSponsor();
+    function sponsor(uint256 taskId, uint256 amount) external nonReentrant {
+        require(amount > 0, unicode"Amount must be greater than zero / 金额必须大于零");
         _requireTask(taskId);
         reward.safeTransferFrom(msg.sender, address(this), amount);
         bounty[taskId] += amount;
@@ -196,13 +222,16 @@ contract AssayFlapVault is VaultBaseV2 {
     ///      good. There is no owner and no sweep here by design, which makes a mistyped task id
     ///      a permanent loss rather than an inconvenience. Task ids start at one.
     function _requireTask(uint256 taskId) internal view {
-        if (taskId == 0 || taskId > tournament.taskCount()) revert NoSuchTask(taskId);
+        require(
+            taskId > 0 && taskId <= tournament.taskCount(),
+            unicode"No such task / 该任务不存在"
+        );
     }
 
     /// @notice What one BNB of accumulated tax would currently convert to.
     /// @dev A quote, not a promise — it is what the UI shows beside the endow control so the
     ///      curator sets a slippage floor against a real number instead of a guess.
-    function quote(uint256 bnbAmount) external view returns (uint256 rewardOut) {
+    function quote(uint256 bnbAmount) public view returns (uint256 rewardOut) {
         address[] memory path = new address[](2);
         path[0] = wrappedNative;
         path[1] = address(reward);
@@ -229,13 +258,13 @@ contract AssayFlapVault is VaultBaseV2 {
 
     /// @notice Pays a scoring miner their share of a task's BTCB bounty.
     /// @dev Shares use the tournament's own recorded score, so the split here is the split there.
-    function collect(uint256 taskId) external returns (uint256 amount) {
+    function collect(uint256 taskId) external nonReentrant returns (uint256 amount) {
         (, , uint64 revealEnd, , , , , , ) = tournament.tasks(taskId);
-        if (block.timestamp < revealEnd) revert TaskNotSettled();
-        if (collected[taskId][msg.sender]) revert AlreadyCollected();
+        require(block.timestamp >= revealEnd, unicode"Task has not settled yet / 该任务尚未结算");
+        require(!collected[taskId][msg.sender], unicode"Already collected / 已经领取过了");
 
         amount = collectable(taskId, msg.sender);
-        if (amount == 0) revert NoScore();
+        require(amount > 0, unicode"Nothing to collect on this task / 该任务没有可领取的份额");
 
         collected[taskId][msg.sender] = true;
         paid[taskId] += amount;
@@ -245,6 +274,46 @@ contract AssayFlapVault is VaultBaseV2 {
 
         reward.safeTransfer(msg.sender, amount);
         emit BountyPaid(taskId, msg.sender, amount);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Emergency controls — Flap Rule 009
+    // -------------------------------------------------------------------------------------
+
+    /// @dev Reserved to the Guardian. Deliberately not `curator or Guardian`: the protocol
+    ///      requires that the party who runs this vault day to day cannot reach the escape hatch.
+    modifier onlyGuardian() {
+        require(msg.sender == _getGuardian(), unicode"Only the guardian / 仅限守护者");
+        _;
+    }
+
+    /// @notice Drains the vault's native balance to a safe address.
+    ///
+    /// @dev Present because Flap requires it of every non-upgradeable vault, and it is worth
+    ///      being plain about what it means rather than filing it under "emergency": the
+    ///      Guardian is Flap's address, not ours, and this reaches the BTCB behind open
+    ///      bounties as well as the unconverted tax. Everything else in this contract is
+    ///      arranged so that money can only move to a miner the tournament scored; this is the
+    ///      one path that is not, and the protocol's trust anchor is Flap either way — their
+    ///      portal can already redirect where this token's tax is sent.
+    function emergencyWithdrawNative(address to) external onlyGuardian nonReentrant {
+        require(to != address(0), unicode"Zero address / 地址为零");
+        uint256 bal = address(this).balance;
+        if (bal > 0) {
+            (bool ok,) = to.call{value: bal}("");
+            require(ok, unicode"Native transfer failed / 原生代币转账失败");
+            emit EmergencyWithdrawNative(to, bal);
+        }
+    }
+
+    /// @notice Recovers any ERC-20 stuck in the vault, including the reward token.
+    function emergencyWithdrawToken(address token, address to) external onlyGuardian nonReentrant {
+        require(token != address(0) && to != address(0), unicode"Zero address / 地址为零");
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        if (bal > 0) {
+            IERC20(token).safeTransfer(to, bal);
+            emit EmergencyWithdrawToken(token, to, bal);
+        }
     }
 
     // -------------------------------------------------------------------------------------
@@ -371,7 +440,7 @@ contract AssayFlapVault is VaultBaseV2 {
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
         schema.description = unicode"Trading tax becomes BTCB prize money for verified gas-optimisation work. Miners submit EVM runtime bytecode; the chain deploys it, runs every test vector and reads the meter. / 交易税变成 BTCB 奖金,奖励可验证的优化工作。矿工提交 EVM 运行时字节码,链把它部署、跑完全部测试向量、读取计量表。";
-        schema.methods = new VaultMethodSchema[](5);
+        schema.methods = new VaultMethodSchema[](8);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
         VaultMethodSchema memory m = schema.methods[0];
@@ -387,8 +456,23 @@ contract AssayFlapVault is VaultBaseV2 {
         m.outputs[5] = FieldDescriptor("minersPaid", "uint256", unicode"Payouts made / 支付笔数", 0);
         m.approvals = new ApproveAction[](0);
 
-        // 1 — the bounty cards.
+        // 1 — the invariant, argument-free so it is always on screen.
+        //
+        // Listed deliberately rather than left as an internal check. The Guardian's emergency
+        // withdrawal drains tokens without touching `endowed`, which is what the protocol
+        // specifies — so after one, this contract's own figures would claim money is behind
+        // tasks that is not there. This is the reading that says so, and it costs nothing to
+        // put it where anyone can see it.
         m = schema.methods[1];
+        m.name = "solvent";
+        m.description = unicode"Whether the tokens held actually cover every open bounty / 持有的代币是否真的覆盖了全部未结赏金";
+        m.inputs = new FieldDescriptor[](0);
+        m.outputs = new FieldDescriptor[](1);
+        m.outputs[0] = FieldDescriptor("covered", "bool", unicode"Covered / 已覆盖", 0);
+        m.approvals = new ApproveAction[](0);
+
+        // 2 — the bounty cards.
+        m = schema.methods[2];
         m.name = "getBounties";
         m.description = unicode"Every task and its BTCB bounty, newest first / 全部任务及其 BTCB 赏金,最新在前";
         m.inputs = new FieldDescriptor[](3);
@@ -408,8 +492,8 @@ contract AssayFlapVault is VaultBaseV2 {
         m.approvals = new ApproveAction[](0);
         m.isOutputArray = true;
 
-        // 2 — the button on every card.
-        m = schema.methods[2];
+        // 3 — the button on every card.
+        m = schema.methods[3];
         m.name = "collect";
         m.description = unicode"Collect your share of a task's BTCB bounty / 领取你在该任务 BTCB 赏金中的份额";
         m.inputs = new FieldDescriptor[](1);
@@ -418,8 +502,8 @@ contract AssayFlapVault is VaultBaseV2 {
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
 
-        // 3 — converting revenue and putting it behind a task.
-        m = schema.methods[3];
+        // 4 — converting revenue and putting it behind a task.
+        m = schema.methods[4];
         m.name = "endow";
         m.description = unicode"Convert accumulated BNB tax to BTCB behind a task, one way (curator) / 把累计的 BNB 交易税兑成 BTCB 一次性投入某个任务(策展方)";
         m.inputs = new FieldDescriptor[](3);
@@ -430,8 +514,8 @@ contract AssayFlapVault is VaultBaseV2 {
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
 
-        // 4 — anyone may make a bounty larger.
-        m = schema.methods[4];
+        // 5 — anyone may make a bounty larger.
+        m = schema.methods[5];
         m.name = "sponsor";
         m.description = unicode"Add BTCB to a task's bounty. Open to anyone; it can only ever leave to a scoring miner. / 给某个任务的赏金追加 BTCB。任何人都可以,这笔钱只可能流向有得分的矿工。";
         m.inputs = new FieldDescriptor[](2);
@@ -441,5 +525,26 @@ contract AssayFlapVault is VaultBaseV2 {
         m.approvals = new ApproveAction[](1);
         m.approvals[0] = ApproveAction("reward", "amount");
         m.isWriteMethod = true;
+
+        // 6 — what one miner is owed on one task.
+        m = schema.methods[6];
+        m.name = "collectable";
+        m.description = unicode"What an address can collect from a task right now / 某个地址现在能从该任务领取多少";
+        m.inputs = new FieldDescriptor[](2);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[1] = FieldDescriptor("miner", "address", unicode"Miner address / 矿工地址", 0);
+        m.outputs = new FieldDescriptor[](1);
+        m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"BTCB / BTCB", 18);
+        m.approvals = new ApproveAction[](0);
+
+        // 7 — the conversion the curator is about to accept.
+        m = schema.methods[7];
+        m.name = "quote";
+        m.description = unicode"What that much BNB converts to at the pool's current price / 这么多 BNB 按当前池价能换到多少";
+        m.inputs = new FieldDescriptor[](1);
+        m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB / BNB", 18);
+        m.outputs = new FieldDescriptor[](1);
+        m.outputs[0] = FieldDescriptor("rewardOut", "uint256", unicode"BTCB / BTCB", 18);
+        m.approvals = new ApproveAction[](0);
     }
 }

@@ -24,10 +24,8 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
 
     event VaultCreated(address indexed vault, address indexed taxToken, address indexed creator);
 
-    error ZeroTournament();
-
     constructor(Tournament tournament_) {
-        if (address(tournament_) == address(0)) revert ZeroTournament();
+        require(address(tournament_) != address(0), unicode"Tournament address is zero / 锦标赛地址为零");
         tournament = tournament_;
     }
 
@@ -41,7 +39,10 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
     {
         // Only the portal may create vaults here. Otherwise anybody could mint a vault claiming
         // to belong to a token they do not control, and a UI reading `taxToken()` would believe it.
-        if (msg.sender != _getVaultPortal()) revert OnlyVaultPortal();
+        require(
+            msg.sender == _getVaultPortal(),
+            unicode"Only the vault portal may create a vault / 只有金库门户可以创建金库"
+        );
 
         vault = address(new AssayFlapVault(tournament, taxToken, creator));
         emit VaultCreated(vault, taxToken, creator);

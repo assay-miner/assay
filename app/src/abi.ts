@@ -2337,6 +2337,37 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "emergencyWithdrawNative",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "emergencyWithdrawToken",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "endow",
     "inputs": [
       {
@@ -2819,6 +2850,50 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "event",
+    "name": "EmergencyWithdrawNative",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmergencyWithdrawToken",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Endowed",
     "inputs": [
       {
@@ -2894,38 +2969,7 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "error",
-    "name": "AlreadyCollected",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoScore",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoSuchTask",
-    "inputs": [
-      {
-        "name": "taskId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotCurator",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NothingToSponsor",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NothingUnassigned",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -2941,23 +2985,7 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "error",
-    "name": "TaskNotSettled",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "UnsupportedChain",
-    "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnsupportedRewardChain",
     "inputs": [
       {
         "name": "chainId",

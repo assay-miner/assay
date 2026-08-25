@@ -47,6 +47,13 @@ contract RewardAssetTest is BaseTest {
         vm.warp(revealEnd + 1);
     }
 
+    /// @dev The floor an operator would actually pass: one percent under the pool's own price.
+    ///      Zero is no longer accepted, and it should not have been — a privileged caller who
+    ///      may declare any price acceptable can sandwich the vault's own conversion.
+    function _floor(uint256 bnbAmount) internal view returns (uint256) {
+        return (flap.quote(bnbAmount) * 99) / 100;
+    }
+
     // -------------------------------------------------------------------------------------
 
     function test_TheVaultKnowsWhatItPaysIn() public view {
@@ -94,23 +101,26 @@ contract RewardAssetTest is BaseTest {
 
     function test_OnlyTheCuratorConverts() public {
         _tax(1 ether);
+        uint256 floor_ = _floor(1 ether);
         vm.prank(ALICE);
-        vm.expectRevert(AssayFlapVault.NotCurator.selector);
-        flap.endow(taskId, 1 ether, 0);
+        vm.expectRevert(bytes(unicode"Only the curator may convert tax / 只有策展方可以兑换交易税"));
+        flap.endow(taskId, 1 ether, floor_);
     }
 
     function test_CannotEndowMoreThanHasArrived() public {
         _tax(1 ether);
+        uint256 floor_ = _floor(2 ether);
         vm.prank(CURATOR);
-        vm.expectRevert(AssayFlapVault.NothingUnassigned.selector);
-        flap.endow(taskId, 2 ether, 0);
+        vm.expectRevert(bytes(unicode"Amount exceeds the unconverted tax / 金额超过了未兑换的交易税"));
+        flap.endow(taskId, 2 ether, floor_);
     }
 
     /// @notice A scoring miner is paid in BTCB, and the native balance never moves for them.
     function test_TheMinerIsPaidInBtcb() public {
         _tax(2 ether);
+        uint256 floor_ = _floor(2 ether);
         vm.prank(CURATOR);
-        uint256 pot = flap.endow(taskId, 2 ether, 0);
+        uint256 pot = flap.endow(taskId, 2 ether, floor_);
 
         _scoringMiner(ALICE, AGENT_ALICE);
 
@@ -132,14 +142,15 @@ contract RewardAssetTest is BaseTest {
 
     function test_AMinerCannotCollectTwice() public {
         _tax(1 ether);
+        uint256 floor_ = _floor(1 ether);
         vm.prank(CURATOR);
-        flap.endow(taskId, 1 ether, 0);
+        flap.endow(taskId, 1 ether, floor_);
         _scoringMiner(ALICE, AGENT_ALICE);
 
         vm.prank(ALICE);
         flap.collect(taskId);
         vm.prank(ALICE);
-        vm.expectRevert(AssayFlapVault.AlreadyCollected.selector);
+        vm.expectRevert(bytes(unicode"Already collected / 已经领取过了"));
         flap.collect(taskId);
     }
 
@@ -171,14 +182,15 @@ contract RewardAssetTest is BaseTest {
     function test_CannotEndowBehindATaskThatDoesNotExist() public {
         _tax(2 ether);
         uint256 live = tournament.taskCount();
+        uint256 floor_ = _floor(1 ether);
 
         vm.prank(CURATOR);
-        vm.expectRevert(abi.encodeWithSelector(AssayFlapVault.NoSuchTask.selector, live + 1));
-        flap.endow(live + 1, 1 ether, 0);
+        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
+        flap.endow(live + 1, 1 ether, floor_);
 
         vm.prank(CURATOR);
-        vm.expectRevert(abi.encodeWithSelector(AssayFlapVault.NoSuchTask.selector, uint256(0)));
-        flap.endow(0, 1 ether, 0);
+        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
+        flap.endow(0, 1 ether, floor_);
 
         assertEq(flap.endowed(), 0, "nothing was booked");
         assertEq(flap.unassigned(), 2 ether, "and nothing was spent");
@@ -191,7 +203,7 @@ contract RewardAssetTest is BaseTest {
 
         vm.startPrank(SPONSOR);
         IERC20(BTCB).approve(address(flap), amount);
-        vm.expectRevert(abi.encodeWithSelector(AssayFlapVault.NoSuchTask.selector, live + 99));
+        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
         flap.sponsor(live + 99, amount);
         vm.stopPrank();
 
@@ -201,8 +213,9 @@ contract RewardAssetTest is BaseTest {
     /// @notice The headline numbers report the two assets separately, because they are two assets.
     function test_StatsSeparatesTheCoinFromTheToken() public {
         _tax(3 ether);
+        uint256 floor_ = _floor(2 ether);
         vm.prank(CURATOR);
-        uint256 pot = flap.endow(taskId, 2 ether, 0);
+        uint256 pot = flap.endow(taskId, 2 ether, floor_);
 
         (, , uint256 unassignedBnb, uint256 committedBtcb, uint256 paidBtcb, ) = flap.stats();
         assertEq(unassignedBnb, 1 ether, "unconverted tax is still BNB");
