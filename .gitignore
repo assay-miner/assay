@@ -9,3 +9,4 @@ app/.vercel
 miner/node_modules/
 miner/.miner-state.json
 dist/
+.DS_Store

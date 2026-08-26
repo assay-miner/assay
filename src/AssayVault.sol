@@ -101,7 +101,16 @@ contract AssayVault {
         deployer = msg.sender;
     }
 
+    /// @dev Two conditions, not one. The controller check is the obvious half. The freeze check
+    ///      is the half that closes a window in the *deployment*, not in the contract: a forge
+    ///      broadcast is N separate transactions, so `addController` and `freeze()` land in
+    ///      different blocks with a gap in between. In that gap a compromised deployer key could
+    ///      name a hostile controller, and a hostile controller can call `deposit(from: victim)`
+    ///      against any standing allowance this vault has been granted, then pay itself out.
+    ///      Refusing to move value until the controller set is sealed makes that gap unusable
+    ///      instead of merely unused, in this deployment and in every future one.
     modifier onlyController() {
+        if (!controllersFrozen) revert NotFrozen();
         if (!isController[msg.sender]) revert NotController(msg.sender);
         _;
     }

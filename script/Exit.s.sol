@@ -47,6 +47,10 @@ contract ExitAll is Script {
         console2.log("vault held      ", token.balanceOf(address(vault)));
         console2.log("vault accounted ", vault.totalAccounted());
         console2.log("vault unattrib. ", vault.unaccounted());
+        // The vault can now hold value the ledger never denominates — native coin forced in, or a
+        // foreign token mis-sent. Both are recoverable by anyone to the fixed salvage address, and
+        // an exit that did not report them would leave value behind while claiming to be finished.
+        console2.log("sweepable native", vault.sweepableNative());
         require(vault.solvent(), "vault insolvent after exit");
     }
 }
