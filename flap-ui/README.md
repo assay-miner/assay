@@ -68,3 +68,25 @@ To preview against a fork, point the template at it with
 `tools/rehearse.sh` in this repo, and open
 `/assay?chainId=97&factoryAddress=…&tokenAddress=…&vaultAddress=…` with the addresses the
 rehearsal leaves in `deployments/97-fork-rehearsal.json`.
+
+## Binding state
+
+The chain 56 entry is the real mainnet factory, deployed and verified against its artifact.
+
+The chain 97 proof binding is missing on purpose. Every manifest needs one binding-scoped
+`tokenAddresses` entry that is a real deployed ERC20 ending in 7777 or 8888, and the documented
+shape puts it on a testnet binding beside the final mainnet factory:
+
+```json
+{ "chainId": 97, "factoryAddress": "<testnet factory>", "tokenAddresses": ["<testnet 7777 token>"] },
+{ "chainId": 56, "factoryAddress": "0x143Ef060b34b1E69100A9948dD908AC9E154d082" }
+```
+
+A third party's 7777 token satisfies the letter of that rule — nothing in the specification
+requires the proof token to be one you own, and both `vault:check` and `vault:e2e` pass with one.
+They pass because the component renders its empty state correctly: the runtime vault resolves to
+the zero address, every figure reads as a dash, and the card list sits on "loading". The QA report
+that records that run is packaged into the zip, so what would be submitted is a UI nobody has seen
+display its own data.
+
+`CHAIN_ID=97 ./launch` produces both halves of the proof binding at once. It needs tBNB.

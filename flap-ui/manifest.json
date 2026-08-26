@@ -4,11 +4,8 @@
   "match": {
     "bindings": [
       {
-        "chainId": 97,
-        "factoryAddress": "0xD14374792Ce83A32ad4207E7cD33bB8DD9D0b744",
-        "tokenAddresses": [
-          "0x58CF2B2F576aC074dB5128Fe7CfF3F45cD557777"
-        ]
+        "chainId": 56,
+        "factoryAddress": "0x143Ef060b34b1E69100A9948dD908AC9E154d082"
       }
     ]
   },
