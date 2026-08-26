@@ -42,7 +42,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | 003 | Sandwich risk explicitly assessed | ✅ assessed below; bounded, not eliminated |
 | 004 | Literal `require` strings, no custom errors | ✅ |
 | 004 | All languages inline | ✅ every string is `en / zh` |
-| 005 | `receive()` ≤ 1,000,000 gas | ✅ **measured 12,988** (1.3% of ceiling) |
+| 005 | `receive()` ≤ 1,000,000 gas | ✅ **1,832 gas** in the body; 12,988 including the caller's CALL and value transfer. Either figure is a rounding error against the ceiling. |
 | 005 | No loops / external calls / delegatecall in the `receive()` tree | ✅ body is one `emit` |
 | 006 | Integration test coverage | ✅ `test/FlapSpec.t.sol` (13) + `test/RewardAsset.t.sol` (12), both forked |
 | 007 | AI oracle | N/A — none |

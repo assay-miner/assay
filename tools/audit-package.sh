@@ -96,13 +96,28 @@ raw comparison always differs there and nowhere else.
 4. \`test/FlapSpec.t.sol\` — the coverage Rule 006 asks for
 5. \`test/RewardAsset.t.sol\` — the economics against the real market, on a mainnet fork
 
-## Running the tests
+## Compiling
 
-The suite is forked; it needs an RPC that serves state at a recent block.
+Two paths. The first is canonical and needs nothing but solc.
+
+**Reproduce the deployed bytecode.** \`standard-json/AssayFlapFactory.json\` is a complete solc
+input — every source it needs is inside it, at the exact settings the deployment used.
 
 \`\`\`bash
-forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable
-forge test
+solc --standard-json standard-json/AssayFlapFactory.json > out.json
+\`\`\`
+
+**Or build and run the tests with Foundry.** The dependency versions are pinned because a
+different OpenZeppelin produces different bytecode, and the point of this package is that the
+bytecode matches. \`git init\` first: \`forge install\` needs a repository.
+
+\`\`\`bash
+git init
+forge install foundry-rs/forge-std@v1.16.2
+forge install OpenZeppelin/openzeppelin-contracts@v5.4.0
+forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v4.9.6
+forge build
+forge test        # forked; needs an RPC that serves state at a recent block
 \`\`\`
 
 ## Where to look hardest

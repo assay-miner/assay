@@ -29,7 +29,7 @@ on and both are cheaper to change now than after:
 
 `flap-vault-spec-checker` was run against both contracts. Report: [`SELF_CHECK.md`](SELF_CHECK.md).
 
-- Critical: 0 · High: 0 · Medium: 2 · Low: 3 · Info: 3
+- Critical: 0 · High: 0 · Medium: 2 · Low: 3 · Info: 6
 - Every mandatory rule passes. Both Mediums are disclosures, not defects: one is the Guardian
   authority Rule 009 itself requires, one is a residual sandwich window that no in-contract
   bound fully closes.
