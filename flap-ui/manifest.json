@@ -4,6 +4,13 @@
   "match": {
     "bindings": [
       {
+        "chainId": 97,
+        "factoryAddress": "0x525A3E57cdFE7bee43AA81670329024aa5d21Bd3",
+        "tokenAddresses": [
+          "0xDf87C67E327f71646a704c38ba9f963Fca387777"
+        ]
+      },
+      {
         "chainId": 56,
         "factoryAddress": "0x143Ef060b34b1E69100A9948dD908AC9E154d082"
       }

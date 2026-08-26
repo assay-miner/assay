@@ -31,7 +31,7 @@ echo "balance  $(cast balance "$(cast wallet address --private-key "$PRIVATE_KEY
 # -g 300 pads the gas estimate. An estimate that is merely accurate is not enough on a chain
 # whose broadcast conditions differ from the simulation's.
 forge script script/Deploy.s.sol:Deploy \
-  --rpc-url "$RPC" --broadcast -g 300 --slow "$@"
+  --rpc-url "$RPC" --broadcast -g "${GAS_MULT:-130}" --slow "$@"
 
 MANIFEST="deployments/${CHAIN_ID}-latest.json"
 echo

@@ -29,6 +29,7 @@ cp test/FlapSpec.t.sol test/RewardAsset.t.sol test/FlapGate.t.sol test/FlapRende
 # remappings live inside foundry.toml, not a separate file
 cp SELF_CHECK.md SUBMISSION.md foundry.toml "$OUT/"
 cp "$MANIFEST" "$OUT/deployments/"
+[ -s deployments/97-latest.json ] && cp deployments/97-latest.json "$OUT/deployments/"
 
 # The standard JSON is what makes the deployed bytecode reproducible by anyone.
 for C in AssayFlapFactory AssayFlapVault; do
