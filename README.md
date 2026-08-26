@@ -32,7 +32,7 @@ ever pasted.
 ```bash
 CHAIN_ID=97 PRIVATE_KEY=0x… ./launch   # stack, taxed token, vault
 CHAIN_ID=97 PRIVATE_KEY=0x… ./post     # post a task, convert the tax behind it
-CHAIN_ID=97 PRIVATE_KEY=0x… ./exit     # take back everything recoverable, immediately
+CHAIN_ID=97 PRIVATE_KEY=0x… ./exit     # reclaim your own unwon pots, immediately
 ```
 
 ## Testing
@@ -58,6 +58,20 @@ three defects, and it is proven red by breaking what it guards.
 - [`SUBMISSION.md`](SUBMISSION.md) — the seven integration steps, and what each one is waiting on.
 - [`flap-ui/README.md`](flap-ui/README.md) — the custom component, and what could not cross the
   runtime's boundary.
+
+## What the operator cannot do
+
+`./exit` is not a withdrawal. `payOut` is the only function that moves ASSAY out of custody and
+it has exactly three call sites, each with a hardcoded destination: a miner taking their own
+stake back to themselves, a scored miner claiming their own share to themselves, and `reclaim`
+returning `pot - paidOut` — the part of a task's prize nobody won — to the address that escrowed
+it. None of them accepts a caller-supplied recipient. `reclaim` also waits: past the reveal, and
+if anyone scored at all, past the full claim window as well, so miners are paid before anything
+goes back.
+
+The BTCB has no operator path at all. It leaves `AssayFlapVault` in two ways: `collect`, which
+pays `msg.sender` and only if the tournament recorded a score for them, and the Rule 009
+emergency functions, which are `onlyGuardian` — and the Guardian is Flap's address, not ours.
 
 ## Notes on what this is not
 
