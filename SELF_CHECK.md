@@ -63,7 +63,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | High     | 0     | — |
 | Medium   | 2     | Guardian authority over bounty funds; residual sandwich exposure on a privileged swap |
 | Low      | 3     | Post-drain ledger drift; no commission; conversion liveness depends on curator |
-| Info     | 6     | Bounded stats scan; base-contract errors; tournament dependency; custody rescue scope; asset assumption; a dead error declaration |
+| Info     | 6     | Bounded stats scan; base-contract errors; tournament dependency; two custody gaps found and fixed during this pass; one stated asset assumption |
 
 ## Detailed Findings
 
@@ -145,19 +145,24 @@ Neither is free. The current bound plus disclosure is a defensible position for 
 
 ### Info
 
-- **I-04**: `AssayVault` has no rescue path for anything other than its own `asset`. A foreign
-  ERC-20 mis-sent to it, or native coin forced in by `selfdestruct`, cannot be recovered by
-  anybody — the contract inherits nothing, uses no assembly or delegatecall, and its only three
-  token calls are hardcoded to the immutable `asset`. This is stated rather than fixed for three
-  reasons. Rule 009's subject is literally "Non-upgradeable **vaults**", and every line of its
-  check table is scoped the same way, so the custody contract sits outside that guarantee by the
-  specification's own wording rather than by an omission here. No protocol path can place a
-  foreign token there — `deposit` pulls only `asset`, and no function accepts a caller-supplied
-  token — so it requires a manual mis-send, which is a property of nearly every contract that can
-  receive an ERC-20. And stuck native coin is invisible to the ledger: `unaccounted()` and
-  `solvent()` both read `asset.balanceOf(address(this))`, never `address(this).balance`, so it
-  cannot corrupt the accounting or reach a payout. `payOut` is bounded by a named account's
-  balance, so value the ledger never attributed can never leave to anyone.
+- **I-04** *(fixed)*: `AssayVault` originally had no rescue path for anything but its own
+  `asset`, so a foreign ERC-20 mis-sent to it, or native coin forced in by `selfdestruct` or a
+  block-reward payment, was unrecoverable by anyone. Rule 009 does not require otherwise — its
+  subject is literally "Non-upgradeable **vaults**" and every line of its check table is scoped
+  the same way, so the custody contract sits outside that guarantee by the specification's own
+  wording. It was fixed anyway, because the moment to do it is while nothing is at stake.
+  `sweepToken` and `sweepNative` join the existing `sweepUnaccounted`: all three are
+  permissionless, all three send to the immutable `salvage` address, and none introduces a
+  privileged role. Passing `asset` to `sweepToken` routes to the same surplus-only arithmetic, so
+  the argument cannot widen the rule. For any other token the whole balance moves, guarded by a
+  post-condition rather than an address comparison — `token != asset` does not prove a token
+  cannot reach the `asset` balance, since a second entry point onto the same mapping passes that
+  comparison, so the call instead reverts if this contract's `asset` balance fell by a single wei.
+  `sweepable`/`sweepableNative` let a caller read what a sweep would move before paying for it.
+  **The salvage address is the beneficiary of all foreign value**, including any future airdrop
+  that lands here; that is the only fixed destination available without a privileged role, and it
+  is stated here so nobody mistakes it for a hidden door.
+
 - **I-05**: `AssayVault.deposit` credits the nominal `amount` to the ledger and then calls
   `safeTransferFrom` for that same amount. On a fee-on-transfer or rebasing asset the credited
   figure would exceed what actually arrived, `solvent()` would go false, and the last withdrawer
@@ -166,11 +171,14 @@ Neither is free. The current bound plus disclosure is a defensible position for 
   against a generic `IERC20`, so the assumption is worth stating: **this vault requires a
   standard-transfer asset.** Anyone reusing it with a taxed token must move to balance-delta
   accounting first.
-- **I-06**: `error NotFrozen()` is declared and never thrown. It reads as a gate that was
-  intended and not installed — presumably "no value may move before the controller set is
-  sealed". Nothing depends on it: `Deploy.s.sol` calls `freeze()` in the same run and asserts
-  `controllersFrozen`, and both live deployments report `controllersFrozen == true`, so no
-  controller can be added after the fact. A dead declaration, not a missing check.
+- **I-06** *(fixed)*: `error NotFrozen()` was declared and never thrown — a gate that was
+  intended and not installed. It is thrown now, from `onlyController`, so no value moves until the
+  controller set is sealed. This matters beyond tidiness: `deposit` takes a caller-supplied
+  `from`, so a controller can pull against any standing allowance this vault has been granted and
+  pay itself out, and `addController` and `freeze()` are separate transactions in a forge
+  broadcast with a gap between them. Both live deployments are past that gap and every call site
+  hardcodes `msg.sender` as the source, but the gap reopened on every future deployment. It no
+  longer exists.
 
 
 - **I-01**: `stats().openTasks` scans only the most recent `STATS_SCAN = 64` tasks. Beyond that it understates. Deliberate: the view is polled by a UI and an unbounded walk would get slower for exactly the vaults doing well. `tasks` and every amount are exact.
@@ -185,7 +193,10 @@ Found by working the checker's list against the contracts, and fixed before this
 2. **Rule 009 violation** — `emergencyWithdrawNative` and `emergencyWithdrawToken` were absent entirely; added verbatim to the rule's reference implementation, with `ReentrancyGuard`.
 3. **Rule 003 violation** — `endow` accepted `minRewardOut = 0` from a privileged caller. Now bounded to 3% below spot; see M-02 for what remains.
 4. **Rule 006 gaps** — no test covered the `receive()` gas budget, Guardian access, the factory's portal guard, `vaultDataSchema()`, or `description()` moving with state. `test/FlapSpec.t.sol` covers all of them.
-5. **Reentrancy hardening** — `endow`, `sponsor` and `collect` are now `nonReentrant`. `sponsor` in particular pulled tokens before updating state; the reward token is immutable BTCB so no callback exists today, but the ordering was wrong on its own terms.
+5. **Custody rescue (I-04)** — `sweepToken` and `sweepNative` added, permissionless, to the
+   immutable salvage address, guarded by a post-condition that an alias token cannot pass.
+6. **The unthrown error (I-06)** — `onlyController` now requires the controller set to be sealed.
+7. **Reentrancy hardening** — `endow`, `sponsor` and `collect` are now `nonReentrant`. `sponsor` in particular pulled tokens before updating state; the reward token is immutable BTCB so no callback exists today, but the ordering was wrong on its own terms.
 
 ## Centralization Analysis
 

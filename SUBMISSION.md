@@ -108,35 +108,36 @@ Repository at `abfa000`.
 
 # Deployment state — 2026-08-26
 
+Redeployed after two custody gaps were found and fixed. The earlier addresses are dead; nothing
+was ever staked or posted against them, so nothing was migrated.
+
 ## BNB Smart Chain mainnet (56)
 
 | | |
 |---|---|
-| Factory | `0x143Ef060b34b1E69100A9948dD908AC9E154d082` |
-| Tournament | `0xc8E92eD2Bcf5E6cDd3daE12ab78c06Fb850acC11` |
-| Custody vault | `0x6E2EDeF560323fc891Ff0FFf10d8F5697E26DF06` |
-| Roster | `0xA8d6D66F6E1C4bD4F9DA7D7d7EE894aa97C9e275` |
-| ASSAY token | `0x016F7c19A44ee25B5dA2F32049C1bA9C8A0382F1` |
-| Tax token | not launched — see below |
+| Factory | `0xEe61Be099E93e0b5c769940a2B8d92c85A1ACfD9` |
+| Tournament | `0xBBFFf88DeA3EC1ba2cEE24cfe7938d23E82E48D4` |
+| Custody vault | `0x78A28E2f1eCd2A68b25f09aBAc761b0B8bFB0A8E` |
+| Roster | `0xb4306003e330a74Fc3A78B5e44EFedA66f811844` |
+| ASSAY token | `0x765A7Cb4f82E6E84cb14AA803e85809e2742A971` |
+| Tax token | not launched — Flap audits the factory, and their guide puts that before the UI submission |
 
 The deployed factory runtime is byte-for-byte the compiled artifact once its two immutable slots
-are blanked; both hold the tournament address. `verify-onchain.mjs` in the audit package checks it.
-
-No tax token has been launched on mainnet. Flap audits the factory and their guide puts that
-before the UI submission; launching claims the name permanently and opens a real market, so it is
-a separate decision from deploying the contract that gets audited.
+are blanked; both hold the tournament address. `verify-onchain.mjs` in the audit package checks it
+against the chain in one command.
 
 ## BNB Smart Chain testnet (97) — the proof deployment
 
 | | |
 |---|---|
-| Factory | `0x525A3E57cdFE7bee43AA81670329024aa5d21Bd3` |
-| Tax token | `0xDf87C67E327f71646a704c38ba9f963Fca387777` |
-| Flap vault | `0xbc9A5D01cEF599E405E37dDa672d044a695880b0` |
-| Tournament | `0xc8E92eD2Bcf5E6cDd3daE12ab78c06Fb850acC11` |
+| Factory | `0x09Baf4d675161e8b8e69C95b35a8a60D96B282AF` |
+| Tax token | `0x84B166C369b7D5A8D2A98848D8157FBFBB637777` |
+| Flap vault | `0x458F0ace8A87299fCd190A98a9DDb637b543a709` |
+| Tournament | `0x7C7C3C999984b30e580Bd93402109Dc0eB0f47B4` |
 
 Task 1 is live with a real bounty: 0.05 tBNB of tax was converted through PancakeSwap to
-**0.025318 BTCB** and placed behind it. The vault reports `solvent() == true`.
+**0.024846 BTCB** and placed behind it. `solvent()` returns true and `controllersFrozen` is true
+on both chains.
 
 ## The two packages
 
@@ -150,7 +151,7 @@ mainnet factory), which is the shape the template documents for a factory-scoped
 `vault:check` reports zero issues, `vault:e2e` passes on all three viewports with
 `tokenPolicy: "testnet"`, and `vault:verify-package` confirms the archive.
 
-One thing worth stating plainly about that E2E pass: it is a layout and state conformance gate,
-run with host token/tax/vault data deliberately unavailable, so it never displays live figures.
-It was checked separately, through the preview route against the real chain-97 deployment, that
-the component renders the real bounty, the real task and the real phase.
+That E2E pass is a layout and state conformance gate, run with host token/tax/vault data
+deliberately unavailable, so it never displays live figures. It was checked separately, through
+the preview route against the real chain-97 deployment, that the component renders the real
+bounty, the real task and the real phase.
