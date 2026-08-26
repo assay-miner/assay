@@ -63,7 +63,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | High     | 0     | — |
 | Medium   | 2     | Guardian authority over bounty funds; residual sandwich exposure on a privileged swap |
 | Low      | 3     | Post-drain ledger drift; no commission; conversion liveness depends on curator |
-| Info     | 3     | Bounded stats scan; base-contract errors; tournament dependency |
+| Info     | 6     | Bounded stats scan; base-contract errors; tournament dependency; custody rescue scope; asset assumption; a dead error declaration |
 
 ## Detailed Findings
 
@@ -144,6 +144,34 @@ Neither is free. The current bound plus disclosure is a defensible position for 
 **Recommendation.** The permissionless-convert option in M-02 also resolves this.
 
 ### Info
+
+- **I-04**: `AssayVault` has no rescue path for anything other than its own `asset`. A foreign
+  ERC-20 mis-sent to it, or native coin forced in by `selfdestruct`, cannot be recovered by
+  anybody — the contract inherits nothing, uses no assembly or delegatecall, and its only three
+  token calls are hardcoded to the immutable `asset`. This is stated rather than fixed for three
+  reasons. Rule 009's subject is literally "Non-upgradeable **vaults**", and every line of its
+  check table is scoped the same way, so the custody contract sits outside that guarantee by the
+  specification's own wording rather than by an omission here. No protocol path can place a
+  foreign token there — `deposit` pulls only `asset`, and no function accepts a caller-supplied
+  token — so it requires a manual mis-send, which is a property of nearly every contract that can
+  receive an ERC-20. And stuck native coin is invisible to the ledger: `unaccounted()` and
+  `solvent()` both read `asset.balanceOf(address(this))`, never `address(this).balance`, so it
+  cannot corrupt the accounting or reach a payout. `payOut` is bounded by a named account's
+  balance, so value the ledger never attributed can never leave to anyone.
+- **I-05**: `AssayVault.deposit` credits the nominal `amount` to the ledger and then calls
+  `safeTransferFrom` for that same amount. On a fee-on-transfer or rebasing asset the credited
+  figure would exceed what actually arrived, `solvent()` would go false, and the last withdrawer
+  would be short. It is correct for this deployment — `asset` is fixed at construction to
+  `AssayToken`, which is `ERC20, ERC20Permit` with no transfer hook — but the contract is typed
+  against a generic `IERC20`, so the assumption is worth stating: **this vault requires a
+  standard-transfer asset.** Anyone reusing it with a taxed token must move to balance-delta
+  accounting first.
+- **I-06**: `error NotFrozen()` is declared and never thrown. It reads as a gate that was
+  intended and not installed — presumably "no value may move before the controller set is
+  sealed". Nothing depends on it: `Deploy.s.sol` calls `freeze()` in the same run and asserts
+  `controllersFrozen`, and both live deployments report `controllersFrozen == true`, so no
+  controller can be added after the fact. A dead declaration, not a missing check.
+
 
 - **I-01**: `stats().openTasks` scans only the most recent `STATS_SCAN = 64` tasks. Beyond that it understates. Deliberate: the view is polled by a UI and an unbounded walk would get slower for exactly the vaults doing well. `tasks` and every amount are exact.
 - **I-02**: `VaultBaseV2` and `VaultFactoryBaseV2` declare custom errors (`UnsupportedChain`, `OnlyVaultPortal`, …). These are Flap's own base contracts, unmodified, and outside UI-01's scope. Every revert authored in the two contracts audited here is a literal bilingual string. The tournament contracts behind them still use custom errors; they are not Flap vaults, their reverts do not surface in Flap's UI, and changing them would cost the type safety their own tests rely on.
