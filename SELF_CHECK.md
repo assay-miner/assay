@@ -38,8 +38,8 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | 001 | No DOS via parameter manipulation | ✅ no mutable parameters exist; see L-03 for the liveness note |
 | 002 | Factory inherits `VaultFactoryBaseV2` | ✅ |
 | 002 | Commission fee recommendation | ⚠️ takes none — see L-02 |
-| 003 | No privileged value extraction | ⚠️ see M-02 |
-| 003 | Sandwich risk explicitly assessed | ✅ assessed below; bounded, not eliminated |
+| 003 | No privileged value extraction | ✅ the curator no longer submits the swap they price — see M-02 |
+| 003 | Sandwich risk explicitly assessed | ✅ assessed below and removed via the Trigger Service |
 | 004 | Literal `require` strings, no custom errors | ✅ |
 | 004 | All languages inline | ✅ every string is `en / zh` |
 | 005 | `receive()` ≤ 1,000,000 gas | ✅ **1,832 gas** in the body; 12,988 including the caller's CALL and value transfer. Either figure is a rounding error against the ceiling. |
@@ -61,7 +61,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 |----------|-------|-------------|
 | Critical | 0     | — |
 | High     | 0     | — |
-| Medium   | 2     | Guardian authority over bounty funds; residual sandwich exposure on a privileged swap |
+| Medium   | 1     | Guardian authority over bounty funds (Rule 009 requires it) |
 | Low      | 3     | Post-drain ledger drift; no commission; conversion liveness depends on curator |
 | Info     | 6     | Bounded stats scan; base-contract errors; tournament dependency; two custody gaps found and fixed during this pass; one stated asset assumption |
 
@@ -82,29 +82,61 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 
 **Recommendation.** Keep as specified. Do not add an owner-callable variant.
 
-#### M-02: A privileged caller can still sandwich the vault's own conversion
+#### M-02: The privileged swap was sandwichable by the party who priced it — resolved
 **Severity**: Medium
-**Status**: Open — bounded, not eliminated
-**File**: `src/AssayFlapVault.sol` — `endow`
+**Status**: Resolved — the conversion is no longer submitted by the party that prices it
+**File**: `src/AssayFlapVault.sol` — `scheduleEndow`, `trigger`, `endow`
 
-**Description.** `endow` swaps native BNB for BTCB through PancakeSwap V2 with a caller-supplied `minRewardOut`. The caller is the curator or the Guardian. Before this audit the floor was unbounded, so a curator could pass `0`, sandwich the swap and keep the difference — value taken from the bounty, since the input is the token's trading tax. The floor is now required to be non-zero and no more than `MAX_ENDOW_SLIPPAGE_BPS` (300 = 3%) below the pool's spot price.
+**What it was.** `endow` let the curator price a swap and broadcast it in the same transaction.
+The slippage floor was bounded to 3% below spot, which closed the case of a caller simply
+declaring any price acceptable, and closed nothing else: a floor derived from spot cannot bound
+an actor who moves spot in the same transaction. An earlier revision of this report said so and
+asked Flap for an opinion on the two fixes we could see — a TWAP reference, or splitting
+conversion from assignment.
 
-**Impact after the fix.** The naive case is closed. The residual case is not: an attacker who moves the pool in the same transaction also moves the `getAmountsOut` reading the bound is measured against, so a determined curator can still extract within a window they widen themselves. The size of that window is bounded by the tax accumulated since the last conversion.
+**What resolved it.** Flap's own Trigger Service, suggested during pre-audit review, and better
+than either. The problem was never really the arithmetic; it was that one party priced, submitted
+and could surround the swap. Splitting those apart removes it:
 
-**Proof of concept (residual).**
-```solidity
-// within one transaction, as curator:
-//   1. buy BTCB, pushing the BNB→BTCB price against the vault
-//   2. spot = quote(bnbAmount)      <- already depressed
-//   3. endow(taskId, bnbAmount, spot * 0.97)  <- passes the bound
-//   4. sell back, keeping the spread
-```
+- `scheduleEndow(taskId, bnbAmount, minRewardOut)` is the curator's only conversion path. It
+  registers the intent, bounds the floor against spot at that moment, and pays the scheduler's
+  fee. It does not touch the pool.
+- `trigger(requestId)` is the callback. The transaction that swaps is submitted by Flap's backend
+  through an MEV-protected path, at a time the curator cannot predict. There is no ordering left
+  for them to arrange around, and nothing in the public mempool for anyone else to race.
+- `endow` is now **Guardian-only**, kept for the case where the scheduler itself is unavailable.
+  Leaving it open to the curator would have left the original path intact and fixed nothing.
 
-**Recommendation.** Two options, both real:
-1. Reference the floor against a TWAP rather than spot. Adds an oracle dependency and a staleness surface.
-2. Remove the discretion: convert on a schedule, or let anyone call a permissionless `convert()` that only moves tax into an unassigned BTCB pool, with a separate `assign(taskId, amount)` that touches no market. This removes the privileged swap entirely at the cost of letting a griefer choose the moment of conversion.
+The floor is bounded where it is set rather than where it executes. Bounding it at execution
+would re-derive it from a pool the curator could have moved beforehand; bounding it at scheduling
+ties it to the price when it was set, and execution simply honours it. If the market moves past
+the floor in the meantime the swap reverts, the request is marked FAILED, and anyone may
+`retryTrigger` it — a conversion that would now be bad does not quietly happen.
 
-Neither is free. The current bound plus disclosure is a defensible position for launch; option 2 is the right direction if the vault ever holds material size.
+**The failure modes that come with the integration**, each handled rather than assumed:
+
+| Risk | Handling |
+|---|---|
+| Callback driven by anyone | `msg.sender == triggerService`, an immutable resolved from `block.chainid`, plus `nonReentrant` |
+| A swallowed failure marking the request EXECUTED | No `try`/`catch` anywhere on the path. A failed conversion reverts, the service records FAILED, and `retryTrigger` stays available |
+| A request consumed by a failure | The record is deleted **before** the swap; a revert undoes the deletion with everything else, so a failed conversion leaves the request intact and retryable |
+| A stuck request nobody can clear | `cancelScheduledEndow(requestId)`, curator or Guardian. A later callback for a cancelled id finds nothing and reverts |
+| The fee eating bounty money | Paid by the caller through `msg.value`, never taken from tax. Change is refunded rather than quietly becoming bounty |
+| A hardcoded fee going stale | `getFee()` is read at call time, as the service's own guidance requires |
+
+**Verified on chain, not only on a fork.** On BNB testnet, request `31132`: 0.05 tBNB of tax
+scheduled by the curator, executed by Flap's backend, `0.025758 BTCB` booked behind task 1,
+`unassigned()` at zero and `solvent()` true. The transaction that performed the swap was not ours.
+
+`test/TriggerEndow.t.sol` covers the path in 14 tests and is proven by breaking it: removing the
+callback's sender check, wrapping the conversion in a `try`/`catch`, and reopening `endow` to the
+curator each turn a specific test red.
+
+**What remains.** The curator can still move the pool *before* scheduling, which lowers the spot
+the floor is measured against. They cannot act on it: they do not submit the execution and cannot
+predict its timing, so there is no position for them to close around it. A TWAP reference on the
+floor would remove even that, at the cost of an oracle dependency and a staleness surface. Worth
+Flap's opinion, but it is no longer the same class of finding.
 
 ### Low
 

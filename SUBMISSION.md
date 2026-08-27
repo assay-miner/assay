@@ -109,52 +109,42 @@ Repository at `abfa000`.
 
 ---
 
-# Deployment state — 2026-08-26
-
-Redeployed after two custody gaps were found and fixed. The earlier addresses are dead; nothing
-was ever staked or posted against them, so nothing was migrated.
+# Deployment state — 2026-08-27
 
 ## BNB Smart Chain mainnet (56)
 
 | | |
 |---|---|
-| Factory | `0xEe61Be099E93e0b5c769940a2B8d92c85A1ACfD9` |
-| Tournament | `0xBBFFf88DeA3EC1ba2cEE24cfe7938d23E82E48D4` |
-| Custody vault | `0x78A28E2f1eCd2A68b25f09aBAc761b0B8bFB0A8E` |
-| Roster | `0xb4306003e330a74Fc3A78B5e44EFedA66f811844` |
-| ASSAY token | `0x765A7Cb4f82E6E84cb14AA803e85809e2742A971` |
-| Tax token | not launched — Flap audits the factory, and their guide puts that before the UI submission |
-
-The deployed factory runtime is byte-for-byte the compiled artifact once its two immutable slots
-are blanked; both hold the tournament address. `verify-onchain.mjs` in the audit package checks it
-against the chain in one command.
+| Factory | `0x18a42C51E24a9cD8AFebA7317921cDF25BA9A2de` |
+| Tournament | `0xe1393Fc841C65Eb8ed1368d58EB6AfFC5F229776` |
+| Custody ledger | `0x5e338dc451F2999109616059d4142Ed7d8987Fd7` |
+| Roster | `0x09Baf4d675161e8b8e69C95b35a8a60D96B282AF` |
+| ASSAY token | `0xF6e9681b6252Cd4137B0646EB8f66489aeB4C0C2` |
+| Tax token | not launched — Flap audits the factory, and launching claims a name permanently |
 
 ## BNB Smart Chain testnet (97) — the proof deployment
 
 | | |
 |---|---|
-| Factory | `0x09Baf4d675161e8b8e69C95b35a8a60D96B282AF` |
-| Tax token | `0x84B166C369b7D5A8D2A98848D8157FBFBB637777` |
-| Flap vault | `0x458F0ace8A87299fCd190A98a9DDb637b543a709` |
-| Tournament | `0x7C7C3C999984b30e580Bd93402109Dc0eB0f47B4` |
+| Factory | `0xf656D56A3027220FF31Fb923D8Ac93ad57974D14` |
+| Tax token | `0xCBca80E51F5504193f4C6cD3E6F338Fa8a6A7777` |
+| Flap vault | `0x60de48f4C664B5807C615ca9Ea100A69564ea0dF` |
+| Tournament | `0xc1Eb095F99144622a86143dea504a7906283719C` |
 
-Task 1 is live with a real bounty: 0.05 tBNB of tax was converted through PancakeSwap to
-**0.024846 BTCB** and placed behind it. `solvent()` returns true and `controllersFrozen` is true
-on both chains.
+Task 1 carries a real bounty, placed there by Flap's Trigger Service rather than by us: 0.05 tBNB
+of tax scheduled by the curator, executed by their backend as request `31132`, booked as
+**0.025758 BTCB**. `solvent()` is true and `controllersFrozen` is true on both chains.
 
 ## The two packages
 
 | Package | Contents | Step |
 |---|---|---|
-| `dist/assay-vault-audit.zip` | Contracts, the standard JSON that reproduces the deployed bytecode, the self-check, the forked integration tests, and a verifier that checks the address against the chain | 6 — contract audit |
+| `dist/assay-vault-audit.zip` | Contracts at the archive root, flattened single files, the standard JSON that reproduces the deployed bytecode, the self-check, the whole test suite, and a verifier that checks the address against the chain | 6 — contract audit |
 | `dist/assay-vault-ui.zip` | The four-file Vault UI source package, format 6, with its QA report | 7 — after the audit passes |
 
-The UI package binds chain 97 (our factory plus our own `…7777` proof token) and chain 56 (the
-mainnet factory), which is the shape the template documents for a factory-scoped mainnet launch.
-`vault:check` reports zero issues, `vault:e2e` passes on all three viewports with
-`tokenPolicy: "testnet"`, and `vault:verify-package` confirms the archive.
-
-That E2E pass is a layout and state conformance gate, run with host token/tax/vault data
-deliberately unavailable, so it never displays live figures. It was checked separately, through
-the preview route against the real chain-97 deployment, that the component renders the real
-bounty, the real task and the real phase.
+Both archives state their own measured figures. The audit archive is built by a script that runs
+the tests going into it and writes that number itself, then extracts the result into an empty
+directory, builds it with pinned dependencies, runs it again and refuses to ship if the stated
+count and the measured one disagree. An earlier archive shipped four hand-picked suites while
+this file quoted the repository's total; a reviewer counted 33 against a documented 103 and was
+right to stop there.

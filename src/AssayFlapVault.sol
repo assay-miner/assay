@@ -7,6 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 
 import {VaultBaseV2} from "./flap/VaultBaseV2.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
+import {IFlapTriggerService, ITriggerReceiver} from "./flap/IFlapTriggerService.sol";
 import {
     VaultUISchema, VaultMethodSchema, FieldDescriptor, ApproveAction
 } from "./flap/IVaultSchemasV1.sol";
@@ -36,7 +37,7 @@ import {Tournament} from "./Tournament.sol";
 ///      Custody note: value that arrives here is assigned to a task the moment that task is
 ///      endowed, and can only ever leave to an address the tournament has already recorded a
 ///      score for. There is no owner, no upgrade path, and no sweep of endowed funds.
-contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
+contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     using SafeERC20 for IERC20;
 
     /// @notice How far back `stats()` looks when counting still-open tasks.
@@ -57,6 +58,19 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
 
     /// @notice The router's wrapped native token — the first hop of the conversion path.
     address public immutable wrappedNative;
+
+    /// @notice Flap's scheduler. The conversion is executed by its backend, not by the curator.
+    IFlapTriggerService public immutable triggerService;
+
+    /// @notice A conversion that has been scheduled and not yet executed.
+    struct ScheduledEndow {
+        uint128 bnbAmount;
+        uint128 minRewardOut;
+        uint256 taskId;
+    }
+
+    /// @notice Scheduled conversions, by the scheduler's request id.
+    mapping(uint256 requestId => ScheduledEndow) public scheduled;
 
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
@@ -89,6 +103,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
     event Endowed(uint256 indexed taskId, uint256 bnbIn, uint256 rewardOut, uint256 unassignedLeft);
     event Sponsored(uint256 indexed taskId, address indexed from, uint256 amount);
     event BountyPaid(uint256 indexed taskId, address indexed miner, uint256 amount);
+    event EndowScheduled(uint256 indexed requestId, uint256 indexed taskId, uint256 bnbAmount, uint256 minRewardOut);
+    event EndowCancelled(uint256 indexed requestId, uint256 indexed taskId);
     event EmergencyWithdrawNative(address indexed to, uint256 amount);
     event EmergencyWithdrawToken(address indexed token, address indexed to, uint256 amount);
 
@@ -111,12 +127,15 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
         uint256 chainId = block.chainid;
         address rewardToken;
         address routerAddr;
+        address triggerAddr;
         if (chainId == 56) {
             rewardToken = 0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c; // BTCB Token
             routerAddr = 0x10ED43C718714eb63d5aA57B78B54704E256024E; // PancakeSwap V2
+            triggerAddr = 0xcf4EE25035CF883895110f367F5BA8172416a7F9; // FlapTriggerService
         } else if (chainId == 97) {
             rewardToken = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8; // BTCB, BNB testnet
             routerAddr = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1; // PancakeSwap V2, testnet
+            triggerAddr = 0x560E9830926C9e0EB98a59c6b9902383Fc0D9Eb2; // FlapTriggerService, testnet
         } else {
             revert(unicode"Reward asset is not deployed on this chain / 本链没有部署奖励资产");
         }
@@ -124,6 +143,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
         reward = IERC20(rewardToken);
         router = IPancakeRouter02(routerAddr);
         wrappedNative = IPancakeRouter02(routerAddr).WETH();
+        triggerService = IFlapTriggerService(triggerAddr);
     }
 
     /// @notice Trading tax arrives here as native BNB.
@@ -167,14 +187,14 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
         nonReentrant
         returns (uint256 rewardOut)
     {
-        require(
-            msg.sender == curator || msg.sender == _getGuardian(),
-            unicode"Only the curator may convert tax / 只有策展方可以兑换交易税"
-        );
+        // Guardian only, and deliberately narrower than it used to be. The curator schedules
+        // instead. A conversion the curator both prices and submits is one they can bundle a pool
+        // move around; this path stays for the case where the scheduler itself is unavailable,
+        // and the Guardian is not the party whose incentive the bundling would serve.
+        require(msg.sender == _getGuardian(), unicode"Only the guardian / 仅限守护者");
         _requireTask(taskId);
-        uint256 free = unassigned();
         require(
-            bnbAmount > 0 && bnbAmount <= free,
+            bnbAmount > 0 && bnbAmount <= unassigned(),
             unicode"Amount exceeds the unconverted tax / 金额超过了未兑换的交易税"
         );
 
@@ -190,6 +210,20 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
             unicode"Slippage floor is too low / 滑点下限过低"
         );
 
+        return _convertAndBook(taskId, bnbAmount, minRewardOut);
+    }
+
+    /// @dev The swap and the booking, in one place because there are two ways in.
+    ///
+    ///      A rule written at one entry point and forgotten at the second is the defect this
+    ///      codebase has produced most often. Both `endow` and the scheduler's callback land
+    ///      here, so the amount booked is the amount that arrived, on both paths, by
+    ///      construction rather than by two authors agreeing.
+    function _convertAndBook(uint256 taskId, uint256 bnbAmount, uint256 minRewardOut)
+        private
+        returns (uint256 rewardOut)
+    {
+        uint256 free = address(this).balance;
         address[] memory path = new address[](2);
         path[0] = wrappedNative;
         path[1] = address(reward);
@@ -202,6 +236,119 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
         bounty[taskId] += rewardOut;
         endowed += rewardOut;
         emit Endowed(taskId, bnbAmount, rewardOut, free - bnbAmount);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Scheduled conversion — the curator's path
+    // -------------------------------------------------------------------------------------
+
+    /// @notice Schedules a conversion. The curator prices it; Flap's backend submits it.
+    ///
+    /// @dev This is the answer to the residual sandwich window on the atomic path. That window
+    ///      was never really about slippage arithmetic — a floor derived from spot cannot bound
+    ///      an actor who moves spot in the same transaction. It was about one party pricing,
+    ///      submitting and surrounding the swap. Splitting those apart is what closes it: the
+    ///      curator still chooses the task, the size and the floor, but the transaction that
+    ///      touches the pool is submitted by a backend they do not control, through an
+    ///      MEV-protected path, at a time they cannot predict. There is no ordering left for
+    ///      them to arrange around, and nothing in the public mempool for anyone else to race.
+    ///
+    ///      The floor is bounded here rather than at execution. Bounding it at execution would
+    ///      re-derive it from a pool the curator could have moved beforehand; bounding it here
+    ///      ties it to the price when it was set, and the execution simply honours it. If the
+    ///      market moves past the floor in the meantime the swap reverts, the request is marked
+    ///      FAILED, and anyone may `retryTrigger` it later. That is the correct outcome — a
+    ///      conversion that would now be bad does not silently happen.
+    ///
+    /// @param taskId       The task the converted BTCB will sit behind.
+    /// @param bnbAmount    Native BNB to convert when the callback runs.
+    /// @param minRewardOut Minimum BTCB the conversion must produce.
+    function scheduleEndow(uint256 taskId, uint256 bnbAmount, uint256 minRewardOut)
+        external
+        payable
+        nonReentrant
+        returns (uint256 requestId)
+    {
+        require(
+            msg.sender == curator || msg.sender == _getGuardian(),
+            unicode"Only the curator may schedule / 只有策展方可以安排兑换"
+        );
+        _requireTask(taskId);
+        require(
+            bnbAmount > 0 && bnbAmount <= unassigned(),
+            unicode"Amount exceeds the unconverted tax / 金额超过了未兑换的交易税"
+        );
+        uint256 spot = quote(bnbAmount);
+        require(
+            minRewardOut > 0
+                && minRewardOut >= (spot * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000,
+            unicode"Slippage floor is too low / 滑点下限过低"
+        );
+        require(bnbAmount <= type(uint128).max && minRewardOut <= type(uint128).max,
+            unicode"Amount too large / 金额过大");
+
+        // Read at call time, never hardcoded: the service's own guidance, and it is about to
+        // start pricing dynamically.
+        uint256 fee = triggerService.getFee();
+        require(msg.value >= fee, unicode"Send the scheduler fee / 需要附带调度费");
+
+        requestId = triggerService.requestTrigger{value: fee}(0);
+        scheduled[requestId] =
+            ScheduledEndow({bnbAmount: uint128(bnbAmount), minRewardOut: uint128(minRewardOut), taskId: taskId});
+        emit EndowScheduled(requestId, taskId, bnbAmount, minRewardOut);
+
+        // Change goes back rather than quietly becoming bounty money. The fee is the caller's
+        // cost; the tax is the miners'.
+        uint256 change = msg.value - fee;
+        if (change > 0) {
+            (bool ok,) = msg.sender.call{value: change}("");
+            require(ok, unicode"Change refund failed / 找零退回失败");
+        }
+    }
+
+    /// @notice The scheduler's callback. Executes a conversion that was scheduled earlier.
+    ///
+    /// @dev Three things here are deliberate.
+    ///
+    ///      The entry is gated on the scheduler's own address, which is an immutable resolved
+    ///      from the chain id, so nothing else can drive this.
+    ///
+    ///      The record is deleted before the swap. A revert undoes the deletion along with
+    ///      everything else, so a failed conversion leaves the request intact and retryable
+    ///      rather than consumed — which is the difference between a callback that can be
+    ///      re-armed and one that is stuck forever.
+    ///
+    ///      And there is no `try`/`catch`. Swallowing a failed fulfilment would let the service
+    ///      record the request as EXECUTED when nothing happened, and `retryTrigger` only works
+    ///      on a request marked FAILED. Reverting is what keeps the retry path alive.
+    function trigger(uint256 requestId) external override nonReentrant {
+        require(msg.sender == address(triggerService), unicode"Only the trigger service / 仅限调度服务");
+
+        ScheduledEndow memory s = scheduled[requestId];
+        require(s.bnbAmount > 0, unicode"No such scheduled conversion / 没有这笔已安排的兑换");
+        delete scheduled[requestId];
+
+        _convertAndBook(s.taskId, s.bnbAmount, s.minRewardOut);
+    }
+
+    /// @notice Drops a scheduled conversion. The BNB simply stays unconverted.
+    /// @dev Present so a request that can never succeed — a floor the market has left behind, a
+    ///      task that should not have been chosen — does not sit there waiting to fire at a time
+    ///      nobody is watching. A later callback for a cancelled id finds nothing and reverts.
+    function cancelScheduledEndow(uint256 requestId) external {
+        require(
+            msg.sender == curator || msg.sender == _getGuardian(),
+            unicode"Only the curator may cancel / 只有策展方可以取消"
+        );
+        ScheduledEndow memory s = scheduled[requestId];
+        require(s.bnbAmount > 0, unicode"No such scheduled conversion / 没有这笔已安排的兑换");
+        delete scheduled[requestId];
+        emit EndowCancelled(requestId, s.taskId);
+    }
+
+    /// @notice What the scheduler charges to accept a request right now.
+    function schedulerFee() external view returns (uint256) {
+        return triggerService.getFee();
     }
 
     /// @notice Adds BTCB to a task's bounty directly, from anyone who wants to sponsor the work.
@@ -440,7 +587,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
         schema.description = unicode"Trading tax becomes BTCB prize money for verified gas-optimisation work. Miners submit EVM runtime bytecode; the chain deploys it, runs every test vector and reads the meter. / 交易税变成 BTCB 奖金,奖励可验证的优化工作。矿工提交 EVM 运行时字节码,链把它部署、跑完全部测试向量、读取计量表。";
-        schema.methods = new VaultMethodSchema[](8);
+        schema.methods = new VaultMethodSchema[](9);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
         VaultMethodSchema memory m = schema.methods[0];
@@ -537,8 +684,20 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard {
         m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"BTCB / BTCB", 18);
         m.approvals = new ApproveAction[](0);
 
-        // 7 — the conversion the curator is about to accept.
+        // 7 — the curator's only conversion path.
         m = schema.methods[7];
+        m.name = "scheduleEndow";
+        m.description = unicode"Schedule a conversion; Flap's backend submits it, not you / 安排一笔兑换,由 Flap 后台提交而非本人";
+        m.inputs = new FieldDescriptor[](3);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
+        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Minimum BTCB accepted / 最少接受的 BTCB", 18);
+        m.outputs = new FieldDescriptor[](0);
+        m.approvals = new ApproveAction[](0);
+        m.isWriteMethod = true;
+
+        // 8 — the conversion the curator is about to accept.
+        m = schema.methods[8];
         m.name = "quote";
         m.description = unicode"What that much BNB converts to at the pool's current price / 这么多 BNB 按当前池价能换到多少";
         m.inputs = new FieldDescriptor[](1);

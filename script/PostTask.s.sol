@@ -19,7 +19,6 @@ import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 contract PostTask is Script {
     error VectorCountMismatch(uint256 inputs, uint256 expected);
     error BaselineNotBeatable(uint32 baselineGas);
-    error EndowMovedNothing(uint256 taskId);
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -66,12 +65,16 @@ contract PostTask is Script {
                 uint256 bps = vm.envOr("MAX_SLIPPAGE_BPS", uint256(200));
                 uint256 floor = (flap.quote(want) * (10_000 - bps)) / 10_000;
 
-                uint256 got = flap.endow(taskId, want, floor);
-                if (got == 0) revert EndowMovedNothing(taskId);
+                // Scheduled, not converted here. The curator prices the conversion; Flap's
+                // backend submits it. That split is the whole point — a conversion this script
+                // both priced and broadcast is one whose ordering the curator controls.
+                uint256 fee = flap.schedulerFee();
+                uint256 requestId = flap.scheduleEndow{value: fee}(taskId, want, floor);
 
-                console2.log("endowed bnb ", want);
-                console2.log("floor btcb  ", floor);
-                console2.log("bounty btcb ", got);
+                console2.log("scheduled bnb", want);
+                console2.log("floor btcb   ", floor);
+                console2.log("request id   ", requestId);
+                console2.log("scheduler fee", fee);
             } else {
                 console2.log("endowed     ", "no unconverted tax has arrived yet");
             }

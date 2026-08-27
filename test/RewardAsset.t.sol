@@ -20,6 +20,8 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 contract RewardAssetTest is BaseTest {
     address internal constant BTCB = 0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c;
     address internal constant TAXPAYER = address(0x7A);
+    /// @dev Chain 56's Guardian. `endow` is the escape hatch now; the curator schedules instead.
+    address internal constant GUARDIAN = 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b;
     address internal constant SPONSOR = address(0x5B);
 
     AssayFlapVault internal flap;
@@ -75,7 +77,7 @@ contract RewardAssetTest is BaseTest {
         uint256 quoted = flap.quote(2 ether);
         assertGt(quoted, 0, "no route from BNB to BTCB");
 
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         uint256 got = flap.endow(taskId, 2 ether, (quoted * 99) / 100);
 
         assertEq(IERC20(BTCB).balanceOf(address(flap)), got, "vault holds exactly what it booked");
@@ -91,7 +93,7 @@ contract RewardAssetTest is BaseTest {
         _tax(2 ether);
         uint256 quoted = flap.quote(1 ether);
 
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         vm.expectRevert();
         flap.endow(taskId, 1 ether, quoted * 2);
 
@@ -99,18 +101,23 @@ contract RewardAssetTest is BaseTest {
         assertEq(flap.unassigned(), 2 ether, "and spends nothing");
     }
 
-    function test_OnlyTheCuratorConverts() public {
+    function test_OnlyTheGuardianUsesTheEscapeHatch() public {
         _tax(1 ether);
         uint256 floor_ = _floor(1 ether);
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator may convert tax / 只有策展方可以兑换交易税"));
+        vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
+        flap.endow(taskId, 1 ether, floor_);
+
+        // And the curator, who used to hold this, no longer does.
+        vm.prank(CURATOR);
+        vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
         flap.endow(taskId, 1 ether, floor_);
     }
 
     function test_CannotEndowMoreThanHasArrived() public {
         _tax(1 ether);
         uint256 floor_ = _floor(2 ether);
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         vm.expectRevert(bytes(unicode"Amount exceeds the unconverted tax / 金额超过了未兑换的交易税"));
         flap.endow(taskId, 2 ether, floor_);
     }
@@ -119,7 +126,7 @@ contract RewardAssetTest is BaseTest {
     function test_TheMinerIsPaidInBtcb() public {
         _tax(2 ether);
         uint256 floor_ = _floor(2 ether);
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         uint256 pot = flap.endow(taskId, 2 ether, floor_);
 
         _scoringMiner(ALICE, AGENT_ALICE);
@@ -143,7 +150,7 @@ contract RewardAssetTest is BaseTest {
     function test_AMinerCannotCollectTwice() public {
         _tax(1 ether);
         uint256 floor_ = _floor(1 ether);
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         flap.endow(taskId, 1 ether, floor_);
         _scoringMiner(ALICE, AGENT_ALICE);
 
@@ -184,11 +191,11 @@ contract RewardAssetTest is BaseTest {
         uint256 live = tournament.taskCount();
         uint256 floor_ = _floor(1 ether);
 
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
         flap.endow(live + 1, 1 ether, floor_);
 
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
         flap.endow(0, 1 ether, floor_);
 
@@ -214,7 +221,7 @@ contract RewardAssetTest is BaseTest {
     function test_StatsSeparatesTheCoinFromTheToken() public {
         _tax(3 ether);
         uint256 floor_ = _floor(2 ether);
-        vm.prank(CURATOR);
+        vm.prank(GUARDIAN);
         uint256 pot = flap.endow(taskId, 2 ether, floor_);
 
         (, , uint256 unassignedBnb, uint256 committedBtcb, uint256 paidBtcb, ) = flap.stats();

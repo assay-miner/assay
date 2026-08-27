@@ -166,18 +166,21 @@ forge test        # ${TEST_COUNT} tests, ${SUITE_COUNT} suites, ${FORK_COUNT} fo
 
 ## Where to look hardest
 
-\`endow\` performs a swap on behalf of a privileged caller. The slippage floor is bounded to 3%
-below spot, which closes the case an insider can arrange at will and does not close the case
-where they move the pool first. M-02 in \`SELF_CHECK.md\` sets out both real fixes and what each
-costs. It is the finding where an outside opinion is worth the most.
+\`scheduleEndow\` and its callback. The conversion used to be priced and broadcast by the same
+party, which is exactly the ordering an insider can arrange around; it now goes through Flap's
+Trigger Service, so the transaction that touches the pool is submitted by a backend the curator
+does not control. \`endow\` remains as a Guardian-only escape hatch for the case where the
+scheduler is unavailable — leaving it open to the curator would have fixed nothing.
+
+M-02 in \`SELF_CHECK.md\` sets out what that closes and the one thing it does not: the curator can
+still move the pool before scheduling, lowering the spot the floor is measured against. They
+cannot act on it, because they do not submit the execution and cannot predict its timing. Whether
+that residue is worth a TWAP reference is the question worth your opinion.
 EOF
 
-# Zipped from inside the directory, so `src/` and `foundry.toml` sit at the archive root.
-# An intake tool that does not recurse past a wrapper folder reports "no Solidity source files
-# found" on an archive that is full of them — which is what happened with the first build.
 ( cd "$OUT" && zip -qr ../assay-vault-audit.zip . )
 echo "  $(ls -lh dist/assay-vault-audit.zip | awk '{print $5}')  dist/assay-vault-audit.zip"
+echo "  $(find "$OUT" -type f | wc -l | tr -d ' ') files"
 echo
 echo "verifying the archive the way a reviewer will…"
 ./tools/verify-audit-package.sh dist/assay-vault-audit.zip
-echo "  $(find "$OUT" -type f | wc -l | tr -d ' ') files"

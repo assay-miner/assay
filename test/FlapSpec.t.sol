@@ -141,19 +141,19 @@ contract FlapSpecTest is BaseTest {
         _tax(2 ether);
         uint256 spot = flap.quote(1 ether);
 
-        vm.prank(CURATOR);
+        vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
         flap.endow(taskId, 1 ether, 0);
 
         // Ten percent under spot is still "any price you like" at the sizes involved.
         uint256 tooLow = (spot * 90) / 100;
-        vm.prank(CURATOR);
+        vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
         flap.endow(taskId, 1 ether, tooLow);
 
         // Just inside the protocol's tolerance is accepted.
         uint256 ok = (spot * 9_800) / 10_000;
-        vm.prank(CURATOR);
+        vm.prank(guardian);
         assertGt(flap.endow(taskId, 1 ether, ok), 0, "a reasonable floor was refused");
     }
 
@@ -169,7 +169,7 @@ contract FlapSpecTest is BaseTest {
     function test_SolvencyGoesFalseAfterTheGuardianDrains() public {
         _tax(1 ether);
         uint256 floor_ = _floor(1 ether);
-        vm.prank(CURATOR);
+        vm.prank(guardian);
         uint256 pot = flap.endow(taskId, 1 ether, floor_);
         assertTrue(flap.solvent(), "should start covered");
 
@@ -195,7 +195,7 @@ contract FlapSpecTest is BaseTest {
         );
 
         uint256 floor_ = _floor(1 ether);
-        vm.prank(CURATOR);
+        vm.prank(guardian);
         flap.endow(taskId, 1 ether, floor_);
         assertTrue(
             keccak256(bytes(flap.description())) != keccak256(bytes(waiting)),
@@ -207,7 +207,7 @@ contract FlapSpecTest is BaseTest {
         VaultUISchema memory schema = flap.vaultUISchema();
         assertGt(bytes(schema.vaultType).length, 0, "vaultType is empty");
         assertGt(bytes(schema.description).length, 0, "schema description is empty");
-        assertEq(schema.methods.length, 8, "method count drifted");
+        assertEq(schema.methods.length, 9, "method count drifted");
 
         uint256 writes;
         for (uint256 i; i < schema.methods.length; ++i) {
@@ -218,7 +218,7 @@ contract FlapSpecTest is BaseTest {
                 assertEq(schema.methods[i].outputs.length, 0, "a write method declares outputs");
             }
         }
-        assertEq(writes, 3, "the write methods drifted");
+        assertEq(writes, 4, "the write methods drifted");
     }
 
     /// @dev The spec fixes the vocabulary: only these field types, 18 decimals for an amount and
