@@ -37,6 +37,14 @@ for C in AssayFlapFactory AssayFlapVault; do
     0x0000000000000000000000000000000000000000 "src/$C.sol:$C" > "$OUT/standard-json/$C.json"
 done
 
+# Flattened single files. Some audit intake portals accept only one self-contained .sol per
+# contract, and a flatten that does not compile is worthless — these are built by `forge flatten`
+# and compile-checked in a clean project before they go in.
+mkdir -p "$OUT/flat"
+for C in AssayFlapFactory AssayFlapVault; do
+  forge flatten "src/$C.sol" -o "$OUT/flat/$C.flat.sol" >/dev/null 2>&1
+done
+
 cp tools/verify-onchain.mjs "$OUT/verify-onchain.mjs"
 mkdir -p "$OUT/artifact"
 cp out/AssayFlapFactory.sol/AssayFlapFactory.json out/AssayFlapVault.sol/AssayFlapVault.json "$OUT/artifact/"
@@ -87,6 +95,14 @@ It fetches the factory's code from chain ${CHAIN} and compares it with the artif
 immutable slots first — those hold the tournament address and are written at deploy time, so a
 raw comparison always differs there and nowhere else.
 
+## Three forms of the same source
+
+| Path | Use |
+|---|---|
+| `src/` + `foundry.toml` | The repository layout. `src/` and `foundry.toml` are at the archive root, not inside a wrapper folder, so a tool that does not recurse still finds the contracts. |
+| `flat/*.flat.sol` | One self-contained file per audited contract, for portals that accept only that. Compile-checked in a clean project: identical runtime length to the repository build, differing only in the trailing CBOR metadata, which encodes source paths and therefore always changes when files are flattened. |
+| `standard-json/*.json` | The exact solc input. This is the only form that reproduces the deployed bytecode byte for byte. |
+
 ## Reading order
 
 1. \`SELF_CHECK.md\` — the contracts against Flap's published rule set. Two Medium findings, both
@@ -128,6 +144,9 @@ where they move the pool first. M-02 in \`SELF_CHECK.md\` sets out both real fix
 costs. It is the finding where an outside opinion is worth the most.
 EOF
 
-( cd dist && zip -qr assay-vault-audit.zip assay-vault-audit )
+# Zipped from inside the directory, so `src/` and `foundry.toml` sit at the archive root.
+# An intake tool that does not recurse past a wrapper folder reports "no Solidity source files
+# found" on an archive that is full of them — which is what happened with the first build.
+( cd "$OUT" && zip -qr ../assay-vault-audit.zip . )
 echo "  $(ls -lh dist/assay-vault-audit.zip | awk '{print $5}')  dist/assay-vault-audit.zip"
 echo "  $(find "$OUT" -type f | wc -l | tr -d ' ') files"
