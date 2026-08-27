@@ -47,7 +47,10 @@ Measured, not estimated:
 
 ## 4. Integration tests — **done**
 
-`forge test` — **103 passing, 0 failing**, across 12 suites. Six fork real BSC state.
+`forge test` — the audit archive states its own test and suite counts, measured by the script
+that builds it from the tests inside it. An earlier revision of this file quoted a figure for the
+repository while the archive shipped four of its suites; a reviewer counted 33 against a claimed
+103 and was right to stop. The archive now carries the whole suite and derives the number.
 
 | Suite | Covers |
 |---|---|

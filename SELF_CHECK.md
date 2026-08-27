@@ -44,7 +44,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | 004 | All languages inline | ✅ every string is `en / zh` |
 | 005 | `receive()` ≤ 1,000,000 gas | ✅ **1,832 gas** in the body; 12,988 including the caller's CALL and value transfer. Either figure is a rounding error against the ceiling. |
 | 005 | No loops / external calls / delegatecall in the `receive()` tree | ✅ body is one `emit` |
-| 006 | Integration test coverage | ✅ `test/FlapSpec.t.sol` (13) + `test/RewardAsset.t.sol` (12), both forked |
+| 006 | Integration test coverage | ✅ the whole suite ships in the archive, which measures and states its own counts |
 | 007 | AI oracle | N/A — none |
 | 008 | Trigger service | N/A — none |
 | 009 | `emergencyWithdrawNative(address to)` verbatim | ✅ `onlyGuardian`, `nonReentrant`, full balance, event |
@@ -239,7 +239,7 @@ The curator's discretion over *when* to convert and *which task* receives it is 
 
 ## Testing and Verification Recommendations
 
-103 tests pass across 12 suites, of which six are forked against real BSC state (four against mainnet, two against testnet). Before mainnet:
+The full suite ships in the audit archive, which states its own measured test and suite counts. Before mainnet:
 
 1. Run `tools/rehearse.sh` against a mainnet fork as well as testnet — the reward venue differs by chain and only the testnet path has been walked end to end.
 2. Deploy to BNB testnet and exercise `endow` and `collect` through `testnet.flap.sh` rather than only through the local preview.

@@ -38,7 +38,7 @@ CHAIN_ID=97 PRIVATE_KEY=0x… ./exit     # reclaim your own unwon pots, immediat
 ## Testing
 
 ```bash
-forge test                 # 103 tests, 12 suites, six of them forked against real BSC state
+forge test                 # the whole suite; six of its files fork real BSC state
 ./tools/rehearse.sh        # the whole protocol end to end against a fork, in ~33s
 ```
 

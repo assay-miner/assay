@@ -23,8 +23,18 @@ cp -R src/flap src/interfaces src/mocks "$OUT/src/"
 cp src/AssayFlapVault.sol src/AssayFlapFactory.sol src/Tournament.sol src/AgentRoster.sol \
    src/AssayVault.sol src/Crucible.sol src/AssayToken.sol "$OUT/src/"
 
-cp test/FlapSpec.t.sol test/RewardAsset.t.sol test/FlapGate.t.sol test/FlapRender.t.sol \
-   test/Base.t.sol test/Bytecode.sol test/CrucibleHarness.sol "$OUT/test/"
+# The whole suite, not a hand-picked four. The first archive shipped only the Flap-facing suites
+# while the docs quoted the repository's total, so a reviewer counted 33 tests against a claim of
+# 103 and was right to stop there. It also left Tournament, the custody ledger and the roster
+# untested inside the package — and every payout this vault makes is a function of the
+# tournament's state, so "out of scope" was the wrong call for an archive somebody has to judge.
+cp -R test/. "$OUT/test/"
+
+# LaunchGuard.t.sol imports the deploy script, so the scripts come too. Found by extracting the
+# archive into an empty directory and building it the way a reviewer would, which is the only way
+# a missing file shows up — the build in this repository has them either way.
+mkdir -p "$OUT/script"
+cp script/*.sol "$OUT/script/"
 
 # remappings live inside foundry.toml, not a separate file
 cp SELF_CHECK.md SUBMISSION.md foundry.toml "$OUT/"
@@ -48,6 +58,16 @@ done
 cp tools/verify-onchain.mjs "$OUT/verify-onchain.mjs"
 mkdir -p "$OUT/artifact"
 cp out/AssayFlapFactory.sol/AssayFlapFactory.json out/AssayFlapVault.sol/AssayFlapVault.json "$OUT/artifact/"
+
+# Measured from the tests that are going into this archive, never typed. A restated number
+# drifts the moment anything changes; a derived one cannot.
+TEST_OUT=$(forge test 2>&1 | tail -3)
+TEST_COUNT=$(echo "$TEST_OUT" | grep -oE '[0-9]+ tests passed' | grep -oE '^[0-9]+')
+SUITE_COUNT=$(echo "$TEST_OUT" | grep -oE 'Ran [0-9]+ test suites' | grep -oE '[0-9]+')
+FORK_COUNT=$(grep -l createSelectFork test/*.t.sol | wc -l | tr -d ' ')
+FAILED=$(echo "$TEST_OUT" | grep -oE '[0-9]+ failed' | grep -oE '^[0-9]+' | head -1)
+[ "${FAILED:-0}" = "0" ] || { echo "refusing to package: $FAILED tests failing" >&2; exit 1; }
+[ -n "$TEST_COUNT" ] || { echo "refusing to package: could not measure the test count" >&2; exit 1; }
 
 FACTORY=$(jq -r .flapFactory "$MANIFEST")
 TOURNAMENT=$(jq -r .tournament "$MANIFEST")
@@ -110,6 +130,14 @@ raw comparison always differs there and nowhere else.
 2. \`src/AssayFlapVault.sol\`
 3. \`src/AssayFlapFactory.sol\`
 4. \`test/FlapSpec.t.sol\` — the coverage Rule 006 asks for
+
+**Test package: ${TEST_COUNT} tests across ${SUITE_COUNT} suites, ${FORK_COUNT} of them forked
+against real BSC state.** That figure is measured by the script that built this archive, by
+running the tests inside it. The whole suite is here, including the ones covering \`Tournament\`,
+the custody ledger and the roster — they sit outside Flap's vault specification, but every payout
+this vault makes is a function of the tournament's recorded scores, so they are not outside what
+an auditor needs.
+
 5. \`test/RewardAsset.t.sol\` — the economics against the real market, on a mainnet fork
 
 ## Compiling
@@ -133,7 +161,7 @@ forge install foundry-rs/forge-std@v1.16.2
 forge install OpenZeppelin/openzeppelin-contracts@v5.4.0
 forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v4.9.6
 forge build
-forge test        # forked; needs an RPC that serves state at a recent block
+forge test        # ${TEST_COUNT} tests, ${SUITE_COUNT} suites, ${FORK_COUNT} forked against real BSC state
 \`\`\`
 
 ## Where to look hardest
@@ -149,4 +177,7 @@ EOF
 # found" on an archive that is full of them — which is what happened with the first build.
 ( cd "$OUT" && zip -qr ../assay-vault-audit.zip . )
 echo "  $(ls -lh dist/assay-vault-audit.zip | awk '{print $5}')  dist/assay-vault-audit.zip"
+echo
+echo "verifying the archive the way a reviewer will…"
+./tools/verify-audit-package.sh dist/assay-vault-audit.zip
 echo "  $(find "$OUT" -type f | wc -l | tr -d ' ') files"
