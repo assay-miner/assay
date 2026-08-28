@@ -109,31 +109,44 @@ Repository at `abfa000`.
 
 ---
 
-# Deployment state — 2026-08-27
+# Deployment state — 2026-08-28
 
 ## BNB Smart Chain mainnet (56)
 
 | | |
 |---|---|
-| Factory | `0x18a42C51E24a9cD8AFebA7317921cDF25BA9A2de` |
-| Tournament | `0xe1393Fc841C65Eb8ed1368d58EB6AfFC5F229776` |
-| Custody ledger | `0x5e338dc451F2999109616059d4142Ed7d8987Fd7` |
-| Roster | `0x09Baf4d675161e8b8e69C95b35a8a60D96B282AF` |
-| ASSAY token | `0xF6e9681b6252Cd4137B0646EB8f66489aeB4C0C2` |
+| Factory | `0x02297d985f67bb6449E12F2447Eb07F708161Dc0` |
+| Tournament | `0xB8B08CBbd9EB8ca4569a6dBFDA2af25fCc8Ae7A1` |
+| Custody ledger | `0x336Bdb2528d31d45C35a90D585DDA8244bB62e13` |
+| Roster | `0x50861700f69aB37Ea9c8227d99D49685cD7f42B7` |
+| ASSAY token | `0x4c25b289440dd839c667589503e18EcDB55b0B5E` |
 | Tax token | not launched — Flap audits the factory, and launching claims a name permanently |
 
 ## BNB Smart Chain testnet (97) — the proof deployment
 
 | | |
 |---|---|
-| Factory | `0xf656D56A3027220FF31Fb923D8Ac93ad57974D14` |
-| Tax token | `0xCBca80E51F5504193f4C6cD3E6F338Fa8a6A7777` |
-| Flap vault | `0x60de48f4C664B5807C615ca9Ea100A69564ea0dF` |
-| Tournament | `0xc1Eb095F99144622a86143dea504a7906283719C` |
+| Factory | `0x537d8D999bcbfBe8Bd4342049151B726146Cd910` |
+| Tax token | `0xdac353C10913d6e6EACa0421ca11c1d57c027777` |
+| Flap vault | `0x46146690c1F66184ad999Aa8B503DC4c6049e11e` |
+| Tournament | `0x420FCb2D8Db6EEB37Af775825C07D4d495AC67E8` |
 
-Task 1 carries a real bounty, placed there by Flap's Trigger Service rather than by us: 0.05 tBNB
-of tax scheduled by the curator, executed by their backend as request `31132`, booked as
-**0.025758 BTCB**. `solvent()` is true and `controllersFrozen` is true on both chains.
+The conversion path was exercised end to end on this deployment, with Flap's Trigger Service
+submitting the swap rather than us. The tournament was run at the shipped difficulty: eight
+vectors, a baseline of 1264, a miner scoring 1.0260x at 1232 gas.
+
+## What an empty round costs
+
+Nothing but gas, and that is a deliberate change. `withdrawUnconverted` returns tax that was
+never placed behind a task, and `reclaimBounty` returns a bounty nobody won once the tournament's
+own reveal window has closed. Both were missing, and their absence was the dangerous half of a
+five-minute cadence: most windows draw nobody, and every one of them used to lock its tax
+permanently with only Flap's Guardian able to move it.
+
+Neither can reach money a miner earned. `reclaimBounty` takes the tournament's claim window as
+its gate, so while a score exists and that window is open the curator waits; `withdrawUnconverted`
+moves native value only, which by construction is the unconverted part. `test/NotStuck.t.sol`
+proves both by breaking them.
 
 ## The two packages
 
@@ -144,7 +157,5 @@ of tax scheduled by the curator, executed by their backend as request `31132`, b
 
 Both archives state their own measured figures. The audit archive is built by a script that runs
 the tests going into it and writes that number itself, then extracts the result into an empty
-directory, builds it with pinned dependencies, runs it again and refuses to ship if the stated
-count and the measured one disagree. An earlier archive shipped four hand-picked suites while
-this file quoted the repository's total; a reviewer counted 33 against a documented 103 and was
-right to stop there.
+directory, builds it with pinned dependencies, runs it again, and refuses to ship if the stated
+count and the measured one disagree.

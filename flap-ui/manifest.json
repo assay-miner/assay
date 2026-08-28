@@ -5,14 +5,14 @@
     "bindings": [
       {
         "chainId": 97,
-        "factoryAddress": "0xf656D56A3027220FF31Fb923D8Ac93ad57974D14",
+        "factoryAddress": "0x537d8D999bcbfBe8Bd4342049151B726146Cd910",
         "tokenAddresses": [
-          "0xCBca80E51F5504193f4C6cD3E6F338Fa8a6A7777"
+          "0xdac353C10913d6e6EACa0421ca11c1d57c027777"
         ]
       },
       {
         "chainId": 56,
-        "factoryAddress": "0x18a42C51E24a9cD8AFebA7317921cDF25BA9A2de"
+        "factoryAddress": "0x02297d985f67bb6449E12F2447Eb07F708161Dc0"
       }
     ]
   },

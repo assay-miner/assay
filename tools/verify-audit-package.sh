@@ -44,7 +44,10 @@ forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v4.9.6 >/dev/null 
 
 forge build >/dev/null 2>&1 && ok "compiles from a clean extraction" || { bad "does not compile"; forge build 2>&1 | grep -E '^Error|not found' | head -3 | sed 's/^/       /'; }
 
-OUT=$(forge test 2>&1 | tail -3)
+# `|| true`: a failing suite must be reported, not exit the gate. Without it `set -e` turned a
+# red test into the script simply stopping after the compile line, which reads as "still running"
+# rather than "your archive is broken" — the same silent-exit shape as the forge install above.
+OUT=$(forge test 2>&1 | tail -3 || true)
 RAN=$(echo "$OUT" | grep -oE '[0-9]+ tests passed' | grep -oE '^[0-9]+' || true)
 SUITES=$(echo "$OUT" | grep -oE 'Ran [0-9]+ test suites' | grep -oE '[0-9]+' || true)
 FAIL=$(echo "$OUT" | grep -oE '[0-9]+ failed' | grep -oE '^[0-9]+' | head -1 || true)

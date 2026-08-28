@@ -36,6 +36,12 @@ cp -R test/. "$OUT/test/"
 mkdir -p "$OUT/script"
 cp script/*.sol "$OUT/script/"
 
+# MachineOnly.t.sol reads the shipped task spec off disk rather than restating it, which is the
+# point of that suite — so the spec travels with it. Found the same way as script/: by extracting
+# the archive into an empty directory and running it, which is the only place a missing file shows.
+mkdir -p "$OUT/tasks"
+cp tasks/*.json "$OUT/tasks/"
+
 # remappings live inside foundry.toml, not a separate file
 cp SELF_CHECK.md SUBMISSION.md foundry.toml "$OUT/"
 cp "$MANIFEST" "$OUT/deployments/"
