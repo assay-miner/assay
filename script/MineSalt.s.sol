@@ -11,8 +11,12 @@ contract MineSalt is Deploy {
     function mine() external view {
         uint256 chainId = vm.envOr("CHAIN", uint256(56));
         FlapVenue memory venue = flapVenueFor(chainId);
-        uint256 offset = vm.envOr("SALT_OFFSET", uint256(1));
-        bytes32 salt = mineVanitySalt(venue, offset);
+        // With SALT set this only predicts, so a caller can ask "where does this salt land?"
+        // without mining a different one and printing an address it will never deploy to.
+        bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
+        if (salt == bytes32(0)) {
+            salt = mineVanitySalt(venue, vm.envOr("SALT_OFFSET", uint256(1)));
+        }
         address predicted =
             ClonesUpgradeable.predictDeterministicAddress(venue.taxedV3Impl, salt, venue.portal);
         console2.log("SALT ", vm.toString(salt));

@@ -18,6 +18,14 @@ rm -rf "$OUT" && mkdir -p "$OUT"/{src,test,standard-json,deployments}
 
 forge build >/dev/null
 
+# The deployment tables in SUBMISSION.md are derived from the manifests. A redeploy used to leave
+# them naming the previous contracts, which asks an auditor to look at addresses that do not hold
+# the code under review. Refuse to package a stale document rather than ship one.
+node tools/sync-submission.mjs --check || {
+  echo "refusing to package: SUBMISSION.md does not match deployments/*-latest.json" >&2
+  exit 1
+}
+
 # Our own contracts, plus Flap's base contracts exactly as they were imported.
 cp -R src/flap src/interfaces src/mocks "$OUT/src/"
 cp src/AssayFlapVault.sol src/AssayFlapFactory.sol src/Tournament.sol src/AgentRoster.sol \

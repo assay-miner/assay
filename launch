@@ -28,10 +28,26 @@ echo "rpc      $RPC"
 echo "deployer $(cast wallet address --private-key "$PRIVATE_KEY")"
 echo "balance  $(cast balance "$(cast wallet address --private-key "$PRIVATE_KEY")" --rpc-url "$RPC")"
 
-# -g 300 pads the gas estimate. An estimate that is merely accurate is not enough on a chain
-# whose broadcast conditions differ from the simulation's.
+# Mine the vanity salt here, outside the broadcast. It is pure but takes hundreds of thousands of
+# address predictions, and run inside the simulation it holds a fork open for minutes — long enough
+# that a public BSC node prunes the block out from under it and the deploy dies with
+# `missing trie node`, which reads like a bug in this script and is not one.
+if [ -z "${SALT:-}" ]; then
+  SALT="$(CHAIN="$CHAIN_ID" SALT_OFFSET="${SALT_OFFSET:-$(date +%s)}" \
+    forge script script/MineSalt.s.sol:MineSalt --sig 'mine()' 2>/dev/null \
+    | awk '/SALT /{print $NF}')"
+  [ -n "$SALT" ] || { echo "could not mine a vanity salt" >&2; exit 1; }
+fi
+export SALT
+echo "salt     $SALT"
+echo "token    $(CHAIN="$CHAIN_ID" SALT="$SALT" forge script script/MineSalt.s.sol:MineSalt --sig 'mine()' 2>/dev/null | awk '/token/{print $NF}')"
+[ "${SKIP_TOKEN:-}" = "true" ] && echo "         (SKIP_TOKEN=true — the stack only; no token is launched)"
+
+# -g pads the gas estimate. An estimate that is merely accurate is not enough on a chain whose
+# broadcast conditions differ from the simulation's. --slow is deliberately not used: waiting for
+# each receipt keeps the fork open past the window a public node will serve.
 forge script script/Deploy.s.sol:Deploy \
-  --rpc-url "$RPC" --broadcast -g "${GAS_MULT:-130}" --slow "$@"
+  --rpc-url "$RPC" --broadcast -g "${GAS_MULT:-130}" "$@"
 
 MANIFEST="deployments/${CHAIN_ID}-latest.json"
 echo

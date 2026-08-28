@@ -111,25 +111,33 @@ Repository at `abfa000`.
 
 # Deployment state — 2026-08-28
 
+<!-- deployments:start -->
+
 ## BNB Smart Chain mainnet (56)
 
 | | |
 |---|---|
-| Factory | `0x5A08b8970091733526c5384d7cB537cbfb98c12a` |
-| Tournament | `0x14AC19293E95114F97A8Ef316f1F517af9b91c14` |
-| Custody ledger | `0x44C883842709fb62A8e87ecC8801534ac02ad2C3` |
-| Roster | `0x745F407c4d3284729D337F5AAB43720A3eED9CF6` |
-| ASSAY token | `0x917C6833508449e90fEb732EA961aceB809253B9` |
-| Tax token | not launched — Flap audits the factory, and launching claims a name permanently |
+| Factory (the contract Flap audits) | `0x9ADb64B4566D99296C074784563c9B2f486B90ea` |
+| Flap vault | not deployed |
+| Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
+| Tournament | `0x94f5E63C0fc86417395bD3f5468Ef323b60471eD` |
+| Custody ledger | `0x85a5c08222DddB5Df0Db449E77AA2b61e0648CeB` |
+| Roster | `0xa4ed4f8EBE03f091aC530Cc145E9164ada2aCc2c` |
+| Deployer / curator | `0x8F1054643baF32fe6c06C5CA9B3a990197883D8b` |
 
 ## BNB Smart Chain testnet (97) — the proof deployment
 
 | | |
 |---|---|
-| Factory | `0xbF49f81FBb661092e6a9Ee06bB4Bf49693E5b40e` |
-| Tax token | `0xf2c1892d71dBa1a17A6D90D9d6e17453E9bF7777` |
-| Flap vault | `0xcaf53B3229d15464C5BA9bEdd2789881D1F6a67b` |
-| Tournament | `0xb9a78f85620EaaC2ff0BAb65FF9A1c9ef523EfF5` |
+| Factory (the contract Flap audits) | `0xADDF15Dcc391C6F9df6C945CeDAa1b8Dc7035d92` |
+| Flap vault | `0x597C60Dd088e5cC98400F76C07d3633fB6ab9493` |
+| Tax token | `0x16F5A888a230d7753B028dB3835e4b9711d27777` |
+| Tournament | `0x866B9e974F1A915C8dAFbC9589eb8DaBB4087A6F` |
+| Custody ledger | `0x4516daC900fbA8e14f1acbA729a6Ddc4abCA756B` |
+| Roster | `0x137D597618C9B140ad2a3A1C4dE71127933bc135` |
+| Deployer / curator | `0x70281A8587452E898A60b08fcee10963999bCeA3` |
+
+<!-- deployments:end -->
 
 The token collects 200 bps each way. The conversion path was exercised end to end with Flap's
 Trigger Service submitting the swap rather than us.
