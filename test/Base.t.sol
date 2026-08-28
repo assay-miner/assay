@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AssayVault} from "../src/AssayVault.sol";
@@ -31,7 +31,7 @@ abstract contract BaseTest is Test {
     uint32 internal constant GAS_CAP = 100_000;
 
     MockIdentityRegistry internal registry;
-    AssayToken internal token;
+    TaxTokenMock internal token;
     AssayVault internal vault;
     AgentRoster internal roster;
     Tournament internal tournament;
@@ -53,7 +53,7 @@ abstract contract BaseTest is Test {
         harness = new CrucibleHarness();
 
         vm.prank(CURATOR);
-        token = new AssayToken(CURATOR);
+        token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
 
         // Custody is a separate contract; the logic contracts only ever instruct it.
         vault = new AssayVault(IERC20(address(token)), SALVAGE);

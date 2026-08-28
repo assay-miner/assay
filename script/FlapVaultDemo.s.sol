@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "../test/TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -28,7 +28,7 @@ contract FlapVaultDemo is Script {
             : 0x8004A818BFB912233c491871b3d84c89A494BD9e;
 
         vm.startBroadcast(pk);
-        AssayToken token = new AssayToken(me);
+        TaxTokenMock token = new TaxTokenMock(me, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), me);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), custody, 1000e18, me);
         Tournament tournament = new Tournament(custody, roster, me);

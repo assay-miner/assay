@@ -34,11 +34,20 @@ contract Tournament {
     /// @notice Account namespace for task pots inside the vault.
     bytes32 public constant KIND_POT = "pot";
 
-    /// @notice Fixed-point base for scores. A submission exactly matching the baseline scores 0;
-    ///         one using half the baseline's gas scores 2 * SCORE_SCALE.
+    /// @notice Fixed-point base for scores.
+    /// @dev Scores are quadratic in the gas saved, not a ratio of baseline to gas used. The ratio
+    ///      form put every honest submission within a few percent of every other: against a 1656
+    ///      baseline, a miner who deleted one redundant opcode to reach 1600 scored 95% of what a
+    ///      full search reaching 1520 scored. That pays a person who spots the obvious almost as
+    ///      well as a machine that searches, which is the opposite of what this tournament is for.
+    ///      Squaring the margin makes being twice as good pay four times as much.
     uint256 public constant SCORE_SCALE = 1e18;
-    /// @notice Ceiling on a single score, bounding the damage from a mis-specified baseline.
-    uint256 public constant MAX_SCORE = 32 * SCORE_SCALE;
+    /// @notice Ceiling on a single score.
+    /// @dev Normalising by the square of the baseline puts every score in [0, SCORE_SCALE] by
+    ///      construction, so the ceiling is only ever reached by a submission that burned no gas
+    ///      at all. It stays as a bound rather than an assertion because a mis-specified baseline
+    ///      should cost the task its payout curve, not the contract its arithmetic.
+    uint256 public constant MAX_SCORE = SCORE_SCALE;
     uint256 public constant MAX_VECTORS = 16;
     uint256 public constant MAX_GAS_CAP = 5_000_000;
     /// @notice How long after reveal closes a winner has to claim before the poster may reclaim.
@@ -158,7 +167,6 @@ contract Tournament {
         if (gasCap == 0 || gasCap > MAX_GAS_CAP) revert BadGasCap(gasCap);
         if (baselineGas == 0) revert BadBaseline();
         if (commitEnd <= block.timestamp || revealEnd <= commitEnd) revert BadWindow();
-        if (pot == 0) revert EmptyPot();
 
         taskId = ++taskCount;
         tasks[taskId] = Task({
@@ -178,7 +186,10 @@ contract Tournament {
             v.push(Crucible.Vector({input: inputs[i], expected: expected[i]}));
         }
 
-        vault.deposit(KIND_POT, bytes32(taskId), msg.sender, pot);
+        // A pot is optional. The prize this protocol exists to pay is the trading tax the vault
+        // converts and books against this same taskId, so a task the project posts carries no
+        // escrow at all; a third party who wants to add to it still can, in the same token.
+        if (pot != 0) vault.deposit(KIND_POT, bytes32(taskId), msg.sender, pot);
         emit TaskPosted(taskId, msg.sender, baselineGas, gasCap, n, pot, commitEnd, revealEnd);
     }
 
@@ -233,7 +244,8 @@ contract Tournament {
             s.gasUsed = uint32(gasUsed);
             // The baseline *is* the difficulty. Matching it or doing worse earns nothing.
             if (gasUsed < t.baselineGas) {
-                uint256 raw = (uint256(t.baselineGas) * SCORE_SCALE) / gasUsed;
+                uint256 margin = uint256(t.baselineGas) - gasUsed;
+                uint256 raw = (margin * margin * SCORE_SCALE) / (uint256(t.baselineGas) * uint256(t.baselineGas));
                 score = uint128(raw > MAX_SCORE ? MAX_SCORE : raw);
                 s.score = score;
                 t.totalScore += score;
@@ -421,7 +433,8 @@ contract Tournament {
         (passed, gasUsed) = Crucible.assay(impl, _vectors[taskId], t.gasCap);
 
         if (passed && gasUsed < t.baselineGas) {
-            uint256 raw = (uint256(t.baselineGas) * SCORE_SCALE) / gasUsed;
+            uint256 margin = uint256(t.baselineGas) - gasUsed;
+            uint256 raw = (margin * margin * SCORE_SCALE) / (uint256(t.baselineGas) * uint256(t.baselineGas));
             score = raw > MAX_SCORE ? MAX_SCORE : raw;
         }
     }

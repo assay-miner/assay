@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
@@ -16,12 +16,12 @@ contract FreezeGateTest is Test {
 
     bytes32 internal constant KIND = bytes32("STAKE");
 
-    AssayToken internal token;
+    TaxTokenMock internal token;
     AssayVault internal vault;
 
     function setUp() public {
         vm.prank(CURATOR);
-        token = new AssayToken(CURATOR);
+        token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
         vault = new AssayVault(IERC20(address(token)), SALVAGE);
 
         // A standing allowance is what makes the gap worth attacking. Anyone who has ever

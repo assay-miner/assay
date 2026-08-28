@@ -3,7 +3,6 @@ pragma solidity 0.8.26;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {AssayToken} from "../src/AssayToken.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AssayVault} from "../src/AssayVault.sol";
@@ -24,6 +23,7 @@ contract Deploy is Script {
     error WrongRegistry(address where, string name, string version);
     error NoVanitySalt();
     error NoVaultCreated();
+    error TokenAddressMismatch(address predicted, address actual);
 
     /// @notice Where Flap's portal, its clone deployer and its taxed-V3 implementation live.
     /// @dev The implementation is what a vanity salt is mined against, and getting it wrong
@@ -150,9 +150,25 @@ contract Deploy is Script {
         // accounted funds, but it is still a named destination, so it is fixed at deploy.
         address salvage = vm.envOr("SALVAGE", deployer);
 
+        // One token. The taxed-V3 token this launch creates IS the token: the stake a miner posts
+        // to enrol, the currency anyone can fund a task pot with, and — through its trading tax —
+        // the source of every bounty paid. A second, separately-minted work token would only be
+        // obtainable from whoever held it, which is the opposite of what a public launch is for.
+        //
+        // Custody has to name its asset at construction, and the token does not exist until the
+        // Portal clones it several transactions later. That is not a cycle: the clone address is a
+        // pure function of (implementation, salt, portal), so it is computed here and asserted
+        // against the real one after the launch.
+        FlapVenue memory venue = flapVenueFor(block.chainid);
+        bytes32 salt = mineVanitySalt(
+            venue,
+            vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode("assay.v1", deployer))))
+        );
+        address predictedToken =
+            ClonesUpgradeable.predictDeterministicAddress(venue.taxedV3Impl, salt, venue.portal);
+
         vm.startBroadcast(pk);
-        AssayToken token = new AssayToken(deployer);
-        AssayVault vault = new AssayVault(IERC20(address(token)), salvage);
+        AssayVault vault = new AssayVault(IERC20(predictedToken), salvage);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), vault, minStake, deployer);
         Tournament tournament = new Tournament(vault, roster, deployer);
 
@@ -170,16 +186,11 @@ contract Deploy is Script {
         // The factory is part of the stack, not part of the token launch. Skipping the launch and
         // skipping the factory were the same flag once, so a deploy that deliberately held the
         // token back also produced no factory — and the factory is the contract Flap audits.
-        FlapVenue memory venue = flapVenueFor(block.chainid);
         address flapFactory = address(new AssayFlapFactory(tournament));
         address taxToken;
         address flapVault;
 
         if (!vm.envOr("SKIP_TOKEN", false)) {
-            bytes32 salt = mineVanitySalt(
-                venue,
-                vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode("assay.v1", deployer))))
-            );
             taxToken = IVaultPortal(payable(venue.vaultPortal)).newTokenV6WithVault{value: 0}(
                 launchParams(
                     flapFactory,
@@ -188,6 +199,10 @@ contract Deploy is Script {
                     vm.envOr("TOKEN_SYMBOL", string("ASSAY"))
                 )
             );
+            // Custody was built against the predicted address. If the Portal put the token
+            // anywhere else, every stake and pot would be denominated in a token that does not
+            // exist, so fail here rather than write a manifest describing a broken stack.
+            if (taxToken != predictedToken) revert TokenAddressMismatch(predictedToken, taxToken);
             flapVault = IVaultPortal(payable(venue.vaultPortal)).getVault(taxToken).vault;
             if (flapVault == address(0)) revert NoVaultCreated();
         }
@@ -196,7 +211,6 @@ contract Deploy is Script {
 
         // A manifest is written even when a broadcast silently lands nothing. Prove the code is
         // actually on chain before recording it as deployed.
-        if (address(token).code.length == 0) revert NothingDeployed("AssayToken", address(token));
         if (address(roster).code.length == 0) revert NothingDeployed("AgentRoster", address(roster));
         if (address(tournament).code.length == 0) {
             revert NothingDeployed("Tournament", address(tournament));
@@ -233,12 +247,10 @@ contract Deploy is Script {
         vm.serializeUint(json, "deployBlock", block.number);
         vm.serializeAddress(json, "deployer", deployer);
         vm.serializeAddress(json, "identityRegistry", registry);
-        vm.serializeAddress(json, "token", address(token));
         vm.serializeAddress(json, "vault", address(vault));
         vm.serializeAddress(json, "salvage", salvage);
         vm.serializeAddress(json, "roster", address(roster));
         vm.serializeUint(json, "minStake", minStake);
-        vm.serializeUint(json, "maxSupply", token.MAX_SUPPLY());
         vm.serializeAddress(json, "flapFactory", flapFactory);
         vm.serializeAddress(json, "taxToken", taxToken);
         vm.serializeAddress(json, "flapVault", flapVault);
@@ -251,7 +263,6 @@ contract Deploy is Script {
         console2.log("chainId          ", block.chainid);
         console2.log("deployer         ", deployer);
         console2.log("identityRegistry ", registry);
-        console2.log("token            ", address(token));
         console2.log("vault            ", address(vault));
         console2.log("salvage          ", salvage);
         console2.log("roster           ", address(roster));

@@ -123,7 +123,7 @@ contract CustodyTest is BaseTest {
 
     /// The token has no issuance path past its constructor and nobody who could open one.
     function test_SupplyIsFixedAndOwnerless() public view {
-        assertEq(token.totalSupply(), token.MAX_SUPPLY(), "supply is the constructor's supply");
+        assertEq(token.totalSupply(), 1_000_000_000e18, "supply is the constructor's supply");
     }
 
     /// The consumer wiring is a one-shot: it cannot be repointed at an attacker's contract later.
@@ -175,6 +175,6 @@ contract CustodyTest is BaseTest {
         assertEq(vault.balanceOf(roster.stakeAccount(BOB)), 0, "bob's stake account empty");
         assertEq(vault.totalAccounted(), 0, "ledger is empty");
         assertEq(token.balanceOf(address(vault)), 0, "and so is the vault");
-        assertEq(token.totalSupply(), token.MAX_SUPPLY(), "nothing minted or burned");
+        assertEq(token.totalSupply(), 1_000_000_000e18, "nothing minted or burned");
     }
 }

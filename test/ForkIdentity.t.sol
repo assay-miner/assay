@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
@@ -60,7 +60,7 @@ contract ForkIdentityTest is Test {
         IIdentityRegistry reg = IIdentityRegistry(REGISTRY_TESTNET);
         address owner = reg.ownerOf(1);
 
-        AssayToken token = new AssayToken(address(this));
+        TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault vault = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster = new AgentRoster(reg, vault, MIN_STAKE, address(this));
         vault.addController(address(roster));

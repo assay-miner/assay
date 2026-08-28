@@ -53,6 +53,13 @@ contract NotStuckTest is BaseTest {
         return flap.endow(taskId, bnb, floor_);
     }
 
+    function _endowTask(uint256 id, uint256 bnb) internal returns (uint256) {
+        // The quote is read before the prank: a view call in an argument list consumes it.
+        uint256 floor_ = (flap.quote(bnb) * 99) / 100;
+        vm.prank(guardian);
+        return flap.endow(id, bnb, floor_);
+    }
+
     function _scoringMiner(address miner, uint256 agentId) internal {
         _enroll(miner, agentId);
         _commit(miner, agentId, Bytecode.padded(), bytes32(agentId));
@@ -74,6 +81,39 @@ contract NotStuckTest is BaseTest {
         assertEq(sent, 0.05 ether, "the whole window did not come back");
         assertEq(CURATOR.balance, before + 0.05 ether, "it did not arrive");
         assertEq(flap.unassigned(), 0, "something was left behind");
+    }
+
+    /// @notice The cadence the protocol actually runs at: a two-minute epoch, one minute to
+    ///         commit and one to reveal. An epoch nobody entered must settle to the project the
+    ///         moment reveal closes — not a claim window later, or the tax from an idle market
+    ///         would pile up unreachable for thirty days at a time.
+    function test_AnEmptyTwoMinuteEpochSettlesImmediately() public {
+        uint64 commitEnds = uint64(block.timestamp + 60);
+        uint64 revealEnds = commitEnds + 60;
+
+        vm.prank(CURATOR);
+        uint256 id = tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnds, revealEnds, 0);
+
+        _tax(0.05 ether);
+        uint256 pot = _endowTask(id, _within(0.05 ether));
+
+        // One second before the epoch is over, the money is still the miners'.
+        vm.warp(revealEnds - 1);
+        vm.prank(CURATOR);
+        vm.expectRevert(bytes(unicode"Not settled yet / 尚未结算"));
+        flap.reclaimBounty(id);
+
+        // The whole epoch is 120 seconds. At its end, with nothing revealed, it is the project's.
+        vm.warp(revealEnds);
+        assertEq(uint256(block.timestamp), uint256(commitEnds) + 60, "epoch is not two minutes");
+
+        uint256 before = IERC20(BTCB).balanceOf(CURATOR);
+        vm.prank(CURATOR);
+        uint256 got = flap.reclaimBounty(id);
+
+        assertEq(got, pot, "the empty epoch did not settle in full");
+        assertEq(IERC20(BTCB).balanceOf(CURATOR), before + pot, "it did not arrive");
+        assertTrue(flap.solvent());
     }
 
     /// @notice And it cannot touch what is already behind a task.

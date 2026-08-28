@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -36,7 +36,7 @@ contract FlapRenderTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.rpcUrl("bsc"));
 
-        AssayToken token = new AssayToken(address(this));
+        TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18, address(this));
         Tournament tournament = new Tournament(custody, roster, address(this));

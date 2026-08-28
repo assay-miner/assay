@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -39,7 +39,7 @@ contract CodeSizeTest is Test {
         // Chain 56 so the vault's constructor resolves a venue; this is a size check, so the
         // fork only has to exist, not to be at any particular block.
         vm.createSelectFork(vm.rpcUrl("bsc"));
-        AssayToken token = new AssayToken(address(this));
+        TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster =
             new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18, address(this));

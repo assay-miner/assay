@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
 import {AssayVault} from "../src/AssayVault.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice A controller that tries to reach outside its own namespace.

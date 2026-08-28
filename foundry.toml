@@ -13,7 +13,8 @@ optimizer_runs = 1
 via_ir = true
 fs_permissions = [
   { access = "read-write", path = "./deployments" },
-  { access = "read", path = "./tasks" },
+  { access = "read-write", path = "./tasks" },
+  { access = "read", path = "./script" },
 ]
 remappings = [
   "forge-std/=lib/forge-std/src/",

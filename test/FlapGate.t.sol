@@ -9,7 +9,7 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {AssayVault} from "../src/AssayVault.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {VaultUISchema} from "../src/flap/IVaultSchemasV1.sol";
@@ -137,7 +137,7 @@ contract FlapGateTest is Test {
 
         // Stand the ASSAY stack up on the fork, then a factory pointing at it.
         vm.startPrank(launcher);
-        AssayToken token = new AssayToken(launcher);
+        TaxTokenMock token = new TaxTokenMock(launcher, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), launcher);
         AgentRoster roster = new AgentRoster(
             IIdentityRegistry(0x8004A169FB4a3325136EB29fA0ceB6D2e539a432), custody, 1000e18, launcher

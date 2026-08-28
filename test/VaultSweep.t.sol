@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
 import {AssayVault} from "../src/AssayVault.sol";
-import {AssayToken} from "../src/AssayToken.sol";
+import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
@@ -265,7 +265,7 @@ contract VaultSweepTest is BaseTest {
     }
 
     function test_ARejectingSalvageStrandsNativeValueLoudly() public {
-        AssayToken t = new AssayToken(address(this));
+        TaxTokenMock t = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault v = new AssayVault(IERC20(address(t)), address(new RejectingSalvage()));
         vm.deal(address(v), 1 ether);
         vm.expectRevert(AssayVault.NativeSweepFailed.selector);

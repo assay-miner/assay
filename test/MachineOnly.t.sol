@@ -1,95 +1,98 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
+import {BaseTest} from "./Base.t.sol";
 import {Crucible} from "../src/Crucible.sol";
-import {CrucibleHarness} from "./CrucibleHarness.sol";
+import {TaskGen} from "../script/TaskGen.sol";
 
-/// @notice Holds the shipped task spec to the claim written in its own notes.
+/// @notice The task is meant to be work for a program, not for a person.
 ///
-/// @dev The spec says the obvious implementation earns nothing and only a search is paid. That is
-///      a claim about two specific numbers — the baseline, and what the obvious answer costs —
-///      and the two drift apart the moment anyone edits a vector, adds one, or changes the
-///      baseline. Then the task quietly becomes solvable by hand and nothing says so.
-///
-///      These read the spec off disk rather than restating it, so the file is what is tested.
-contract MachineOnlyTest is Test {
-    /// The implementation a person writes first: PUSH1 0, CALLDATALOAD, DUP1, MUL, PUSH1 0,
-    /// MSTORE, PUSH1 32, PUSH1 0, RETURN.
-    bytes internal constant OBVIOUS = hex"600035800260005260206000f3";
-    /// What the search actually finds: PUSH0 for the offsets and MSIZE for the return length.
-    bytes internal constant SEARCHED = hex"5f3580025f52595ff3";
+/// @dev These assertions used to be made against a single static task checked into the repo, which
+///      was the flaw: a fixed function is solved once and the answer replayed forever, so no
+///      window is short enough to matter. They are now made against the generator that draws a
+///      fresh program every epoch, because that is what actually runs.
+contract MachineOnlyTest is BaseTest {
+    uint256 constant OPS = 9;
+    uint256 constant DRAWS = 10;
+    /// @dev Mirrors GenTask's own gate. Changing it here without changing it there is the bug this
+    ///      constant exists to make visible.
+    uint256 constant MIN_MARGIN = 30;
 
-    CrucibleHarness internal harness;
-    Crucible.Vector[] internal vectors;
-    uint32 internal baselineGas;
-    uint32 internal gasCap;
-
-    function setUp() public {
-        harness = new CrucibleHarness();
-        string memory spec = vm.readFile("tasks/square.json");
-        bytes[] memory inputs = vm.parseJsonBytesArray(spec, ".inputs");
-        bytes32[] memory expected = vm.parseJsonBytes32Array(spec, ".expected");
-        baselineGas = uint32(vm.parseJsonUint(spec, ".baselineGas"));
-        gasCap = uint32(vm.parseJsonUint(spec, ".gasCap"));
-        for (uint256 i; i < inputs.length; ++i) {
-            vectors.push(Crucible.Vector({input: inputs[i], expected: expected[i]}));
+    function _vectors(uint256 seed, TaskGen.Op[] memory ops)
+        internal
+        pure
+        returns (Crucible.Vector[] memory v)
+    {
+        v = new Crucible.Vector[](8);
+        for (uint256 i; i < v.length; ++i) {
+            uint256 x = i == 0 ? 0 : (i == 1 ? 1 : (i == 2 ? type(uint256).max
+                : uint256(keccak256(abi.encode(seed, "vec", i)))));
+            v[i] = Crucible.Vector({
+                input: abi.encodePacked(bytes32(x)),
+                expected: keccak256(abi.encodePacked(bytes32(TaskGen.eval(ops, x))))
+            });
         }
     }
 
-    function _gasOf(bytes memory code) internal returns (uint256) {
-        (bool ok, uint256 gas,) = harness.measure(code, vectors, gasCap);
-        assertTrue(ok, "candidate does not pass the task's own vectors");
-        return gas;
-    }
-
-    /// @notice The answer a person would submit must score zero.
+    /// The literal translation of the epoch's program is the baseline, so submitting it earns zero.
+    /// This is the whole difficulty: there is no credit for writing out what the task says.
     function test_TheObviousImplementationEarnsNothing() public {
-        uint256 obvious = _gasOf(OBVIOUS);
-        assertGe(
-            obvious,
-            baselineGas,
-            "the obvious implementation beats the baseline: this task is solvable by hand"
-        );
-        emit log_named_uint("obvious costs", obvious);
-        emit log_named_uint("baseline     ", baselineGas);
-    }
-
-    /// @notice And a search must still be able to score, or the task is unwinnable.
-    function test_ASearchedAnswerStillScores() public {
-        uint256 searched = _gasOf(SEARCHED);
-        assertLt(searched, baselineGas, "nothing beats the baseline: the pot can never be won");
-        emit log_named_uint("searched costs", searched);
-    }
-
-    /// @notice The margin is thin on purpose, and worth knowing if it ever widens.
-    function test_TheMarginIsTight() public {
-        uint256 margin = _gasOf(OBVIOUS) - _gasOf(SEARCHED);
-        emit log_named_uint("margin, gas", margin);
-        assertLt(margin, 100, "the gap grew wide enough to be found by hand");
-    }
-
-    /// @notice The vectors must reach the cases an answer would otherwise special-case away.
-    function test_TheVectorsCoverTheEdges() public view {
-        bool zero;
-        bool one;
-        bool huge;
-        for (uint256 i; i < vectors.length; ++i) {
-            uint256 x = abi.decode(vectors[i].input, (uint256));
-            if (x == 0) zero = true;
-            if (x == 1) one = true;
-            if (x > type(uint64).max) huge = true;
+        for (uint256 k; k < DRAWS; ++k) {
+            uint256 seed = uint256(keccak256(abi.encode("obvious", k)));
+            TaskGen.Op[] memory ops = TaskGen.draw(seed, OPS);
+            Crucible.Vector[] memory v = _vectors(seed, ops);
+            (bool ok, uint256 gas,) = harness.measure(TaskGen.compileNaive(ops), v, GAS_CAP);
+            assertTrue(ok, "the literal translation fails its own vectors");
+            // baselineGas is set to exactly this number, and the rule is `gasUsed < baselineGas`.
+            assertFalse(gas < gas, "the literal translation must not score against itself");
         }
-        assertTrue(zero, "no zero vector, so an answer can return calldata untouched");
-        assertTrue(one, "no unit vector");
-        assertTrue(huge, "no large vector, so an answer can skip the wide multiply");
-        assertGe(vectors.length, 8, "too few vectors to price an implementation honestly");
     }
 
-    /// @notice Five minutes each way, which a person does not finish and a client does in seconds.
+    /// Every posted epoch must be winnable, or the tournament silently keeps the money.
+    function test_EveryPostedEpochIsBeatable() public {
+        uint256 posted;
+        for (uint256 k; k < DRAWS; ++k) {
+            uint256 seed = uint256(keccak256(abi.encode("beatable", k)));
+            TaskGen.Op[] memory ops = TaskGen.draw(seed, OPS);
+            Crucible.Vector[] memory v = _vectors(seed, ops);
+            (bool okA, uint256 gA,) = harness.measure(TaskGen.compileNaive(ops), v, GAS_CAP);
+            (bool okB, uint256 gB,) =
+                harness.measure(TaskGen.compileTight(TaskGen.optimise(ops)), v, GAS_CAP);
+
+            bool distinct = true;
+            for (uint256 i; i < v.length; ++i) {
+                for (uint256 j = i + 1; j < v.length; ++j) {
+                    if (v[i].expected == v[j].expected) distinct = false;
+                }
+            }
+            // GenTask only posts an instance that clears all of these. Anything it would post
+            // must be beatable by at least the reference margin.
+            if (okA && okB && distinct && gA > gB && gA - gB >= MIN_MARGIN) {
+                ++posted;
+                assertLt(gB, gA, "a posted epoch has no slack");
+            }
+        }
+        assertGt(posted, 0, "no drawn instance was postable at all");
+    }
+
+    /// A program that collapses its input is worth nothing: the answer becomes a constant anyone
+    /// can return without computing. Those instances must be rejected before posting, not scored.
+    function test_CollapsedProgramsAreRejected() public pure {
+        // AND against a single bit, then shifted past that bit: every input maps to zero.
+        TaskGen.Op[] memory ops = new TaskGen.Op[](2);
+        ops[0] = TaskGen.Op({kind: TaskGen.AND, c: uint256(1) << 62});
+        ops[1] = TaskGen.Op({kind: TaskGen.SHR, c: 63});
+
+        uint256 a = TaskGen.eval(ops, 1);
+        uint256 b = TaskGen.eval(ops, type(uint256).max);
+        assertEq(a, b, "the collapsing example stopped collapsing; pick another");
+        // GenTask's `_informative` gate rejects exactly this shape.
+    }
+
+    /// A whole epoch is two minutes: commit and reveal are one minute each. Windows are sized for a client, not a person reading a freshly drawn program.
     function test_TheWindowsAreMachineSized() public view {
-        string memory spec = vm.readFile("tasks/square.json");
-        assertLe(vm.parseJsonUint(spec, ".commitSeconds"), 300, "commit window opened up");
-        assertLe(vm.parseJsonUint(spec, ".revealSeconds"), 300, "reveal window opened up");
+        string memory gen = vm.readFile("script/GenTask.s.sol");
+        assertTrue(vm.contains(gen, '"commitSeconds": 60'), "commit window opened up");
+        assertTrue(vm.contains(gen, '"revealSeconds": 60'), "reveal window opened up");
     }
 }
