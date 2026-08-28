@@ -127,11 +127,13 @@ Repository at `abfa000`.
 | | |
 |---|---|
 | Factory | `0x537d8D999bcbfBe8Bd4342049151B726146Cd910` |
-| Tax token | `0xdac353C10913d6e6EACa0421ca11c1d57c027777` |
-| Flap vault | `0x46146690c1F66184ad999Aa8B503DC4c6049e11e` |
+| Tax token | `0x884b12d82475b999295C6999062Fc97657177777` |
+| Flap vault | `0x91320ed01385dc167b736e1Ff814d138dAB51212` |
 | Tournament | `0x420FCb2D8Db6EEB37Af775825C07D4d495AC67E8` |
 
-The conversion path was exercised end to end on this deployment, with Flap's Trigger Service
+The tax token is live at **200 bps each way**, matching the shipped launch parameters — it was
+launched through the same factory rather than by redeploying the stack, so the audited factory
+address is unchanged. The conversion path was exercised end to end on this deployment, with Flap's Trigger Service
 submitting the swap rather than us. The tournament was run at the shipped difficulty: eight
 vectors, a baseline of 1264, a miner scoring 1.0260x at 1232 gas.
 
