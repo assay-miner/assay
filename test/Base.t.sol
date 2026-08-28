@@ -57,13 +57,12 @@ abstract contract BaseTest is Test {
 
         // Custody is a separate contract; the logic contracts only ever instruct it.
         vault = new AssayVault(IERC20(address(token)), SALVAGE);
-        roster = new AgentRoster(IIdentityRegistry(address(registry)), vault, MIN_STAKE, CURATOR);
+        roster = new AgentRoster(IIdentityRegistry(address(registry)), vault, MIN_STAKE);
         tournament = new Tournament(vault, roster, CURATOR);
         vault.addController(address(roster));
         vault.addController(address(tournament));
         vault.freeze();
 
-        vm.prank(CURATOR);
         roster.setConsumer(address(tournament));
 
         registry.mint(AGENT_ALICE, ALICE);

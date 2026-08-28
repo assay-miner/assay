@@ -176,8 +176,17 @@ contract Deploy is Script {
 
         vm.startBroadcast(pk);
         AssayVault vault = new AssayVault(IERC20(predictedToken), salvage);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), vault, minStake, deployer);
-        Tournament tournament = new Tournament(vault, roster, deployer);
+        // The curator defaults to the deploying key and does not have to stay one. It is only ever
+        // a constructor argument, so pointing it at a multisig costs nothing — which matters,
+        // because a reviewer's first question about this design is whether one hot key that is
+        // also the deployer decides which task the tax funds.
+        //
+        // The vault's curator cannot be set here: Flap's portal passes whoever launches the token
+        // into `newVault` as `creator`, and the factory hands that straight to the vault. So a
+        // multisig curator has to be the address that performs the launch, not just this argument.
+        address curator = vm.envOr("CURATOR", deployer);
+        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), vault, minStake);
+        Tournament tournament = new Tournament(vault, roster, curator);
 
         // Custody wiring, then sealed. After `freeze()` no address can be added to the vault.
         vault.addController(address(roster));

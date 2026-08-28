@@ -42,7 +42,7 @@ contract CodeSizeTest is Test {
         TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster =
-            new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18, address(this));
+            new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18);
         tournament = new Tournament(custody, roster, address(this));
     }
 

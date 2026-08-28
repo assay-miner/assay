@@ -21,7 +21,7 @@ forge build >/dev/null
 # Our own contracts, plus Flap's base contracts exactly as they were imported.
 cp -R src/flap src/interfaces src/mocks "$OUT/src/"
 cp src/AssayFlapVault.sol src/AssayFlapFactory.sol src/Tournament.sol src/AgentRoster.sol \
-   src/AssayVault.sol src/Crucible.sol src/TaxTokenMock.sol "$OUT/src/"
+   src/AssayVault.sol src/Crucible.sol "$OUT/src/"
 
 # The whole suite, not a hand-picked four. The first archive shipped only the Flap-facing suites
 # while the docs quoted the repository's total, so a reviewer counted 33 tests against a claim of

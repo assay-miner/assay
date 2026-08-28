@@ -62,7 +62,7 @@ contract ForkIdentityTest is Test {
 
         TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault vault = new AssayVault(IERC20(address(token)), address(this));
-        AgentRoster roster = new AgentRoster(reg, vault, MIN_STAKE, address(this));
+        AgentRoster roster = new AgentRoster(reg, vault, MIN_STAKE);
         vault.addController(address(roster));
         vault.freeze();
 

@@ -101,7 +101,7 @@ contract RosterTest is BaseTest {
     }
 
     function test_ConsumerFrozenAfterFirstSet() public {
-        vm.prank(CURATOR);
+        // As the deployer: the freeze is what must stop this, not the caller check in front of it.
         vm.expectRevert(AgentRoster.ConsumerAlreadyFrozen.selector);
         roster.setConsumer(address(0xdead));
     }

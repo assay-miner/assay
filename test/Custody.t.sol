@@ -129,7 +129,7 @@ contract CustodyTest is BaseTest {
     /// The consumer wiring is a one-shot: it cannot be repointed at an attacker's contract later.
     function test_ConsumerCannotBeRepointed() public {
         assertTrue(roster.consumerFrozen(), "frozen at deploy");
-        vm.prank(CURATOR);
+        // As the deployer: the freeze is what must stop this, not the caller check in front of it.
         vm.expectRevert(AgentRoster.ConsumerAlreadyFrozen.selector);
         roster.setConsumer(address(0xBAD));
         assertEq(roster.consumer(), address(tournament), "still the real tournament");

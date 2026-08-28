@@ -38,7 +38,7 @@ contract FlapRenderTest is Test {
 
         TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18, address(this));
+        AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18);
         Tournament tournament = new Tournament(custody, roster, address(this));
         vault = new AssayFlapVault(tournament, address(token), address(this));
     }

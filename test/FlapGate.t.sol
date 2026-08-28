@@ -140,8 +140,7 @@ contract FlapGateTest is Test {
         TaxTokenMock token = new TaxTokenMock(launcher, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), launcher);
         AgentRoster roster = new AgentRoster(
-            IIdentityRegistry(0x8004A169FB4a3325136EB29fA0ceB6D2e539a432), custody, 1000e18, launcher
-        );
+            IIdentityRegistry(0x8004A169FB4a3325136EB29fA0ceB6D2e539a432), custody, 1000e18);
         Tournament tournament = new Tournament(custody, roster, launcher);
         custody.addController(address(roster));
         custody.addController(address(tournament));

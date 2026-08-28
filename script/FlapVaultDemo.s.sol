@@ -30,7 +30,7 @@ contract FlapVaultDemo is Script {
         vm.startBroadcast(pk);
         TaxTokenMock token = new TaxTokenMock(me, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), me);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), custody, 1000e18, me);
+        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), custody, 1000e18);
         Tournament tournament = new Tournament(custody, roster, me);
         custody.addController(address(roster));
         custody.addController(address(tournament));

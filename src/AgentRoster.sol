@@ -28,7 +28,14 @@ contract AgentRoster {
     address public consumer;
     bool public consumerFrozen;
 
-    address public immutable curator;
+    /// @notice The address that constructed this roster, and the only one that may name the
+    ///         tournament — once.
+    /// @dev This used to be `curator`, which put a live permission behind the same hot key a
+    ///      reviewer flagged on Tournament. The permission is one-shot and is spent during the
+    ///      deploy, so it belongs to whoever is doing the deploying, not to whoever will be
+    ///      running the protocol afterwards. After `setConsumer` the roster has no privileged
+    ///      caller at all.
+    address public immutable deployer;
 
     struct Enrolment {
         uint256 agentId;
@@ -46,7 +53,7 @@ contract AgentRoster {
     event Withdrawn(address indexed miner, uint256 indexed agentId, uint256 amount);
     event ConsumerSet(address indexed consumer);
 
-    error NotCurator();
+    error NotDeployer();
     error ConsumerAlreadyFrozen();
     error NotConsumer();
     error ZeroAgentId();
@@ -57,11 +64,11 @@ contract AgentRoster {
     error StakeBelowMinimum(uint256 provided, uint256 required);
     error StakeLockedUntil(uint64 lockedUntil);
 
-    constructor(IIdentityRegistry registry, AssayVault vault_, uint256 minStake_, address curator_) {
+    constructor(IIdentityRegistry registry, AssayVault vault_, uint256 minStake_) {
         identityRegistry = registry;
         vault = vault_;
         minStake = minStake_;
-        curator = curator_;
+        deployer = msg.sender;
     }
 
     /// @notice The vault account holding `miner`'s stake. Anyone can read its balance directly.
@@ -71,7 +78,7 @@ contract AgentRoster {
 
     /// @notice Names the tournament allowed to lock stake, once.
     function setConsumer(address consumer_) external {
-        if (msg.sender != curator) revert NotCurator();
+        if (msg.sender != deployer) revert NotDeployer();
         if (consumerFrozen) revert ConsumerAlreadyFrozen();
         consumer = consumer_;
         consumerFrozen = true;
