@@ -167,16 +167,52 @@ takes none; 100% of the tax reaches bounties.
 
 **Justification offered.** The vault's purpose is to convert trading tax into verifiable work. A commission would reduce the prize for that work without funding any part of producing it. If a commission is wanted later it must be introduced at deployment of a new factory — this one has no parameter to change, which is also what makes it non-DOSable under Rule 001.
 
-#### L-03: Conversion depends on the curator or the Guardian acting
-**Severity**: Low
-**Status**: Open — by design
-**File**: `src/AssayFlapVault.sol` — `endow`
+#### L-03: A large conversion used to land at any price at all — fixed
+**Severity**: Low as reported, and it was the wrong finding
+**Status**: Resolved — the bound now measures what everyone read it as measuring
+**File**: `src/AssayFlapVault.sol` — `_requireWithinImpact`, `maxConvertible`, `spotUnitPrice`
 
-**Description.** Tax accumulates as native BNB and only becomes a bounty when `endow` is called. If neither the curator nor the Guardian calls it, tax sits unconverted indefinitely.
+**What was reported.** That tax accumulates and only converts when someone acts, so it can sit
+indefinitely; and, in pre-audit review, that a large accumulated balance would **fail** to convert
+because `MAX_ENDOW_SLIPPAGE_BPS` caps price impact at 3%.
 
-**Impact.** No user funds are at risk — nothing is owed to anyone out of unconverted tax — but the vault's stated purpose stalls. `stats()` reports `unassignedBnb`, so the condition is visible.
+**What was actually true.** The opposite, and worse. `MAX_ENDOW_SLIPPAGE_BPS` was compared against
+`quote(bnbAmount)`, and `getAmountsOut` already prices the impact of that exact size — so the
+bound could never object to it. It was a tolerance for the pool moving between scheduling and
+execution, not a cap on impact, and nothing in the contract capped impact at all. Measured against
+the live BTCB/WBNB pair, every size converted and none was refused:
 
-**Recommendation.** The permissionless-convert option in M-02 also resolves this.
+| BNB in one call | landed below the untouched price | outcome before |
+|---|---|---|
+| 1 | 4 bps | accepted |
+| 10 | 45 bps | accepted |
+| 60 | 265 bps | accepted |
+| 100 | 434 bps | accepted |
+| 500 | 1,849 bps | accepted |
+| 1,000 | 3,122 bps | accepted |
+| 2,000 | **4,758 bps** | **accepted** |
+
+Two thousand BNB converting in one call would have lost 47.6% of the tax and the contract would
+have had no objection, because the floor was measured against the number that already contained
+the loss.
+
+**The fix.** `spotUnitPrice()` reads what the pool pays for an amount too small to move it, and
+`_requireWithinImpact` compares the real output against that. The bound now means what it reads
+as meaning. `maxConvertible()` publishes the largest amount that clears it, binary-searched
+against the pool as it is — 68 BNB at the time of writing, and correct to the wei: impact at the
+returned figure is 300 bps and at one-tenth of a BNB past it is 301. A refusal names the view, so
+the failure teaches the fix.
+
+Published rather than documented on purpose. A chunk size written into a document is a number
+that goes stale the moment liquidity moves in either direction, and pre-audit review flagged
+exactly that objection against a hardcoded cap.
+
+**What remains.** Conversion still depends on the curator or the Guardian calling `scheduleEndow`.
+Nothing is at risk while they do not — unconverted tax is owed to nobody, and `withdrawUnconverted`
+returns it — but the vault's purpose stalls, and a balance above `maxConvertible()` now has to be
+converted in more than one call. A permissionless `pokeSchedule()` on a fixed interval would
+remove the discretion; it is not shipped, because the version suggested in review puts an external
+call inside `receive()`, and a `receive()` that can fail breaks tax collection permanently.
 
 ### Info
 

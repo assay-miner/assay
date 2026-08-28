@@ -9,7 +9,7 @@ solc_version = "0.8.26"
 # Pinned. An unpinned evm_version drifts to a target BSC cannot execute.
 evm_version = "cancun"
 optimizer = true
-optimizer_runs = 200
+optimizer_runs = 1
 via_ir = true
 fs_permissions = [
   { access = "read-write", path = "./deployments" },

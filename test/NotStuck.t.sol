@@ -31,6 +31,15 @@ contract NotStuckTest is BaseTest {
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
+    /// @dev Sizes a conversion to what the pool can actually take. Written this way rather than
+    ///      with a literal because the testnet BTCB pair is shallow enough that one whole coin
+    ///      moves it 1,543 bps — a hardcoded amount passes on one chain and is refused on the
+    ///      other, and the number that decides it is the pool's, not ours.
+    function _within(uint256 wanted) internal view returns (uint256) {
+        uint256 cap = flap.maxConvertible();
+        return wanted > cap ? cap : wanted;
+    }
+
     function _tax(uint256 amount) internal {
         vm.deal(TAXPAYER, amount);
         vm.prank(TAXPAYER);
@@ -70,7 +79,7 @@ contract NotStuckTest is BaseTest {
     /// @notice And it cannot touch what is already behind a task.
     function test_WithdrawingCannotReachAnEndowedBounty() public {
         _tax(0.10 ether);
-        uint256 pot = _endow(0.05 ether);
+        uint256 pot = _endow(_within(0.05 ether));
 
         vm.prank(CURATOR);
         flap.withdrawUnconverted(0);
@@ -84,13 +93,13 @@ contract NotStuckTest is BaseTest {
     function test_OnlyTheCuratorOrGuardianWithdraws() public {
         _tax(0.05 ether);
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator may withdraw / 只有策展方可以提取"));
+        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
         flap.withdrawUnconverted(0);
     }
 
     function test_WithdrawingNothingIsAnError() public {
         vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"No unconverted tax / 没有未兑换的交易税"));
+        vm.expectRevert(bytes(unicode"No unconverted tax / 无未兑换的税"));
         flap.withdrawUnconverted(0);
     }
 
@@ -99,7 +108,7 @@ contract NotStuckTest is BaseTest {
     /// @notice A bounty on a task that drew no submissions returns once reveal closes.
     function test_AnUnwonBountyComesBack() public {
         _tax(0.05 ether);
-        uint256 pot = _endow(0.05 ether);
+        uint256 pot = _endow(_within(0.05 ether));
 
         vm.warp(revealEnd + 1);
         uint256 before = IERC20(BTCB).balanceOf(CURATOR);
@@ -116,10 +125,10 @@ contract NotStuckTest is BaseTest {
     /// @notice Not before the window closes — a miner may still be about to reveal.
     function test_ABountyCannotBeReclaimedEarly() public {
         _tax(0.05 ether);
-        _endow(0.05 ether);
+        _endow(_within(0.05 ether));
 
         vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Task has not settled yet / 该任务尚未结算"));
+        vm.expectRevert(bytes(unicode"Not settled yet / 尚未结算"));
         flap.reclaimBounty(taskId);
     }
 
@@ -130,7 +139,7 @@ contract NotStuckTest is BaseTest {
     ///      window gates it: while a score exists and the window is open, the curator waits.
     function test_AScoringMinerCannotBeRacedByTheCurator() public {
         _tax(0.05 ether);
-        uint256 pot = _endow(0.05 ether);
+        uint256 pot = _endow(_within(0.05 ether));
         _scoringMiner(ALICE, AGENT_ALICE);
 
         vm.prank(CURATOR);
@@ -145,7 +154,7 @@ contract NotStuckTest is BaseTest {
     /// @notice Once the tournament's claim window has passed, the remainder is reclaimable.
     function test_TheRemainderComesBackAfterTheClaimWindow() public {
         _tax(0.05 ether);
-        uint256 pot = _endow(0.05 ether);
+        uint256 pot = _endow(_within(0.05 ether));
         _scoringMiner(ALICE, AGENT_ALICE);
 
         vm.warp(revealEnd + tournament.CLAIM_WINDOW() + 1);
@@ -163,24 +172,24 @@ contract NotStuckTest is BaseTest {
 
     function test_ABountyCannotBeReclaimedTwice() public {
         _tax(0.05 ether);
-        _endow(0.05 ether);
+        _endow(_within(0.05 ether));
         vm.warp(revealEnd + 1);
 
         vm.prank(CURATOR);
         flap.reclaimBounty(taskId);
 
         vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Nothing left on this task / 该任务已无剩余"));
+        vm.expectRevert(bytes(unicode"Nothing left / 已无剩余"));
         flap.reclaimBounty(taskId);
     }
 
     function test_OnlyTheCuratorOrGuardianReclaims() public {
         _tax(0.05 ether);
-        _endow(0.05 ether);
+        _endow(_within(0.05 ether));
         vm.warp(revealEnd + 1);
 
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator may reclaim / 只有策展方可以收回"));
+        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
         flap.reclaimBounty(taskId);
     }
 }

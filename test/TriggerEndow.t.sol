@@ -29,6 +29,15 @@ contract TriggerEndowTest is BaseTest {
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
+    /// @dev Sizes a conversion to what the pool can actually take. Written this way rather than
+    ///      with a literal because the testnet BTCB pair is shallow enough that one whole coin
+    ///      moves it 1,543 bps — a hardcoded amount passes on one chain and is refused on the
+    ///      other, and the number that decides it is the pool's, not ours.
+    function _within(uint256 wanted) internal view returns (uint256) {
+        uint256 cap = flap.maxConvertible();
+        return wanted > cap ? cap : wanted;
+    }
+
     function _tax(uint256 amount) internal {
         vm.deal(TAXPAYER, amount);
         vm.prank(TAXPAYER);
@@ -57,7 +66,7 @@ contract TriggerEndowTest is BaseTest {
 
     function test_SchedulingRegistersARealRequest() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
 
         IFlapTriggerService.TriggerRequest memory r = IFlapTriggerService(TRIGGER).getRequest(id);
         assertEq(r.requester, address(flap), "the vault is not the requester");
@@ -71,13 +80,14 @@ contract TriggerEndowTest is BaseTest {
 
     function test_OnlyTheCuratorOrGuardianSchedules() public {
         _tax(0.05 ether);
-        uint256 floor_ = (flap.quote(0.05 ether) * 99) / 100;
+        uint256 floor_ = (flap.quote(_within(0.05 ether)) * 99) / 100;
         uint256 fee = flap.schedulerFee();
 
         vm.deal(ALICE, fee);
+        uint256 amt1_ = _within(0.05 ether);
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator may schedule / 只有策展方可以安排兑换"));
-        flap.scheduleEndow{value: fee}(taskId, 0.05 ether, floor_);
+        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
+        flap.scheduleEndow{value: fee}(taskId, amt1_, floor_);
     }
 
     /// @notice The floor is bounded where it is set, not where it is executed.
@@ -86,14 +96,15 @@ contract TriggerEndowTest is BaseTest {
         uint256 fee = flap.schedulerFee();
         vm.deal(CURATOR, fee * 2);
 
+        uint256 amt2_ = _within(0.05 ether);
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
-        flap.scheduleEndow{value: fee}(taskId, 0.05 ether, 0);
+        flap.scheduleEndow{value: fee}(taskId, amt2_, 0);
     }
 
     function test_ChangeGoesBackInsteadOfBecomingBounty() public {
         _tax(0.05 ether);
-        uint256 floor_ = (flap.quote(0.05 ether) * 99) / 100;
+        uint256 floor_ = (flap.quote(_within(0.05 ether)) * 99) / 100;
         uint256 fee = flap.schedulerFee();
         vm.deal(CURATOR, fee + 1 ether);
 
@@ -109,21 +120,21 @@ contract TriggerEndowTest is BaseTest {
     /// @notice The scheduler's address is the only thing that can drive the callback.
     function test_NobodyButTheSchedulerCanFireTheCallback() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
 
         vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Only the trigger service / 仅限调度服务"));
+        vm.expectRevert(bytes(unicode"Only the scheduler / 仅限调度器"));
         flap.trigger(id);
 
         vm.prank(guardian);
-        vm.expectRevert(bytes(unicode"Only the trigger service / 仅限调度服务"));
+        vm.expectRevert(bytes(unicode"Only the scheduler / 仅限调度器"));
         flap.trigger(id);
     }
 
     /// @notice The whole point, end to end: the curator priced it, the service executed it.
     function test_TheServiceExecutesWhatTheCuratorPriced() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
 
         vm.prank(TRIGGER);
         flap.trigger(id);
@@ -138,19 +149,19 @@ contract TriggerEndowTest is BaseTest {
 
     function test_AnUnknownRequestIdIsRefused() public {
         vm.prank(TRIGGER);
-        vm.expectRevert(bytes(unicode"No such scheduled conversion / 没有这笔已安排的兑换"));
+        vm.expectRevert(bytes(unicode"No such request / 无此请求"));
         flap.trigger(999_999);
     }
 
     function test_TheSameRequestCannotExecuteTwice() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
 
         vm.prank(TRIGGER);
         flap.trigger(id);
 
         vm.prank(TRIGGER);
-        vm.expectRevert(bytes(unicode"No such scheduled conversion / 没有这笔已安排的兑换"));
+        vm.expectRevert(bytes(unicode"No such request / 无此请求"));
         flap.trigger(id);
     }
 
@@ -167,7 +178,7 @@ contract TriggerEndowTest is BaseTest {
         _tax(0.05 ether);
 
         // A floor the pool cannot meet: schedule at a real one, then move the market against it.
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
         deal(BTCB, address(this), 0);
 
         // Force the swap to fail by asking the router for an impossible output at execution time.
@@ -187,7 +198,7 @@ contract TriggerEndowTest is BaseTest {
 
     function test_ACancelledRequestCannotFireLater() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
 
         vm.prank(CURATOR);
         flap.cancelScheduledEndow(id);
@@ -196,7 +207,7 @@ contract TriggerEndowTest is BaseTest {
         assertEq(left, 0, "cancel left the record behind");
 
         vm.prank(TRIGGER);
-        vm.expectRevert(bytes(unicode"No such scheduled conversion / 没有这笔已安排的兑换"));
+        vm.expectRevert(bytes(unicode"No such request / 无此请求"));
         flap.trigger(id);
 
         assertEq(flap.unassigned(), 0.05 ether, "the tax moved on a cancelled request");
@@ -204,10 +215,10 @@ contract TriggerEndowTest is BaseTest {
 
     function test_OnlyTheCuratorOrGuardianCancels() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
 
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator may cancel / 只有策展方可以取消"));
+        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
         flap.cancelScheduledEndow(id);
 
         vm.prank(guardian);
@@ -220,28 +231,31 @@ contract TriggerEndowTest is BaseTest {
     ///         it is the Guardian's alone — not the curator's, which is what closed M-02.
     function test_TheDirectPathIsTheGuardiansAlone() public {
         _tax(0.05 ether);
-        uint256 floor_ = (flap.quote(0.05 ether) * 99) / 100;
+        uint256 floor_ = (flap.quote(_within(0.05 ether)) * 99) / 100;
 
+        uint256 amt3_ = _within(0.05 ether);
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
-        flap.endow(taskId, 0.05 ether, floor_);
+        flap.endow(taskId, amt3_, floor_);
 
+        uint256 amt4_ = _within(0.05 ether);
         vm.prank(guardian);
-        assertGt(flap.endow(taskId, 0.05 ether, floor_), 0, "the guardian cannot convert");
+        assertGt(flap.endow(taskId, amt4_, floor_), 0, "the guardian cannot convert");
     }
 
     /// @notice Both paths book through the same code, so neither can drift from the other.
     function test_BothPathsBookIdentically() public {
         _tax(0.10 ether);
 
-        uint256 id = _schedule(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
         vm.prank(TRIGGER);
         flap.trigger(id);
         uint256 viaScheduler = flap.bounty(taskId);
 
-        uint256 floor_ = (flap.quote(0.05 ether) * 99) / 100;
+        uint256 floor_ = (flap.quote(_within(0.05 ether)) * 99) / 100;
+        uint256 amt5_ = _within(0.05 ether);
         vm.prank(guardian);
-        uint256 viaHatch = flap.endow(taskId, 0.05 ether, floor_);
+        uint256 viaHatch = flap.endow(taskId, amt5_, floor_);
 
         assertEq(flap.bounty(taskId), viaScheduler + viaHatch, "the two paths book differently");
         assertEq(flap.endowed(), flap.bounty(taskId), "the ledger disagrees with the task");

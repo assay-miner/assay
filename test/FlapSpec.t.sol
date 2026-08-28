@@ -40,6 +40,15 @@ contract FlapSpecTest is BaseTest {
         portal = 0x027e3704fC5C16522e9393d04C60A3ac5c0d775f;
     }
 
+    /// @dev Sizes a conversion to what the pool can actually take. Written this way rather than
+    ///      with a literal because the testnet BTCB pair is shallow enough that one whole coin
+    ///      moves it 1,543 bps — a hardcoded amount passes on one chain and is refused on the
+    ///      other, and the number that decides it is the pool's, not ours.
+    function _within(uint256 wanted) internal view returns (uint256) {
+        uint256 cap = flap.maxConvertible();
+        return wanted > cap ? cap : wanted;
+    }
+
     function _tax(uint256 amount) internal {
         vm.deal(TAXPAYER, amount);
         vm.prank(TAXPAYER);
@@ -80,9 +89,10 @@ contract FlapSpecTest is BaseTest {
     function test_GuardianCanReachEveryPrivilegedFunction() public {
         _tax(2 ether);
 
-        uint256 floor_ = _floor(1 ether);
+        uint256 floor_ = _floor(_within(1 ether));
+        uint256 amt1_ = _within(1 ether);
         vm.prank(guardian);
-        uint256 got = flap.endow(taskId, 1 ether, floor_);
+        uint256 got = flap.endow(taskId, amt1_, floor_);
         assertGt(got, 0, "guardian cannot convert tax");
 
         uint256 nativeHeld = address(flap).balance;
@@ -139,22 +149,25 @@ contract FlapSpecTest is BaseTest {
     ///      tax, so that difference comes out of the bounty, not out of them.
     function test_EndowRefusesAFloorAnInsiderCouldSandwich() public {
         _tax(2 ether);
-        uint256 spot = flap.quote(1 ether);
+        uint256 spot = flap.quote(_within(1 ether));
 
+        uint256 amt2_ = _within(1 ether);
         vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
-        flap.endow(taskId, 1 ether, 0);
+        flap.endow(taskId, amt2_, 0);
 
         // Ten percent under spot is still "any price you like" at the sizes involved.
         uint256 tooLow = (spot * 90) / 100;
+        uint256 amt3_ = _within(1 ether);
         vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
-        flap.endow(taskId, 1 ether, tooLow);
+        flap.endow(taskId, amt3_, tooLow);
 
         // Just inside the protocol's tolerance is accepted.
         uint256 ok = (spot * 9_800) / 10_000;
+        uint256 amt4_ = _within(1 ether);
         vm.prank(guardian);
-        assertGt(flap.endow(taskId, 1 ether, ok), 0, "a reasonable floor was refused");
+        assertGt(flap.endow(taskId, amt4_, ok), 0, "a reasonable floor was refused");
     }
 
     // ---------------------------------------------------------------- accounting after Rule 009
@@ -168,9 +181,10 @@ contract FlapSpecTest is BaseTest {
     ///      read rather than an internal assertion.
     function test_SolvencyGoesFalseAfterTheGuardianDrains() public {
         _tax(1 ether);
-        uint256 floor_ = _floor(1 ether);
+        uint256 floor_ = _floor(_within(1 ether));
+        uint256 amt5_ = _within(1 ether);
         vm.prank(guardian);
-        uint256 pot = flap.endow(taskId, 1 ether, floor_);
+        uint256 pot = flap.endow(taskId, amt5_, floor_);
         assertTrue(flap.solvent(), "should start covered");
 
         vm.prank(guardian);
@@ -187,16 +201,20 @@ contract FlapSpecTest is BaseTest {
         string memory idle = flap.description();
         assertGt(bytes(idle).length, 0, "description is empty");
 
-        _tax(1 ether);
+        // Taxed to exactly what the pool will take, so the conversion leaves nothing behind.
+        // With a remainder the vault is still, correctly, waiting to convert — and the banner
+        // says so, which is the state this asserts its way past.
+        uint256 amt6_ = _within(1 ether);
+        _tax(amt6_);
         string memory waiting = flap.description();
         assertTrue(
             keccak256(bytes(idle)) != keccak256(bytes(waiting)),
             "description does not move with the vault's state"
         );
 
-        uint256 floor_ = _floor(1 ether);
+        uint256 floor_ = _floor(amt6_);
         vm.prank(guardian);
-        flap.endow(taskId, 1 ether, floor_);
+        flap.endow(taskId, amt6_, floor_);
         assertTrue(
             keccak256(bytes(flap.description())) != keccak256(bytes(waiting)),
             "description did not change once a bounty was live"
@@ -207,7 +225,7 @@ contract FlapSpecTest is BaseTest {
         VaultUISchema memory schema = flap.vaultUISchema();
         assertGt(bytes(schema.vaultType).length, 0, "vaultType is empty");
         assertGt(bytes(schema.description).length, 0, "schema description is empty");
-        assertEq(schema.methods.length, 11, "method count drifted");
+        assertEq(schema.methods.length, 12, "method count drifted");
 
         uint256 writes;
         for (uint256 i; i < schema.methods.length; ++i) {

@@ -115,40 +115,40 @@ Repository at `abfa000`.
 
 | | |
 |---|---|
-| Factory | `0x02297d985f67bb6449E12F2447Eb07F708161Dc0` |
-| Tournament | `0xB8B08CBbd9EB8ca4569a6dBFDA2af25fCc8Ae7A1` |
-| Custody ledger | `0x336Bdb2528d31d45C35a90D585DDA8244bB62e13` |
-| Roster | `0x50861700f69aB37Ea9c8227d99D49685cD7f42B7` |
-| ASSAY token | `0x4c25b289440dd839c667589503e18EcDB55b0B5E` |
+| Factory | `0x5A08b8970091733526c5384d7cB537cbfb98c12a` |
+| Tournament | `0x14AC19293E95114F97A8Ef316f1F517af9b91c14` |
+| Custody ledger | `0x44C883842709fb62A8e87ecC8801534ac02ad2C3` |
+| Roster | `0x745F407c4d3284729D337F5AAB43720A3eED9CF6` |
+| ASSAY token | `0x917C6833508449e90fEb732EA961aceB809253B9` |
 | Tax token | not launched — Flap audits the factory, and launching claims a name permanently |
 
 ## BNB Smart Chain testnet (97) — the proof deployment
 
 | | |
 |---|---|
-| Factory | `0x537d8D999bcbfBe8Bd4342049151B726146Cd910` |
-| Tax token | `0x884b12d82475b999295C6999062Fc97657177777` |
-| Flap vault | `0x91320ed01385dc167b736e1Ff814d138dAB51212` |
-| Tournament | `0x420FCb2D8Db6EEB37Af775825C07D4d495AC67E8` |
+| Factory | `0xbF49f81FBb661092e6a9Ee06bB4Bf49693E5b40e` |
+| Tax token | `0xf2c1892d71dBa1a17A6D90D9d6e17453E9bF7777` |
+| Flap vault | `0xcaf53B3229d15464C5BA9bEdd2789881D1F6a67b` |
+| Tournament | `0xb9a78f85620EaaC2ff0BAb65FF9A1c9ef523EfF5` |
 
-The tax token is live at **200 bps each way**, matching the shipped launch parameters — it was
-launched through the same factory rather than by redeploying the stack, so the audited factory
-address is unchanged. The conversion path was exercised end to end on this deployment, with Flap's Trigger Service
-submitting the swap rather than us. The tournament was run at the shipped difficulty: eight
-vectors, a baseline of 1264, a miner scoring 1.0260x at 1232 gas.
+The token collects 200 bps each way. The conversion path was exercised end to end with Flap's
+Trigger Service submitting the swap rather than us.
 
-## What an empty round costs
+## Two things a reviewer found, and what they turned into
 
-Nothing but gas, and that is a deliberate change. `withdrawUnconverted` returns tax that was
-never placed behind a task, and `reclaimBounty` returns a bounty nobody won once the tournament's
-own reveal window has closed. Both were missing, and their absence was the dangerous half of a
-five-minute cadence: most windows draw nobody, and every one of them used to lock its tax
-permanently with only Flap's Guardian able to move it.
+Pre-audit review raised the size of a single conversion against the BTCB pair. The reported
+finding was that a large balance would fail to convert, because `MAX_ENDOW_SLIPPAGE_BPS` caps
+impact at 3%. Measured against the live pool, the opposite was true and worse: the bound was
+compared against `quote(bnbAmount)`, which already prices the impact of that size, so it could
+never object. Two thousand BNB in one call landed 47.6% below the untouched price and was
+accepted. `_requireWithinImpact` now measures against `spotUnitPrice()` — what the pool pays for
+an amount too small to move it — and `maxConvertible()` publishes the largest size that clears,
+binary-searched against the pool as it is rather than written into a document that goes stale.
 
-Neither can reach money a miner earned. `reclaimBounty` takes the tournament's claim window as
-its gate, so while a score exists and that window is open the curator waits; `withdrawUnconverted`
-moves native value only, which by construction is the unconverted part. `test/NotStuck.t.sol`
-proves both by breaking them.
+Fixing it pushed the factory to 25,398 bytes, past EIP-170, and a broadcast is what said so —
+after the tournament beside it had already landed and been paid for. `test/CodeSize.t.sol` now
+deploys each contract and fails while there is still less than a kilobyte of headroom, rather
+than at the one moment being wrong costs money.
 
 ## The two packages
 
@@ -156,8 +156,3 @@ proves both by breaking them.
 |---|---|---|
 | `dist/assay-vault-audit.zip` | Contracts at the archive root, flattened single files, the standard JSON that reproduces the deployed bytecode, the self-check, the whole test suite, and a verifier that checks the address against the chain | 6 — contract audit |
 | `dist/assay-vault-ui.zip` | The four-file Vault UI source package, format 6, with its QA report | 7 — after the audit passes |
-
-Both archives state their own measured figures. The audit archive is built by a script that runs
-the tests going into it and writes that number itself, then extracts the result into an empty
-directory, builds it with pinned dependencies, runs it again, and refuses to ship if the stated
-count and the measured one disagree.
