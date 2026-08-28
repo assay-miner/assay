@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flap.sh/schemas/vault-ui-manifest.schema.json",
+  "title": "Flap Vault UI Manifest",
+  "type": "object",
+  "required": ["artifactId", "name", "match", "i18n"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": ["mode"],
+        "properties": { "mode": { "const": "mini-app" } }
+      },
+      "then": {
+        "required": ["displayTitle"],
+        "properties": {
+          "displayTitle": {
+            "$ref": "#/$defs/miniAppDisplayTitle"
+          }
+        }
+      },
+      "else": {
+        "not": { "required": ["displayTitle"] }
+      }
+    }
+  ],
+  "properties": {
+    "artifactId": {
+      "type": "string",
+      "description": "Stable source-package artifact identity. Format: vaultui_<folder-name>_<26-char ULID>.",
+      "pattern": "^vaultui_[a-z0-9]+(-[a-z0-9]+)*_[0-9A-HJKMNPQRSTVWXYZ]{26}$"
+    },
+    "name": { "type": "string", "minLength": 2 },
+    "displayTitle": {
+      "$ref": "#/$defs/miniAppDisplayTitle"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["mini-app"],
+      "description": "Optional artifact mode. Omit for the default Vault UI. Use mini-app only for token-scoped 8888-token Mini App artifacts. Mini App mode is bound to match.bindings[].tokenAddresses ending in 8888 and skips the Vault risk-status tag requirement."
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["three-r3f-v1"] },
+      "description": "Optional versioned capability profiles. three-r3f-v1 enables the same controlled Three.js/R3F multi-file and local-asset boundary for mode-less 7777 Vault UI and token-scoped 8888 Mini App artifacts."
+    },
+    "match": {
+      "type": "object",
+      "required": ["bindings"],
+      "additionalProperties": false,
+      "description": "Developer-facing registry binding intent. Each binding targets chainId plus a factoryAddress, one vaultAddresses entry, or one or more no-factory tokenAddresses entries. Any tokenAddresses entry, including entries on factory bindings, must end in 7777 or 8888 and be a real deployed ERC20 token. Factory-mode tokenAddresses are not production CA restrictions.",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Explicit factory-scoped, single-Vault, or token-scoped binding targets. One UI artifact can share logic across multiple deployment targets. At least one binding must include tokenAddresses for Workbench/e2e test coverage. Duplicate runtime binding keys are also blocked by vault:check.",
+          "items": {
+            "type": "object",
+            "required": ["chainId"],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["factoryAddress"] },
+                  { "required": ["vaultAddresses"] },
+                  { "required": ["tokenAddresses"] }
+                ]
+              },
+              {
+                "if": {
+                  "not": { "required": ["factoryAddress"] }
+                },
+                "then": {
+                  "properties": {
+                    "vaultAddresses": { "$ref": "#/$defs/singleAddressArray" },
+                    "tokenAddresses": { "$ref": "#/$defs/testTokenAddressArray" }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "chainId": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "EVM chain ID, for example 56 for BNB Chain mainnet, 97 for BNB Chain testnet, 4663 for Robinhood Chain, or 46630 for Robinhood Chain Testnet. Robinhood proof requires a real deployed 7777/8888 token; standard Robinhood proof tokens are documented in docs/robinhood-testnet.md."
+              },
+              "factoryAddress": {
+                "$ref": "#/$defs/nonZeroAddress",
+                "description": "Non-zero factory contract address on this chain for factory-scoped custom UI binding."
+              },
+              "vaultAddresses": {
+                "$ref": "#/$defs/addressArray",
+                "description": "Vault address list for this binding. In no-factory mode this may contain exactly one Vault address and participates in preview/runtime matching."
+              },
+              "tokenAddresses": {
+                "$ref": "#/$defs/testTokenAddressArray",
+                "description": "Binding-scoped token list for package proof or no-factory token scoping. Every entry, including factory-mode entries, must be a real deployed ERC20 token address ending in 7777 or 8888. In factory mode this is not a production CA restriction. In no-factory mode this may also be used as the binding target itself and may contain multiple token addresses."
+              },
+              "externalContracts": {
+                "$ref": "#/$defs/externalContractArray",
+                "description": "Optional review declaration for fixed contract targets that are not the runtime token, Vault, factory, or binding-scoped token/vault addresses. Each entry must include the contract address and a human-readable label."
+              }
+            }
+          }
+        }
+      }
+    },
+    "i18n": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Supported locale list. vault:check validates exactly these locales against i18n.json.",
+      "items": { "type": "string", "minLength": 2 }
+    },
+    "layout": {
+      "type": "string",
+      "enum": ["fullscreen"],
+      "description": "Optional internal-review layout request. Omit for the standard 768px Vault body. Use fullscreen only when Flap has explicitly asked for a full-screen Vault body; it enters additional review and production host constraints are applied by flap.sh."
+    },
+    "endpoints": {
+      "description": "Optional non-oracle external endpoint declarations. Use a single HTTPS URL string or an array of HTTPS URL strings for fast review/checker allowlisting.",
+      "oneOf": [
+        { "$ref": "#/$defs/httpsUrl" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/httpsUrl" }
+        }
+      ]
+    },
+    "externalFrames": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "description": "Optional reviewed display-only iframe declarations. Only TradingView, DexScreener, and CoinGecko Terminal provider URLs are supported; each src must be a complete static HTTPS URL with fixed query params.",
+      "items": { "$ref": "#/$defs/externalFrame" }
+    }
+  },
+  "$defs": {
+    "miniAppDisplayTitle": {
+      "type": "object",
+      "required": ["zh", "en"],
+      "additionalProperties": false,
+      "description": "Mini App display title shown on flap.sh surfaces. Required only for manifest.mode=mini-app. Use separate Chinese and English values, for example {\"zh\":\"蝴蝶农场\",\"en\":\"Butterfly Farm\"}.",
+      "properties": {
+        "zh": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "[\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]"
+        },
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "[A-Za-z]"
+        }
+      }
+    },
+    "address": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "nonZeroAddress": {
+      "allOf": [
+        { "$ref": "#/$defs/address" },
+        { "not": { "const": "0x0000000000000000000000000000000000000000" } },
+        { "not": { "const": "0x1000000000000000000000000000000000000001" } },
+        { "not": { "const": "0x2000000000000000000000000000000000000002" } },
+        { "not": { "const": "0x2000000000000000000000000000000000000005" } }
+      ]
+    },
+    "httpsUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "addressArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/nonZeroAddress" }
+    },
+    "testTokenAddress": {
+      "allOf": [
+        { "$ref": "#/$defs/nonZeroAddress" },
+        { "pattern": "(?:7777|8888)$" }
+      ]
+    },
+    "testTokenAddressArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/testTokenAddress" }
+    },
+    "singleAddressArray": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/nonZeroAddress" }
+    },
+    "externalContract": {
+      "type": "object",
+      "required": ["address", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/address",
+          "description": "Fixed external contract address reviewed for this binding."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Human-readable review label, for example Reward distributor."
+        }
+      }
+    },
+    "externalContractArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/externalContract" }
+    },
+    "externalFrame": {
+      "type": "object",
+      "required": ["id", "provider", "src", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Stable lowercase kebab-case frame id referenced by ReviewedFrame."
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["tradingview", "dexscreener", "coingecko-terminal"],
+          "description": "Reviewed iframe provider."
+        },
+        "src": {
+          "allOf": [
+            { "$ref": "#/$defs/httpsUrl" },
+            { "pattern": "^https://[^#?]+\\?.+$" }
+          ],
+          "description": "Complete static iframe URL with fixed query params. Runtime query construction is not allowed."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Human-readable accessibility title for the embedded frame."
+        }
+      }
+    }
+  }
+}

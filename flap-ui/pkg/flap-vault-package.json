@@ -1,0 +1,64 @@
+{
+  "kind": "flap-vault-ui-source-package",
+  "formatVersion": 6,
+  "generatedBy": "yarn vault:package",
+  "generator": "flap-vault-ui-template",
+  "templateName": "flap-vault-ui-template",
+  "templateVersion": "0.1.29",
+  "runtimePackageName": "@flapsdk/vault-runtime",
+  "runtimePackageVersion": "0.1.29",
+  "runtimePackageGitHead": "b9e783f97c141925f22e12d5eab9a09270328f53",
+  "runtimeContractVersion": 1,
+  "artifactId": "vaultui_assay_01M0VSZZMEMB626W2PMXA5ZCBA",
+  "folderName": "assay",
+  "sourcePackage": "src/vaults/assay",
+  "packagedAt": "2026-08-28T08:43:28.729Z",
+  "check": {
+    "passed": true,
+    "summary": {
+      "blocking": 0,
+      "warning": 0,
+      "info": 0
+    }
+  },
+  "e2e": {
+    "passed": true,
+    "reportFile": "qa/e2e-report.json",
+    "sourceSha256": "f702f7de0b931e2426c994e7ee6b045ee8898c11b8a920f50281b5e966ab6026",
+    "manifestSha256": "ef37c783e9700431fad501b85c216e2151b24ed5ae013675a52b635d3a03c613",
+    "chainId": 97,
+    "tokenAddress": "0xf2c1892d71dBa1a17A6D90D9d6e17453E9bF7777",
+    "tokenPolicy": "testnet",
+    "viewportCount": 3,
+    "phaseChecks": [
+      "default",
+      "internal-market",
+      "dex-listed"
+    ],
+    "layoutCheckSummary": {
+      "horizontalOverflow": 0,
+      "scopeOutOfViewport": 0,
+      "textOverflow": 0,
+      "controlCovered": 0,
+      "controlOverlap": 0,
+      "riskStatus": 0,
+      "wrongNetworkState": 0,
+      "renderErrors": 0
+    }
+  },
+  "requiredSourceFiles": [
+    "src/vaults/assay/Component.tsx",
+    "src/vaults/assay/VaultABI.ts",
+    "src/vaults/assay/i18n.json",
+    "src/vaults/assay/manifest.json"
+  ],
+  "fileSha256": {
+    "src/vaults/assay/Component.tsx": "3170105c92e16937c1d210a8cb48fe3a807c94bd0a5192d805a2e79e82d3e247",
+    "src/vaults/assay/VaultABI.ts": "e4851847386bec86fb20337a23c8819bb7f8a8e634d64a3c3315e9a4b7486e8b",
+    "src/vaults/assay/i18n.json": "59b6356bbae430c9fcc9813b53127eda701445b85afbfebafc269c331cc82f52",
+    "src/vaults/assay/manifest.json": "ef37c783e9700431fad501b85c216e2151b24ed5ae013675a52b635d3a03c613",
+    "schemas/manifest.schema.json": "fdb3f14cf6a8499ed2795619f1fe7808daf70acacdb6f6f5255d841511c6c322",
+    "config/mini-app-capability-profiles.json": "ab297669dab645c6edb1fd3363e03673fbd59dcb9394a6ee5b46c6218e8dce8e",
+    "qa/e2e-report.json": "a422e22ad8c2e0c3e125db642756476b7845e46bf7fd09049b775eb81090690c"
+  }
+}
