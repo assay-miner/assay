@@ -207,7 +207,7 @@ contract FlapSpecTest is BaseTest {
         VaultUISchema memory schema = flap.vaultUISchema();
         assertGt(bytes(schema.vaultType).length, 0, "vaultType is empty");
         assertGt(bytes(schema.description).length, 0, "schema description is empty");
-        assertEq(schema.methods.length, 9, "method count drifted");
+        assertEq(schema.methods.length, 11, "method count drifted");
 
         uint256 writes;
         for (uint256 i; i < schema.methods.length; ++i) {
@@ -218,7 +218,7 @@ contract FlapSpecTest is BaseTest {
                 assertEq(schema.methods[i].outputs.length, 0, "a write method declares outputs");
             }
         }
-        assertEq(writes, 4, "the write methods drifted");
+        assertEq(writes, 6, "the write methods drifted");
     }
 
     /// @dev The spec fixes the vocabulary: only these field types, 18 decimals for an amount and

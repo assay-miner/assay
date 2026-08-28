@@ -105,6 +105,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     event BountyPaid(uint256 indexed taskId, address indexed miner, uint256 amount);
     event EndowScheduled(uint256 indexed requestId, uint256 indexed taskId, uint256 bnbAmount, uint256 minRewardOut);
     event EndowCancelled(uint256 indexed requestId, uint256 indexed taskId);
+    event BountyReclaimed(uint256 indexed taskId, address indexed to, uint256 amount);
+    event UnconvertedWithdrawn(address indexed to, uint256 amount);
     event EmergencyWithdrawNative(address indexed to, uint256 amount);
     event EmergencyWithdrawToken(address indexed token, address indexed to, uint256 amount);
 
@@ -423,6 +425,67 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         emit BountyPaid(taskId, msg.sender, amount);
     }
 
+    /// @notice Takes back tax that was never placed behind a task.
+    ///
+    /// @dev The other half of not being stuck, and the half that bites first. Tax accrues here
+    ///      continuously; a task is posted for a window. Tax that arrives while no task is open,
+    ///      or that is simply more than the curator chose to put up, was reachable by nothing —
+    ///      not `collect`, which needs a score, and not any curator path, because every one of
+    ///      them only converted *into* a task. It sat here until Flap's Guardian moved it.
+    ///
+    ///      Nothing is owed out of it. A miner's claim attaches when tax is converted and booked
+    ///      behind a task, and that step is still one-way: `endowed` is untouchable here, and
+    ///      this can only ever move native value, which by construction is the unconverted part.
+    ///      What it changes is who bears an empty window — the project, rather than nobody.
+    function withdrawUnconverted(uint256 amount) external nonReentrant returns (uint256 sent) {
+        require(msg.sender == curator || msg.sender == _getGuardian(),
+            unicode"Only the curator may withdraw / 只有策展方可以提取");
+        uint256 free = unassigned();
+        sent = amount == 0 || amount > free ? free : amount;
+        require(sent > 0, unicode"No unconverted tax / 没有未兑换的交易税");
+
+        (bool ok,) = curator.call{value: sent}("");
+        require(ok, unicode"Transfer failed / 转账失败");
+        emit UnconvertedWithdrawn(curator, sent);
+    }
+
+    /// @notice Returns a bounty nobody won to the curator, on the tournament's own terms.
+    ///
+    /// @dev The tournament already has this: `reclaim` gives an unwon pot back to whoever posted
+    ///      it, immediately if nothing scored and after the claim window if something did. The
+    ///      BTCB side had no such path, and the asymmetry was the dangerous half. A task that
+    ///      draws no submissions is the ordinary outcome for a hard baseline, and without this
+    ///      the tax behind it was locked forever with only Flap's Guardian able to move it —
+    ///      which turns a quiet miner turnout into a permanent loss.
+    ///
+    ///      The conditions are the tournament's, not a second set invented here: reveal must be
+    ///      closed, and if anything scored the claim window must also have passed, so a miner who
+    ///      earned a share can never be raced by the curator reclaiming it out from under them.
+    ///      What moves is the remainder — `bounty - paid` — and it can only go to the curator.
+    function reclaimBounty(uint256 taskId) external nonReentrant returns (uint256 amount) {
+        require(msg.sender == curator || msg.sender == _getGuardian(),
+            unicode"Only the curator may reclaim / 只有策展方可以收回");
+        _requireTask(taskId);
+
+        (, , uint64 revealEnd, , , , , uint256 totalScore, ) = tournament.tasks(taskId);
+        require(block.timestamp >= revealEnd, unicode"Task has not settled yet / 该任务尚未结算");
+        require(
+            totalScore == 0 || block.timestamp >= uint256(revealEnd) + tournament.CLAIM_WINDOW(),
+            unicode"Miners can still collect / 矿工仍可领取"
+        );
+
+        amount = bounty[taskId] - paid[taskId];
+        require(amount > 0, unicode"Nothing left on this task / 该任务已无剩余");
+
+        // Booked as paid so the ledger cannot hand the same BTCB out twice, and `endowed` falls
+        // by exactly what left — the same bookkeeping `collect` does.
+        paid[taskId] += amount;
+        endowed -= amount;
+
+        reward.safeTransfer(curator, amount);
+        emit BountyReclaimed(taskId, curator, amount);
+    }
+
     // -------------------------------------------------------------------------------------
     // Emergency controls — Flap Rule 009
     // -------------------------------------------------------------------------------------
@@ -587,7 +650,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
         schema.description = unicode"Trading tax becomes BTCB prize money for verified gas-optimisation work. Miners submit EVM runtime bytecode; the chain deploys it, runs every test vector and reads the meter. / 交易税变成 BTCB 奖金,奖励可验证的优化工作。矿工提交 EVM 运行时字节码,链把它部署、跑完全部测试向量、读取计量表。";
-        schema.methods = new VaultMethodSchema[](9);
+        schema.methods = new VaultMethodSchema[](11);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
         VaultMethodSchema memory m = schema.methods[0];
@@ -696,8 +759,28 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
 
-        // 8 — the conversion the curator is about to accept.
+        // 8 — an empty window's tax goes back to the project rather than nowhere.
         m = schema.methods[8];
+        m.name = "withdrawUnconverted";
+        m.description = unicode"Take back tax never placed behind a task; 0 takes all / 取回未投入任务的交易税,填 0 代表全部";
+        m.inputs = new FieldDescriptor[](1);
+        m.inputs[0] = FieldDescriptor("amount", "uint256", unicode"BNB, 0 for all / BNB,0 表示全部", 18);
+        m.outputs = new FieldDescriptor[](0);
+        m.approvals = new ApproveAction[](0);
+        m.isWriteMethod = true;
+
+        // 9 — a bounty nobody won, on the tournament's own terms.
+        m = schema.methods[9];
+        m.name = "reclaimBounty";
+        m.description = unicode"Return a bounty nobody won, once the tournament's window has closed / 锦标赛窗口关闭后收回无人赢得的赏金";
+        m.inputs = new FieldDescriptor[](1);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.outputs = new FieldDescriptor[](0);
+        m.approvals = new ApproveAction[](0);
+        m.isWriteMethod = true;
+
+        // 10 — the conversion the curator is about to accept.
+        m = schema.methods[10];
         m.name = "quote";
         m.description = unicode"What that much BNB converts to at the pool's current price / 这么多 BNB 按当前池价能换到多少";
         m.inputs = new FieldDescriptor[](1);

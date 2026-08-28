@@ -73,6 +73,23 @@ The BTCB has no operator path at all. It leaves `AssayFlapVault` in two ways: `c
 pays `msg.sender` and only if the tournament recorded a score for them, and the Rule 009
 emergency functions, which are `onlyGuardian` — and the Guardian is Flap's address, not ours.
 
+## The task is sized for machines
+
+The baseline is the difficulty knob, and the rule is unforgiving: matching it or doing worse
+scores zero. It is set to what the implementation a person writes first actually costs over the
+task's own vectors — measured, not guessed. Submitting that earns nothing. The floor a search
+finds is 32 gas below it, and that whole margin is the prize.
+
+Five-minute windows do the rest. A miner client commits, waits and reveals in seconds; a person
+working by hand does not finish inside them.
+
+Neither number stands alone. Removing a vector changes what the obvious implementation costs —
+drop the zero and the wide case and it falls from 1264 to 948, at which point a baseline of 1264
+is a gift. `test/MachineOnly.t.sol` reads the shipped spec off disk and holds the two together:
+the obvious answer must score zero, a searched one must still score, the margin must stay thin,
+the edge vectors must be present, and the windows must stay short. Loosening any of them turns a
+test red rather than quietly turning the task into something a person can win.
+
 ## Notes on what this is not
 
 The tournament's tasks are posted by a curator. That is the centralised part of this version and
