@@ -89,6 +89,39 @@ contract EpochRotationTest is BaseTest {
         assertGt(sSearch, sLazy * 4, "a full search must pay far more than the obvious shortcut");
     }
 
+    /// GenTask redraws until it finds a beatable instance, so the program behind a task is drawn
+    /// from (seed, draws) and not from the seed alone. A miner deriving it the other way produces
+    /// a program that does not answer the task at all — which is exactly what happened the first
+    /// time the client was pointed at a live task.
+    function test_TheProgramIsDrawnFromSeedAndDraws() public pure {
+        uint256 seed = uint256(keccak256("derivation"));
+        for (uint256 draws = 1; draws < 5; ++draws) {
+            TaskGen.Op[] memory viaBoth = TaskGen.draw(uint256(keccak256(abi.encode(seed, draws))), OPS);
+            TaskGen.Op[] memory viaSeed = TaskGen.draw(seed, OPS);
+            assertTrue(
+                keccak256(abi.encode(viaBoth)) != keccak256(abi.encode(viaSeed)),
+                "seed alone reproduced the program; the client could get this wrong undetected"
+            );
+        }
+        // Draw zero is the one case where the two do differ but must stay self-consistent.
+        TaskGen.Op[] memory a = TaskGen.draw(uint256(keccak256(abi.encode(seed, uint256(0)))), OPS);
+        TaskGen.Op[] memory b = TaskGen.draw(uint256(keccak256(abi.encode(seed, uint256(0)))), OPS);
+        assertEq(keccak256(abi.encode(a)), keccak256(abi.encode(b)), "the derivation is not deterministic");
+    }
+
+    /// `optimise` must leave the program it was handed exactly as it found it. It used to alias
+    /// the caller's array and fold constants straight into it, so the second read of the same
+    /// program was a different program — the baseline measured one thing and the vectors
+    /// published another, and a correct miner's answer was rejected on chain.
+    function test_OptimiseDoesNotMutateItsInput() public pure {
+        for (uint256 k; k < 24; ++k) {
+            TaskGen.Op[] memory ops = TaskGen.draw(uint256(keccak256(abi.encode("mut", k))), OPS);
+            bytes32 before = keccak256(abi.encode(ops));
+            TaskGen.optimise(ops);
+            assertEq(keccak256(abi.encode(ops)), before, "optimise rewrote the program it was given");
+        }
+    }
+
     /// Independent seeds must produce different programs, or "rotation" is cosmetic.
     function test_SeedsProduceDistinctPrograms() public pure {
         uint256 same;

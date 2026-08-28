@@ -138,7 +138,11 @@ library TaskGen {
         Op[] memory buf = new Op[](ops.length);
         uint256 n;
         for (uint256 i; i < ops.length; ++i) {
-            Op memory o = ops[i];
+            // A copy, not a reference. `Op memory o = ops[i]` aliases the caller's array, so the
+            // folding below would rewrite the very program this is meant to be optimising — the
+            // baseline would then be measured against one program and the vectors published for
+            // another.
+            Op memory o = Op({kind: ops[i].kind, c: ops[i].c});
 
             // 1 — identities disappear.
             if (o.kind == ADD && o.c == 0) continue;

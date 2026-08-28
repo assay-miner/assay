@@ -49,13 +49,27 @@ contract LiveLoopTest is Test {
         assertEq(address(flap.tournament()), TOURNAMENT, "the flap vault points at another tournament");
 
         // --- draw this epoch's task, exactly as tools/epoch.sh does -----------------------------
+        // Mirrors GenTask exactly: redraw until the instance is beatable, and derive from
+        // (seed, draws) rather than the seed alone -- which is the derivation the client has to
+        // reproduce, and got wrong the first time it was pointed at a live task.
         uint256 seed = uint256(blockhash(block.number - 1));
-        TaskGen.Op[] memory ops = TaskGen.draw(seed, OPS);
-        (bytes[] memory ins, bytes32[] memory exp) = _vectors(seed, ops);
-
-        uint256 baseline = _measure(TaskGen.compileNaive(ops), ins, exp);
-        uint256 best = _measure(TaskGen.compileTight(TaskGen.optimise(ops)), ins, exp);
-        assertGt(baseline, best, "the drawn epoch has no slack");
+        TaskGen.Op[] memory ops;
+        bytes[] memory ins;
+        bytes32[] memory exp;
+        uint256 baseline;
+        uint256 best;
+        for (uint256 draws; draws < 64; ++draws) {
+            ops = TaskGen.draw(uint256(keccak256(abi.encode(seed, draws))), OPS);
+            (ins, exp) = _vectors(seed, ops);
+            uint256 gN = _measure(TaskGen.compileNaive(ops), ins, exp);
+            uint256 gT = _measure(TaskGen.compileTight(TaskGen.optimise(ops)), ins, exp);
+            if (gN > gT && gN - gT >= 30 && _distinct(exp)) {
+                baseline = gN;
+                best = gT;
+                break;
+            }
+        }
+        assertGt(baseline, best, "no beatable epoch was drawn in 64 tries");
 
         uint64 commitEnd = uint64(block.timestamp + 60);
         uint64 revealEnd = commitEnd + 60;
@@ -106,6 +120,13 @@ contract LiveLoopTest is Test {
         console2.log("baseline gas   ", baseline);
         console2.log("miner gas      ", best);
         console2.log("BTCB to miner  ", got);
+    }
+
+    function _distinct(bytes32[] memory exp) internal pure returns (bool) {
+        for (uint256 i; i < exp.length; ++i) {
+            for (uint256 j = i + 1; j < exp.length; ++j) if (exp[i] == exp[j]) return false;
+        }
+        return true;
     }
 
     function _vectors(uint256 seed, TaskGen.Op[] memory ops)
