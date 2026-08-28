@@ -37,10 +37,16 @@ contract LaunchToken is Script {
         string memory symbol = vm.envOr("TOKEN_SYMBOL", string("ASSAY"));
 
         Deploy.FlapVenue memory venue = helper.flapVenueFor(block.chainid);
-        bytes32 salt = helper.mineVanitySalt(
-            venue,
-            vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode(symbol, vm.addr(pk)))))
-        );
+        // `SALT` skips mining. It is pure but slow, and a public BSC node prunes state out from
+        // under a fork that stays open that long — the launch then fails with `missing trie node`,
+        // which reads like a bug and is not one. script/MineSalt.s.sol produces one offline.
+        bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
+        if (salt == bytes32(0)) {
+            salt = helper.mineVanitySalt(
+                helper.flapVenueFor(block.chainid),
+                vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode(symbol, vm.addr(pk)))))
+            );
+        }
 
         vm.startBroadcast(pk);
         address taxToken = IVaultPortal(payable(venue.vaultPortal)).newTokenV6WithVault{value: 0}(

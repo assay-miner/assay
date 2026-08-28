@@ -160,10 +160,17 @@ contract Deploy is Script {
         // pure function of (implementation, salt, portal), so it is computed here and asserted
         // against the real one after the launch.
         FlapVenue memory venue = flapVenueFor(block.chainid);
-        bytes32 salt = mineVanitySalt(
-            venue,
-            vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode("assay.v1", deployer))))
-        );
+        // Mining is pure, and slow: several hundred thousand address predictions. Run inside the
+        // broadcast simulation it holds a fork open for minutes, and a public node prunes the
+        // block out from under it — the deploy then fails with `missing trie node`, which reads
+        // like a bug and is not one. `SALT` skips it; script/MineSalt.s.sol produces one offline.
+        bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
+        if (salt == bytes32(0)) {
+            salt = mineVanitySalt(
+                venue,
+                vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode("assay.v1", deployer))))
+            );
+        }
         address predictedToken =
             ClonesUpgradeable.predictDeterministicAddress(venue.taxedV3Impl, salt, venue.portal);
 
@@ -221,7 +228,10 @@ contract Deploy is Script {
         require(vault.isController(address(roster)), "roster not a vault controller");
         require(vault.isController(address(tournament)), "tournament not a vault controller");
         require(vault.controllersFrozen(), "vault controllers not frozen");
-        require(vault.solvent(), "vault must start solvent");
+        // Solvency reads the asset's balance, and the asset is the token this launch creates —
+        // so it is only answerable once the token exists. A stack deployed ahead of its launch is
+        // checked when the launch lands, not asserted against an address with no code.
+        if (taxToken != address(0)) require(vault.solvent(), "vault must start solvent");
 
         // Same rule for the token layer: a returned address is a simulation result until the
         // chain has code at it.
