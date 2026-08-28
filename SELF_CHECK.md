@@ -237,11 +237,15 @@ call inside `receive()`, and a `receive()` that can fail breaks tax collection p
 - **I-05**: `AssayVault.deposit` credits the nominal `amount` to the ledger and then calls
   `safeTransferFrom` for that same amount. On a fee-on-transfer or rebasing asset the credited
   figure would exceed what actually arrived, `solvent()` would go false, and the last withdrawer
-  would be short. It is correct for this deployment — `asset` is fixed at construction to
-  `AssayToken`, which is `ERC20, ERC20Permit` with no transfer hook — but the contract is typed
-  against a generic `IERC20`, so the assumption is worth stating: **this vault requires a
-  standard-transfer asset.** Anyone reusing it with a taxed token must move to balance-delta
-  accounting first.
+  would be short. `asset` is now the launched taxed-V3 token itself, which is exactly
+  the case this note used to warn about — the protocol has one token, and stakes and pots are
+  denominated in it. It is correct because that token taxes pool interactions, not wallet
+  transfers: a measured `transfer` and `transferFrom` of 1,000 tokens between fresh addresses each
+  deliver 1,000, at zero basis points. That is not left as a measurement somebody once took —
+  `test/DepositParity.t.sol` asserts it against the live token on every run, so the day a token
+  redeploy starts taxing plain transfers the suite says so, instead of the ledger quietly
+  drifting. **This vault requires a standard-transfer asset**, and the one it has is checked to be
+  one.
 - **I-06** *(fixed)*: `error NotFrozen()` was declared and never thrown — a gate that was
   intended and not installed. It is thrown now, from `onlyController`, so no value moves until the
   controller set is sealed. This matters beyond tidiness: `deposit` takes a caller-supplied
