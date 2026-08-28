@@ -158,7 +158,10 @@ Flap's opinion, but it is no longer the same class of finding.
 **Status**: Open — requires a decision, per Rule 002
 **File**: `src/AssayFlapFactory.sol`
 
-**Description.** Rule 002 recommends a commission of 6% of `msg.value` for a tax rate ≤ 1%, and `msg.value * 6 / taxRateBps` above it. This factory takes none; 100% of the tax reaches bounties.
+**Description.** Rule 002 recommends a commission of 6% of `msg.value` for a tax rate ≤ 1%, and
+`msg.value * 6 / taxRateBps` above it. This token launches at **200 bps each way**, which puts it
+in the second tier: the recommended commission would be `msg.value * 6 / 200`, or 3%. This factory
+takes none; 100% of the tax reaches bounties.
 
 **Impact.** Strictly better for users than the recommendation, and worse for the vault developer, who earns nothing from the vault. Rule 002 asks for a justification when the recommendation is not followed.
 

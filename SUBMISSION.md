@@ -18,7 +18,7 @@ things were taken from them directly rather than derived: the base contracts und
 Worth doing before the audit spend, because two design points are ones Flap may have an opinion
 on and both are cheaper to change now than after:
 
-- **The factory takes no commission.** Rule 002 recommends 6% of tax revenue for a ≤1% tax rate.
+- **The factory takes no commission.** The token launches at 200 bps each way, so Rule 002 puts it in the `msg.value * 6 / taxRateBps` tier — a recommended 3%.
   We take zero and put all of it into bounties. Rule 002 asks for a justification when the
   recommendation is not followed; ours is in `SELF_CHECK.md` (L-02).
 - **`endow` is curator-gated and performs a swap.** See M-02 in the same report. There is a

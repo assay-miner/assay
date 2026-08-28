@@ -73,6 +73,13 @@ The BTCB has no operator path at all. It leaves `AssayFlapVault` in two ways: `c
 pays `msg.sender` and only if the tournament recorded a score for them, and the Rule 009
 emergency functions, which are `onlyGuardian` — and the Guardian is Flap's address, not ours.
 
+## The launch
+
+The token collects **200 bps on a buy and 200 bps on a sell**, for a year, with every basis point
+routed to the vault and no dev buy at launch. Those numbers are pinned by `test/LaunchParams.t.sol`
+rather than left as literals in a deploy script — a token launch cannot be undone, and a rate
+nudged by accident would show up first as a live market collecting the wrong amount forever.
+
 ## The task is sized for machines
 
 The baseline is the difficulty knob, and the rule is unforgiving: matching it or doing worse

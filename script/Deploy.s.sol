@@ -119,8 +119,11 @@ contract Deploy is Script {
         p.quoteToken = address(0);
         p.quoteAmt = 0;
         p.dexId = IPortalTypes.DEXId.DEX0;
-        p.buyTaxRate = 100;
-        p.sellTaxRate = 100;
+        // 200 bps each way. The rate is what funds every bounty this protocol pays, so it is
+        // pinned by a test rather than left as a number somebody can nudge: at 2% Rule 002's
+        // recommended commission would be msg.value * 6 / 200, and this factory still takes none.
+        p.buyTaxRate = 200;
+        p.sellTaxRate = 200;
         p.taxDuration = 365 days;
         p.antiFarmerDuration = 30 days;
         p.mktBps = 10_000;

@@ -90,8 +90,8 @@ contract FlapGateTest is Test {
         p.quoteToken = address(0);
         p.quoteAmt = 0;
         p.dexId = IPortalTypes.DEXId.DEX0;
-        p.buyTaxRate = 100;
-        p.sellTaxRate = 100;
+        p.buyTaxRate = 200;
+        p.sellTaxRate = 200;
         p.taxDuration = 365 days;
         p.antiFarmerDuration = 30 days;
         p.mktBps = 10_000;
