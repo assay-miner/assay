@@ -76,6 +76,13 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Scheduled conversions, by the scheduler's request id.
     mapping(uint256 requestId => ScheduledEndow) public scheduled;
 
+    /// @notice BNB already promised to a scheduled conversion.
+    /// @dev `unassigned()` is the raw balance, which is what its name says and what the UI shows.
+    ///      But a scheduled conversion escrows nothing, so without this a withdrawal could take
+    ///      the BNB out from under an armed request: the callback would revert, its fee would be
+    ///      spent for nothing, and tax on its way to a bounty would land as project revenue.
+    uint256 public reserved;
+
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
 
@@ -168,6 +175,13 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         return address(this).balance;
     }
 
+    /// @notice Tax that is neither converted nor already promised to a scheduled conversion.
+    function freeTax() public view returns (uint256) {
+        uint256 bal = address(this).balance;
+        uint256 held = reserved;
+        return bal > held ? bal - held : 0;
+    }
+
     /// @notice Whether every open bounty is actually covered by tokens this vault holds.
     /// @dev The one invariant worth being able to check from outside without trusting a number
     ///      this contract reports about itself.
@@ -200,7 +214,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         require(msg.sender == _getGuardian(), unicode"Only the guardian / 仅限守护者");
         _requireTask(taskId);
         require(
-            bnbAmount > 0 && bnbAmount <= unassigned(),
+            bnbAmount > 0 && bnbAmount <= freeTax(),
             unicode"Exceeds unconverted tax / 超过未兑换的税"
         );
 
@@ -277,7 +291,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         );
         _requireTask(taskId);
         require(
-            bnbAmount > 0 && bnbAmount <= unassigned(),
+            bnbAmount > 0 && bnbAmount <= freeTax(),
             unicode"Exceeds unconverted tax / 超过未兑换的税"
         );
         _requireWithinImpact(bnbAmount);
@@ -296,6 +310,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         require(msg.value >= fee, unicode"Send the fee / 需附带费用");
 
         requestId = triggerService.requestTrigger{value: fee}(0);
+        reserved += bnbAmount;
         scheduled[requestId] =
             ScheduledEndow({bnbAmount: uint128(bnbAmount), minRewardOut: uint128(minRewardOut), taskId: taskId});
         emit EndowScheduled(requestId, taskId, bnbAmount, minRewardOut);
@@ -330,6 +345,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         ScheduledEndow memory s = scheduled[requestId];
         require(s.bnbAmount > 0, unicode"No such request / 无此请求");
         delete scheduled[requestId];
+        reserved -= s.bnbAmount;
 
         _convertAndBook(s.taskId, s.bnbAmount, s.minRewardOut);
     }
@@ -346,6 +362,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         ScheduledEndow memory s = scheduled[requestId];
         require(s.bnbAmount > 0, unicode"No such request / 无此请求");
         delete scheduled[requestId];
+        reserved -= s.bnbAmount;
         emit EndowCancelled(requestId, s.taskId);
     }
 
@@ -449,13 +466,19 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     function collectable(uint256 taskId, address miner) public view returns (uint256) {
         if (collected[taskId][miner]) return 0;
         uint256 pot = bounty[taskId];
-        if (pot == 0) return 0;
+        // What is left, not what was booked. `reclaimBounty` settles a task by raising `paid` to
+        // `bounty`, and a scorer who never collected still passes every other check here — so
+        // reading `bounty` alone paid them out of whatever BTCB the vault held for other tasks.
+        // `endowed` is a global sum and cannot see a hole in one task, so `solvent()` stayed true.
+        uint256 left = pot - paid[taskId];
+        if (left == 0) return 0;
 
         (, , , uint128 score, , ) = tournament.submissions(taskId, miner);
         if (score == 0) return 0;
         (, , , , , , , uint256 totalScore, ) = tournament.tasks(taskId);
         if (totalScore == 0) return 0;
-        return (pot * score) / totalScore;
+        uint256 share = (pot * score) / totalScore;
+        return share > left ? left : share;
     }
 
     /// @notice Pays a scoring miner their share of a task's BTCB bounty.
@@ -493,7 +516,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     function withdrawUnconverted(uint256 amount) external nonReentrant returns (uint256 sent) {
         require(msg.sender == curator || msg.sender == _getGuardian(),
             unicode"Only the curator / 仅限策展方");
-        uint256 free = unassigned();
+        uint256 free = freeTax();
         sent = amount == 0 || amount > free ? free : amount;
         require(sent > 0, unicode"No unconverted tax / 无未兑换的税");
 
@@ -702,7 +725,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      form that survives there. Neither reader is given a schema shaped only for the other.
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
-        schema.description = unicode"Trading tax becomes BTCB prizes for verified gas work, metered on chain. / 交易税变成 BTCB 奖金,由链上计量裁定。";
+        schema.description = unicode"Trading tax becomes BTCB prizes for measured gas work. / 交易税变成 BTCB 奖金,由链上计量裁定。";
         schema.methods = new VaultMethodSchema[](12);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
@@ -728,7 +751,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // put it where anyone can see it.
         m = schema.methods[1];
         m.name = "solvent";
-        m.description = unicode"Do held tokens cover open bounties / 持币是否覆盖未结赏金";
+        m.description = unicode"Do holdings cover bounties / 持币是否覆盖赏金";
         m.inputs = new FieldDescriptor[](0);
         m.outputs = new FieldDescriptor[](1);
         m.outputs[0] = FieldDescriptor("covered", "bool", unicode"Covered / 已覆盖", 0);
@@ -737,7 +760,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 2 — the bounty cards.
         m = schema.methods[2];
         m.name = "getBounties";
-        m.description = unicode"Tasks and BTCB bounties, newest first / 任务与 BTCB 赏金,最新在前";
+        m.description = unicode"Tasks and bounties, newest first / 任务与赏金,最新在前";
         m.inputs = new FieldDescriptor[](3);
         m.inputs[0] = FieldDescriptor("you", "address", unicode"Miner address / 矿工地址", 0);
         m.inputs[1] = FieldDescriptor("offset", "uint256", unicode"Skip / 跳过", 0);
@@ -768,7 +791,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 4 — converting revenue and putting it behind a task.
         m = schema.methods[4];
         m.name = "endow";
-        m.description = unicode"Convert tax behind a task, one way (guardian) / 把税投入任务,单向(守护者)";
+        m.description = unicode"Fund a task, one way (guardian) / 注资任务,单向(守护者)";
         m.inputs = new FieldDescriptor[](3);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
@@ -780,7 +803,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 5 — anyone may make a bounty larger.
         m = schema.methods[5];
         m.name = "sponsor";
-        m.description = unicode"Add BTCB to a bounty; anyone may / 给赏金追加 BTCB,人人可加";
+        m.description = unicode"Add BTCB to a bounty / 追加 BTCB";
         m.inputs = new FieldDescriptor[](2);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.inputs[1] = FieldDescriptor("amount", "uint256", unicode"BTCB to add / 追加的 BTCB", 18);
@@ -803,7 +826,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 7 — the curator's only conversion path.
         m = schema.methods[7];
         m.name = "scheduleEndow";
-        m.description = unicode"Schedule a conversion; Flap submits it / 安排兑换,由 Flap 提交";
+        m.description = unicode"Schedule a conversion / 安排兑换";
         m.inputs = new FieldDescriptor[](3);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
@@ -825,7 +848,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 9 — a bounty nobody won, on the tournament's own terms.
         m = schema.methods[9];
         m.name = "reclaimBounty";
-        m.description = unicode"Return an unwon bounty after the window / 窗口后收回无人赢得的赏金";
+        m.description = unicode"Return an unwon bounty / 收回无人赢得的赏金";
         m.inputs = new FieldDescriptor[](1);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.outputs = new FieldDescriptor[](0);

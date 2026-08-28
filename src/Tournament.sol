@@ -53,6 +53,12 @@ contract Tournament {
     /// @notice How long after reveal closes a winner has to claim before the poster may reclaim.
     uint256 public constant CLAIM_WINDOW = 30 days;
 
+    /// @notice Longest a task may run, from posting to the close of reveal.
+    /// @dev `commit` hands `revealEnd` to `AgentRoster.lockUntil`, which only ever raises the lock
+    ///      and has no unlock path. Without a ceiling here, a task posted with a distant
+    ///      `revealEnd` locked the stake of everybody who entered it for as long as it liked.
+    uint64 public constant MAX_TASK_SPAN = 30 days;
+
     AssayVault public immutable vault;
     AgentRoster public immutable roster;
     address public immutable curator;
@@ -166,7 +172,10 @@ contract Tournament {
         if (n > MAX_VECTORS) revert TooManyVectors(n);
         if (gasCap == 0 || gasCap > MAX_GAS_CAP) revert BadGasCap(gasCap);
         if (baselineGas == 0) revert BadBaseline();
-        if (commitEnd <= block.timestamp || revealEnd <= commitEnd) revert BadWindow();
+        if (
+            commitEnd <= block.timestamp || revealEnd <= commitEnd
+                || uint256(revealEnd) > block.timestamp + MAX_TASK_SPAN
+        ) revert BadWindow();
 
         taskId = ++taskCount;
         tasks[taskId] = Task({

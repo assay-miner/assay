@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.26;
+
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+import {BaseTest} from "./Base.t.sol";
+import {Bytecode} from "./Bytecode.sol";
+import {AssayFlapVault} from "../src/AssayFlapVault.sol";
+
+/// @notice Two ways the same BTCB could leave the vault twice, and one way a miner's stake could
+///         be locked for good. All three were found by pointing an adversarial review at the parts
+///         the happy path never reaches.
+contract DoubleSpendTest is BaseTest {
+    address internal constant BTCB = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8;
+    address internal constant TAXPAYER = address(0x7A);
+
+    AssayFlapVault internal flap;
+    address internal guardian;
+
+    function setUp() public override {
+        vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
+        super.setUp();
+        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
+    }
+
+    function _within(uint256 wanted) internal view returns (uint256) {
+        uint256 cap = flap.maxConvertible();
+        return wanted > cap ? cap : wanted;
+    }
+
+    function _tax(uint256 amount) internal {
+        vm.deal(TAXPAYER, amount);
+        vm.prank(TAXPAYER);
+        (bool ok,) = payable(address(flap)).call{value: amount}("");
+        require(ok, "tax transfer failed");
+    }
+
+    function _endowTask(uint256 id, uint256 bnb) internal returns (uint256) {
+        uint256 floor_ = (flap.quote(bnb) * 97) / 100; // read before the prank; a view consumes it
+        vm.prank(guardian);
+        return flap.endow(id, bnb, floor_);
+    }
+
+    /// @notice A miner who scored but never collected must not be payable out of another task's
+    ///         money after the project has already reclaimed their task's bounty.
+    /// @dev `collectable` reads `bounty[taskId]` and never looks at `paid[taskId]`, so once
+    ///      `reclaimBounty` has set paid == bounty the stale scorer still computes a full share.
+    ///      `collect` has no balance check of its own, so it pays it — out of whatever BTCB the
+    ///      vault happens to be holding for other tasks. `solvent()` cannot see it: `endowed` is a
+    ///      global sum, so a hole in one task's ledger is invisible until the last claimant.
+    function test_AReclaimedBountyCannotBePaidFromAnotherTask() public {
+        // Task 1: funded, and ALICE scores on it but never collects.
+        _tax(0.05 ether);
+        uint256 bounty1 = _endowTask(taskId, _within(0.025 ether));
+
+        _enroll(ALICE, AGENT_ALICE);
+        _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+        vm.warp(commitEnd);
+        _reveal(ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+
+        // Task 2: a second, separately funded task whose money must stay its own.
+        vm.prank(CURATOR);
+        uint256 second = tournament.postTask(
+            inputs, expected, baselineGas, GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+        );
+        uint256 bounty2 = _endowTask(second, _within(0.025 ether));
+        assertGt(bounty2, 0, "the second task was never funded");
+
+        // ALICE sat on her share until the claim window closed, so the project reclaimed task 1.
+        (,, uint64 revealEnds,,,,,,) = tournament.tasks(taskId);
+        vm.warp(uint256(revealEnds) + tournament.CLAIM_WINDOW());
+        vm.prank(CURATOR);
+        uint256 reclaimed = flap.reclaimBounty(taskId);
+        assertEq(reclaimed, bounty1, "the reclaim did not take the whole bounty");
+
+        // Task 1 is settled to the last wei. There is nothing left in it for anybody.
+        assertEq(flap.collectable(taskId, ALICE), 0, "a reclaimed task still shows a collectable share");
+
+        vm.prank(ALICE);
+        vm.expectRevert(bytes(unicode"Nothing to collect / 无可领取"));
+        flap.collect(taskId);
+
+        // And the second task's money is untouched.
+        assertEq(flap.bounty(second) - flap.paid(second), bounty2, "task 2 was drained");
+        assertTrue(flap.solvent(), "the vault cannot cover what its ledger claims");
+    }
+
+    /// @notice BNB already promised to a scheduled conversion must not be withdrawable.
+    /// @dev `unassigned()` is the raw balance and `scheduleEndow` escrows nothing, so a withdrawal
+    ///      could pull the BNB out from under an armed request. The scheduler's callback then
+    ///      reverts, its fee is spent for nothing, and tax that was on its way to a miner's bounty
+    ///      becomes project revenue instead.
+    function test_WithdrawingCannotStrandAnArmedConversion() public {
+        _tax(0.05 ether);
+        uint256 size = _within(0.02 ether);
+        uint256 floor_ = (flap.quote(size) * 97) / 100; // before the prank: a view consumes it
+        uint256 fee = flap.triggerService().getFee();
+        vm.deal(CURATOR, fee);
+
+        vm.prank(CURATOR);
+        flap.scheduleEndow{value: fee}(taskId, size, floor_);
+
+        // The whole balance must no longer be free: `size` of it is spoken for.
+        vm.prank(CURATOR);
+        uint256 sent = flap.withdrawUnconverted(0);
+        assertLe(sent, 0.05 ether - size, "a withdrawal took BNB an armed conversion was holding");
+        assertGe(address(flap).balance, size, "the armed conversion can no longer be funded");
+    }
+
+    /// @notice A task cannot lock a miner's stake beyond a bounded horizon.
+    /// @dev `commit` passes `revealEnd` straight to `AgentRoster.lockUntil`, which only ever
+    ///      raises `lockedUntil` and has no unlock path and no owner. `postTask` bounded the
+    ///      window only from below, so a task posted with `revealEnd = type(uint64).max` locked
+    ///      the stake of anybody who entered it for good.
+    function test_ATaskCannotLockStakeForever() public {
+        uint64 commitEnds = uint64(block.timestamp + 60);
+        vm.prank(CURATOR);
+        vm.expectRevert(bytes4(keccak256("BadWindow()")));
+        tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnds, type(uint64).max, 0);
+    }
+
+    /// @notice And the bound is a real ceiling a task may run right up to, not a formality.
+    function test_ATaskMayRunToTheBound() public {
+        uint64 span = tournament.MAX_TASK_SPAN();
+        uint64 commitEnds = uint64(block.timestamp + 60);
+        vm.prank(CURATOR);
+        uint256 id = tournament.postTask(
+            inputs, expected, baselineGas, GAS_CAP, commitEnds, uint64(block.timestamp) + span, 0
+        );
+        assertGt(id, 0, "a task at exactly the bound was refused");
+    }
+}
