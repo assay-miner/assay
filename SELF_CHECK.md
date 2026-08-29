@@ -280,9 +280,22 @@ There is no owner, no admin role and no mutable parameter. Two addresses have ca
 
 | Actor | Can | Cannot |
 |---|---|---|
-| Curator (token creator, fixed at creation) | Schedule a conversion into a task; post tasks; reclaim a bounty nobody won, on the tournament's own terms | Withdraw unconverted tax as a permission — the epoch's state governs that, not the caller; name a recipient for anything; reach a scored miner's share; change any parameter |
+| Curator (token creator, fixed at creation) | Schedule a conversion into a task; post a task of any legal length; reclaim a bounty nobody won, on the tournament's own terms | Withdraw unconverted tax as a permission — the epoch's state governs that, not the caller; name a recipient for anything; reach a scored miner's share; change any parameter |
 | Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus post a task if the curator's key is lost, plus the Rule 009 emergency drain | Be replaced or revoked; withdraw a window that is still open |
-| Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller | Settle a window while its task is still open |
+| Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller; **post the next task once the previous one has settled**, for a window of at most `OPEN_POST_MAX_SPAN` | Settle a window while its task is still open; post while a task is live; post a window longer than ten minutes |
+
+Open posting is a reviewer's suggestion, taken with one bound added. The tournament should not stop
+because a key went quiet, so anybody may post in the gap between tasks. The bound exists because of
+how it meets the withdrawal gate: `latestRevealEnd` is a high-water mark that no later post can
+walk back, so an unbounded open post would freeze the project's own tax for thirty days for the
+price of gas, with nothing able to undo it. Ten minutes for a stranger; the full range for the
+curator and the Guardian.
+
+That high-water mark is itself a correction. `latestRevealEnd` first read `tasks[taskCount]`, the
+newest task by id — which is not the same as the task that closes last. Posting a short task beside
+a long one moved the pointer to the short one, and two minutes later the gate opened while the long
+task was still accepting reveals. `test/GateBypass.t.sol` demonstrates the sequence and now holds
+it shut.
 
 An earlier version of this table said the curator "cannot withdraw anything", which was not true:
 `withdrawUnconverted` and `reclaimBounty` both existed and both paid the curator. What has changed

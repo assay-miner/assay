@@ -59,6 +59,15 @@ contract Tournament {
     ///      `revealEnd` locked the stake of everybody who entered it for as long as it liked.
     uint64 public constant MAX_TASK_SPAN = 30 days;
 
+    /// @notice The longest window a task posted by nobody in particular may run for.
+    /// @dev Anyone may post once the previous task has settled, which is what keeps the protocol
+    ///      running if the curator goes quiet. But the vault's withdrawal waits on
+    ///      `latestRevealEnd`, and that is a high-water mark no later post can walk back — so an
+    ///      open post carrying MAX_TASK_SPAN would freeze the project's own tax for thirty days
+    ///      for the price of gas, and nothing could undo it. A stranger gets ten minutes; the
+    ///      curator and the Guardian keep the full range.
+    uint64 public constant OPEN_POST_MAX_SPAN = 10 minutes;
+
     AssayVault public immutable vault;
     AgentRoster public immutable roster;
     address public immutable curator;
@@ -85,6 +94,15 @@ contract Tournament {
     }
 
     uint256 public taskCount;
+
+    /// @notice The furthest reveal deadline any task has ever carried, or zero before the first.
+    /// @dev The vault gates its withdrawal on this, and it is a high-water mark rather than a
+    ///      lookup of the newest task for a reason: a task posted later can close earlier. Reading
+    ///      tasks[taskCount].revealEnd meant posting a short task beside a long one moved the
+    ///      pointer to the short one, and the gate opened while the long task was still accepting
+    ///      reveals — the tax it was protecting could be withdrawn out from under a working miner.
+    ///      Monotonic, so no ordering of posts can walk it backwards.
+    uint64 public latestRevealEnd;
     mapping(uint256 taskId => Task) public tasks;
     mapping(uint256 taskId => Crucible.Vector[]) private _vectors;
     mapping(uint256 taskId => mapping(address miner => Submission)) public submissions;
@@ -169,7 +187,11 @@ contract Tournament {
         // The Guardian may post too. curator is immutable and this was its only gate, so a lost or
         // compromised key ended task creation permanently — the vault side already had this
         // fallback on every privileged function and the tournament had none at all.
-        if (msg.sender != curator && msg.sender != _getGuardian()) revert NotCurator();
+        if (msg.sender != curator && msg.sender != _getGuardian()) {
+        // Open posting, but only in the gap between tasks and only for a short window.
+        if (block.timestamp < latestRevealEnd) revert NotCurator();
+        if (uint256(revealEnd) > block.timestamp + OPEN_POST_MAX_SPAN) revert BadWindow();
+    }
         uint256 n = inputs.length;
         if (n == 0 || n != expected.length) revert NoVectors();
         if (n > MAX_VECTORS) revert TooManyVectors(n);
@@ -192,6 +214,8 @@ contract Tournament {
             totalScore: 0,
             reclaimed: false
         });
+
+        if (revealEnd > latestRevealEnd) latestRevealEnd = revealEnd;
 
         Crucible.Vector[] storage v = _vectors[taskId];
         for (uint256 i; i < n; ++i) {
@@ -577,15 +601,6 @@ contract Tournament {
     // ---------------------------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------------------------
-
-    /// @notice When the most recent task stops accepting reveals, or zero if none was ever posted.
-    /// @dev The vault gates its withdrawal on this. Returning one word rather than making the
-    ///      vault decode the whole Task struct keeps that cost here, where there is room for it —
-    ///      the factory embeds the vault's creation code and has under a kilobyte to spare.
-    function latestRevealEnd() external view returns (uint64) {
-        uint256 n = taskCount;
-        return n == 0 ? 0 : tasks[n].revealEnd;
-    }
 
     function vectorCount(uint256 taskId) external view returns (uint256) {
         return _vectors[taskId].length;
