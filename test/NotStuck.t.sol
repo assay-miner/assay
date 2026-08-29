@@ -75,6 +75,9 @@ contract NotStuckTest is BaseTest {
         _tax(0.05 ether);
         uint256 before = CURATOR.balance;
 
+        // The window has to be over. Withdrawing mid-task was the discretion a reviewer objected
+        // to, and it is gone: while a task is open this reverts for everybody.
+        vm.warp(revealEnd);
         vm.prank(CURATOR);
         uint256 sent = flap.withdrawUnconverted(0);
 
@@ -121,6 +124,9 @@ contract NotStuckTest is BaseTest {
         _tax(0.10 ether);
         uint256 pot = _endow(_within(0.05 ether));
 
+        // A finished window is the precondition now, not a permission — see
+        // test_NobodyMayWithdrawWhileTheEpochIsOpen.
+        vm.warp(revealEnd);
         vm.prank(CURATOR);
         flap.withdrawUnconverted(0);
 
@@ -130,14 +136,46 @@ contract NotStuckTest is BaseTest {
         assertEq(IERC20(BTCB).balanceOf(address(flap)), pot, "BTCB left the vault");
     }
 
-    function test_OnlyTheCuratorOrGuardianWithdraws() public {
+    /// @notice Anybody may settle a finished window, and it can only ever pay the project.
+    /// @dev The caller check is gone on purpose. Who receives the money was never the question —
+    ///      the destination is fixed at construction — but who chose the moment was, so the
+    ///      condition is now the epoch's rather than a permission. A stranger calling this cannot
+    ///      redirect a wei of it; all they can do is pay the gas to close a window on time.
+    function test_AnyoneMaySettleAFinishedWindowAndItPaysTheProject() public {
         _tax(0.05 ether);
+        vm.warp(revealEnd);
+        uint256 before = CURATOR.balance;
+        uint256 strangerBefore = ALICE.balance;
+
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
+        uint256 sent = flap.withdrawUnconverted(0);
+
+        assertEq(sent, 0.05 ether, "the window did not settle in full");
+        assertEq(CURATOR.balance, before + 0.05 ether, "the project did not receive it");
+        assertEq(ALICE.balance, strangerBefore, "the caller took some of it");
+    }
+
+    /// @notice And nobody may take it while the epoch is still running — curator and Guardian
+    ///         included. That is the difference between a permission and a condition.
+    function test_NobodyMayWithdrawWhileTheEpochIsOpen() public {
+        _tax(0.05 ether);
+        vm.warp(revealEnd - 1);
+
+        vm.prank(CURATOR);
+        vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
+        flap.withdrawUnconverted(0);
+
+        vm.prank(guardian);
+        vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
+        flap.withdrawUnconverted(0);
+
+        vm.prank(ALICE);
+        vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
         flap.withdrawUnconverted(0);
     }
 
     function test_WithdrawingNothingIsAnError() public {
+        vm.warp(revealEnd);
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"No unconverted tax / 无未兑换的税"));
         flap.withdrawUnconverted(0);

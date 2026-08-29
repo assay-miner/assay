@@ -514,8 +514,18 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      this can only ever move native value, which by construction is the unconverted part.
     ///      What it changes is who bears an empty window — the project, rather than nobody.
     function withdrawUnconverted(uint256 amount) external nonReentrant returns (uint256 sent) {
-        require(msg.sender == curator || msg.sender == _getGuardian(),
-            unicode"Only the curator / 仅限策展方");
+        // Anyone may call this, and it can only ever pay `curator`. Both halves are the point.
+        //
+        // The destination was never the objection — an empty window's tax belongs to the project
+        // by design, and that address is fixed at construction so no caller chooses it. Choosing
+        // *when* to take it was the objection, and rightly: the old gate let the curator pull tax
+        // out from under a task miners were still working on. So the condition is the epoch's, not
+        // a permission: while the most recent task is still open this reverts for everybody,
+        // including the curator and the Guardian, and once it has settled it works for anybody.
+        //
+        // With no task ever posted there is nothing to wait for, which is exactly the case the
+        // rule is about: a window in which nothing was published belongs to the project.
+        require(block.timestamp >= tournament.latestRevealEnd(), unicode"Epoch open / 本期未结束");
         uint256 free = freeTax();
         sent = amount == 0 || amount > free ? free : amount;
         require(sent > 0, unicode"No unconverted tax / 无未兑换的税");
@@ -704,8 +714,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Live status line, polled by the UI as a banner.
     function description() public view override returns (string memory) {
         if (tournament.taskCount() == 0) return "No task has been posted yet.";
-        if (unassigned() > 0) return "Trading tax has accumulated and is waiting to be converted to BTCB behind a task.";
-        if (endowed > 0) return "A BTCB bounty is live. Beat the gas baseline to earn a share of it.";
+        if (unassigned() > 0) return "Tax is waiting to be converted behind a task.";
+        if (endowed > 0) return "A bounty is live. Beat the baseline to earn a share.";
         return "All bounties have been collected.";
     }
 
@@ -725,7 +735,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      form that survives there. Neither reader is given a schema shaped only for the other.
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
-        schema.description = unicode"Trading tax becomes BTCB prizes for measured gas work. / 交易税变成 BTCB 奖金,由链上计量裁定。";
+        schema.description = unicode"Trading tax becomes BTCB prizes for measured gas work / 交易税变成 BTCB 奖金";
         schema.methods = new VaultMethodSchema[](12);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
@@ -760,7 +770,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 2 — the bounty cards.
         m = schema.methods[2];
         m.name = "getBounties";
-        m.description = unicode"Tasks and bounties, newest first / 任务与赏金,最新在前";
+        m.description = unicode"Tasks and bounties / 任务与赏金";
         m.inputs = new FieldDescriptor[](3);
         m.inputs[0] = FieldDescriptor("you", "address", unicode"Miner address / 矿工地址", 0);
         m.inputs[1] = FieldDescriptor("offset", "uint256", unicode"Skip / 跳过", 0);
@@ -781,7 +791,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 3 — the button on every card.
         m = schema.methods[3];
         m.name = "collect";
-        m.description = unicode"Collect your share of a bounty / 领取你在赏金中的份额";
+        m.description = unicode"Collect your share of a bounty / 领取你的赏金份额";
         m.inputs = new FieldDescriptor[](1);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.outputs = new FieldDescriptor[](0);
@@ -791,7 +801,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 4 — converting revenue and putting it behind a task.
         m = schema.methods[4];
         m.name = "endow";
-        m.description = unicode"Fund a task, one way (guardian) / 注资任务,单向(守护者)";
+        m.description = unicode"Fund a task (guardian) / 注资任务(守护者)";
         m.inputs = new FieldDescriptor[](3);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
@@ -838,7 +848,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 8 — an empty window's tax goes back to the project rather than nowhere.
         m = schema.methods[8];
         m.name = "withdrawUnconverted";
-        m.description = unicode"Take back tax not behind a task / 取回未投入任务的税";
+        m.description = unicode"Take back tax not behind a task / 取回未投入的税";
         m.inputs = new FieldDescriptor[](1);
         m.inputs[0] = FieldDescriptor("amount", "uint256", unicode"BNB, 0 for all / BNB,0 表示全部", 18);
         m.outputs = new FieldDescriptor[](0);
@@ -867,7 +877,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 11 — the conversion the curator is about to accept.
         m = schema.methods[11];
         m.name = "quote";
-        m.description = unicode"What that BNB converts to / 这些 BNB 能换到多少";
+        m.description = unicode"What that BNB converts to / 能换到多少";
         m.inputs = new FieldDescriptor[](1);
         m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB / BNB", 18);
         m.outputs = new FieldDescriptor[](1);

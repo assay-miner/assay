@@ -280,9 +280,18 @@ There is no owner, no admin role and no mutable parameter. Two addresses have ca
 
 | Actor | Can | Cannot |
 |---|---|---|
-| Curator (token creator, fixed at creation) | Convert tax and place it behind a task | Withdraw anything; change any parameter; take money back out of a task |
-| Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus drain the vault | Be replaced or revoked |
-| Anyone | `sponsor` a bounty; `collect` a scored share | — |
+| Curator (token creator, fixed at creation) | Schedule a conversion into a task; post tasks; reclaim a bounty nobody won, on the tournament's own terms | Withdraw unconverted tax as a permission — the epoch's state governs that, not the caller; name a recipient for anything; reach a scored miner's share; change any parameter |
+| Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus post a task if the curator's key is lost, plus the Rule 009 emergency drain | Be replaced or revoked; withdraw a window that is still open |
+| Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller | Settle a window while its task is still open |
+
+An earlier version of this table said the curator "cannot withdraw anything", which was not true:
+`withdrawUnconverted` and `reclaimBounty` both existed and both paid the curator. What has changed
+is not the destination — an empty window's tax belongs to the project by design, and that address
+is fixed at construction — but who decides *when*. Reviewers pointed out that the withdrawal had no
+"the window was empty" condition and was callable mid-task, next to miners who were still working.
+It is now gated on the most recent task's reveal having closed, and the caller check is gone
+entirely: while a window is open it reverts for the curator and the Guardian too, and once it has
+closed anybody may pay the gas to settle it. A condition, not a permission.
 
 ### Upgrade mechanisms
 None. The vault is deployed directly by the factory, not behind a proxy. All venue addresses (reward token, router) are `immutable` and resolved from `block.chainid` at construction, so no caller can name the contracts the vault sends value through.

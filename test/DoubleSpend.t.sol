@@ -102,10 +102,35 @@ contract DoubleSpendTest is BaseTest {
         flap.scheduleEndow{value: fee}(taskId, size, floor_);
 
         // The whole balance must no longer be free: `size` of it is spoken for.
+        // A finished window is the precondition now, not a permission — see
+        // test_NobodyMayWithdrawWhileTheEpochIsOpen.
+        vm.warp(revealEnd);
         vm.prank(CURATOR);
         uint256 sent = flap.withdrawUnconverted(0);
         assertLe(sent, 0.05 ether - size, "a withdrawal took BNB an armed conversion was holding");
         assertGe(address(flap).balance, size, "the armed conversion can no longer be funded");
+    }
+
+    /// @notice The Guardian can post a task when the curator cannot.
+    /// @dev curator is immutable and this was the tournament's only gate, so a lost or compromised
+    ///      key ended task creation permanently — every privileged function on the vault already
+    ///      had a Guardian fallback and the tournament had none at all. Tested on a fork because
+    ///      the Guardian is a per-chain constant and resolves to zero on a local chain.
+    function test_TheGuardianMayPostWhenTheCuratorCannot() public {
+        vm.prank(guardian);
+        uint256 id = tournament.postTask(
+            inputs, expected, baselineGas, GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+        );
+        assertGt(id, 0, "the Guardian could not post");
+
+        // And a stranger still cannot — the fallback is a second key, not an open door.
+        vm.prank(ALICE);
+        vm.expectRevert(bytes4(keccak256("NotCurator()")));
+        tournament.postTask(
+            inputs, expected, baselineGas, GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+        );
     }
 
     /// @notice A task cannot lock a miner's stake beyond a bounded horizon.

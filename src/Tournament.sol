@@ -166,7 +166,10 @@ contract Tournament {
         uint64 revealEnd,
         uint128 pot
     ) external returns (uint256 taskId) {
-        if (msg.sender != curator) revert NotCurator();
+        // The Guardian may post too. curator is immutable and this was its only gate, so a lost or
+        // compromised key ended task creation permanently — the vault side already had this
+        // fallback on every privileged function and the tournament had none at all.
+        if (msg.sender != curator && msg.sender != _getGuardian()) revert NotCurator();
         uint256 n = inputs.length;
         if (n == 0 || n != expected.length) revert NoVectors();
         if (n > MAX_VECTORS) revert TooManyVectors(n);
@@ -575,6 +578,15 @@ contract Tournament {
     // Views
     // ---------------------------------------------------------------------------------------
 
+    /// @notice When the most recent task stops accepting reveals, or zero if none was ever posted.
+    /// @dev The vault gates its withdrawal on this. Returning one word rather than making the
+    ///      vault decode the whole Task struct keeps that cost here, where there is room for it —
+    ///      the factory embeds the vault's creation code and has under a kilobyte to spare.
+    function latestRevealEnd() external view returns (uint64) {
+        uint256 n = taskCount;
+        return n == 0 ? 0 : tasks[n].revealEnd;
+    }
+
     function vectorCount(uint256 taskId) external view returns (uint256) {
         return _vectors[taskId].length;
     }
@@ -593,5 +605,18 @@ contract Tournament {
         Submission storage s = submissions[taskId][miner];
         if (s.score == 0 || s.claimed || t.totalScore == 0) return 0;
         return (uint256(t.pot) * s.score) / t.totalScore;
+    }
+
+    /// @notice The Flap Guardian for this chain, resolved exactly the way VaultBase does.
+    /// @dev A constant per chain, so this needs no constructor argument and creates no cycle with
+    ///      the vault — which is deployed after this contract and takes it as an argument.
+    function _getGuardian() internal view returns (address) {
+        uint256 chainId = block.chainid;
+        if (chainId == 56) return 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b;
+        if (chainId == 97) return 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
+        // Zero, not a revert. Reverting would make postTask unusable on any chain Flap has not
+        // deployed a Guardian to — including a local one — and this is a fallback, not a
+        // requirement: with no Guardian the gate is simply curator-only, which is where it started.
+        return address(0);
     }
 }
