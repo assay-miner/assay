@@ -4,7 +4,9 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {IVaultPortal, IVaultPortalTypes} from "../src/flap/IVaultPortal.sol";
 import {IPortalTypes, IPortalCommonTypes} from "../src/flap/IPortal.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
@@ -146,7 +148,7 @@ contract FlapGateTest is Test {
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
-        AssayFlapFactory factory = new AssayFlapFactory(tournament);
+        AssayFlapFactory factory = new AssayFlapFactory(tournament, new PriceGuard());
         vm.stopPrank();
 
         // Confirm Flap has never registered it.

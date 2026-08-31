@@ -4,7 +4,9 @@ pragma solidity 0.8.26;
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
 import {VaultUISchema, VaultDataSchema, FieldDescriptor} from "../src/flap/IVaultSchemasV1.sol";
 
@@ -34,8 +36,8 @@ contract FlapSpecTest is BaseTest {
         // and the vault refuses to exist anywhere they are not.
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
-        factory = new AssayFlapFactory(tournament);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
+        factory = new AssayFlapFactory(tournament, new PriceGuard());
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
         portal = 0x027e3704fC5C16522e9393d04C60A3ac5c0d775f;
     }
@@ -92,7 +94,7 @@ contract FlapSpecTest is BaseTest {
         uint256 floor_ = _floor(_within(1 ether));
         uint256 amt1_ = _within(1 ether);
         vm.prank(guardian);
-        uint256 got = flap.endow(taskId, amt1_, floor_);
+        uint256 got = flap.endow(amt1_, floor_);
         assertGt(got, 0, "guardian cannot convert tax");
 
         uint256 nativeHeld = address(flap).balance;
@@ -154,20 +156,20 @@ contract FlapSpecTest is BaseTest {
         uint256 amt2_ = _within(1 ether);
         vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
-        flap.endow(taskId, amt2_, 0);
+        flap.endow(amt2_, 0);
 
         // Ten percent under spot is still "any price you like" at the sizes involved.
         uint256 tooLow = (spot * 90) / 100;
         uint256 amt3_ = _within(1 ether);
         vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
-        flap.endow(taskId, amt3_, tooLow);
+        flap.endow(amt3_, tooLow);
 
         // Just inside the protocol's tolerance is accepted.
         uint256 ok = (spot * 9_800) / 10_000;
         uint256 amt4_ = _within(1 ether);
         vm.prank(guardian);
-        assertGt(flap.endow(taskId, amt4_, ok), 0, "a reasonable floor was refused");
+        assertGt(flap.endow(amt4_, ok), 0, "a reasonable floor was refused");
     }
 
     // ---------------------------------------------------------------- accounting after Rule 009
@@ -184,7 +186,7 @@ contract FlapSpecTest is BaseTest {
         uint256 floor_ = _floor(_within(1 ether));
         uint256 amt5_ = _within(1 ether);
         vm.prank(guardian);
-        uint256 pot = flap.endow(taskId, amt5_, floor_);
+        uint256 pot = flap.endow(amt5_, floor_);
         assertTrue(flap.solvent(), "should start covered");
 
         vm.prank(guardian);
@@ -214,7 +216,7 @@ contract FlapSpecTest is BaseTest {
 
         uint256 floor_ = _floor(amt6_);
         vm.prank(guardian);
-        flap.endow(taskId, amt6_, floor_);
+        flap.endow(amt6_, floor_);
         assertTrue(
             keccak256(bytes(flap.description())) != keccak256(bytes(waiting)),
             "description did not change once a bounty was live"

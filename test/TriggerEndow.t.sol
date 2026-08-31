@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IFlapTriggerService} from "../src/flap/IFlapTriggerService.sol";
 
@@ -25,7 +27,7 @@ contract TriggerEndowTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
@@ -50,7 +52,7 @@ contract TriggerEndowTest is BaseTest {
         uint256 fee = flap.schedulerFee();
         vm.deal(CURATOR, fee);
         vm.prank(CURATOR);
-        return flap.scheduleEndow{value: fee}(taskId, bnb, floor_);
+        return flap.triggerConversion{value: fee}();
     }
 
     // ---------------------------------------------------------------- the service is real
@@ -72,34 +74,49 @@ contract TriggerEndowTest is BaseTest {
         assertEq(r.requester, address(flap), "the vault is not the requester");
         assertEq(uint8(r.status), 0, "request is not PENDING");
 
-        (uint128 bnbAmount,, uint256 storedTask) = flap.scheduled(id);
-        assertEq(bnbAmount, 0.05 ether, "amount not stored");
-        assertEq(storedTask, taskId, "task not stored");
-        assertEq(flap.unassigned(), 0.05 ether, "scheduling must not move the tax yet");
+        // A scheduled conversion no longer carries a task. Naming a task and naming an amount in
+        // the same call was where the curator's discretion lived, so the field is gone rather than
+        // defaulted.
+        (uint128 bnbAmount,) = flap.scheduled(id);
+        assertGt(bnbAmount, 0, "amount not stored");
+        // Scheduling reserves the whole epoch's tax, so freeTax falls to zero and the raw balance
+        // is untouched — the BNB has not moved, it is spoken for.
+        assertEq(flap.freeTax(), 0, "scheduling did not reserve the tax");
+        assertEq(address(flap).balance, 0.05 ether, "scheduling moved the tax");
+        assertEq(flap.reserved(), 0.05 ether, "the reservation was not recorded");
     }
 
-    function test_OnlyTheCuratorOrGuardianSchedules() public {
+    /// @notice Anybody may schedule a conversion. There is nothing left in it to abuse.
+    /// @dev This asserted that only the curator or Guardian could schedule. That check is gone,
+    ///      and deliberately: the call takes no task, no amount and no floor, so a caller supplies
+    ///      only the fee. Review asked for the conversion to be permissionless and bounded by
+    ///      rules rather than by a name, and a permission was the last thing standing in for one.
+    function test_AnyoneMaySchedule() public {
         _tax(0.05 ether);
-        uint256 floor_ = (flap.quote(_within(0.05 ether)) * 99) / 100;
         uint256 fee = flap.schedulerFee();
-
         vm.deal(ALICE, fee);
-        uint256 amt1_ = _within(0.05 ether);
         vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
-        flap.scheduleEndow{value: fee}(taskId, amt1_, floor_);
+        uint256 id = flap.triggerConversion{value: fee}();
+        assertGt(id, 0, "a stranger could not schedule");
     }
 
-    /// @notice The floor is bounded where it is set, not where it is executed.
-    function test_SchedulingRefusesAFloorAnInsiderCouldSandwich() public {
+    /// @notice The floor is derived, so there is no floor to supply badly.
+    /// @dev This used to check that a floor far below spot was refused. There is no floor
+    ///      parameter any more — the vault computes it from the pool at call time — so the check
+    ///      is now that what it computed sits within the impact bound it enforces everywhere else.
+    function test_TheDerivedFloorSitsInsideTheImpactBound() public {
         _tax(0.05 ether);
         uint256 fee = flap.schedulerFee();
-        vm.deal(CURATOR, fee * 2);
+        vm.deal(ALICE, fee);
+        vm.prank(ALICE);
+        uint256 id = flap.triggerConversion{value: fee}();
 
-        uint256 amt2_ = _within(0.05 ether);
-        vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Slippage floor is too low / 滑点下限过低"));
-        flap.scheduleEndow{value: fee}(taskId, amt2_, 0);
+        (uint128 amount, uint128 floorOut) = flap.scheduled(id);
+        uint256 spot = flap.quote(amount);
+        // Same arithmetic as the contract, including the truncation: multiplying the floor back
+        // up instead compares against a number the division already rounded away from.
+        assertEq(uint256(floorOut), (spot * (10_000 - 300)) / 10_000, "the derived floor is not the bound");
+        assertLe(uint256(floorOut), spot, "the derived floor is above spot");
     }
 
     function test_ChangeGoesBackInsteadOfBecomingBounty() public {
@@ -109,10 +126,10 @@ contract TriggerEndowTest is BaseTest {
         vm.deal(CURATOR, fee + 1 ether);
 
         vm.prank(CURATOR);
-        flap.scheduleEndow{value: fee + 1 ether}(taskId, 0.05 ether, floor_);
+        flap.triggerConversion{value: fee + 1 ether}();
 
         assertEq(CURATOR.balance, 1 ether, "change was kept");
-        assertEq(flap.unassigned(), 0.05 ether, "the fee leaked into the tax");
+        assertEq(address(flap).balance, 0.05 ether, "the fee leaked into the tax");
     }
 
     // ---------------------------------------------------------------- execution
@@ -131,20 +148,23 @@ contract TriggerEndowTest is BaseTest {
         flap.trigger(id);
     }
 
-    /// @notice The whole point, end to end: the curator priced it, the service executed it.
-    function test_TheServiceExecutesWhatTheCuratorPriced() public {
+    /// @notice The service executes what the vault priced, and it lands in the pool.
+    function test_TheServiceExecutesWhatTheVaultPriced() public {
         _tax(0.05 ether);
-        uint256 id = _schedule(_within(0.05 ether));
+        uint256 fee = flap.schedulerFee();
+        vm.deal(ALICE, fee);
+        vm.prank(ALICE);
+        uint256 id = flap.triggerConversion{value: fee}();
+        (uint128 amount, uint128 floorOut) = flap.scheduled(id);
 
+        uint256 poolBefore = flap.rewardPool();
         vm.prank(TRIGGER);
         flap.trigger(id);
 
-        assertGt(flap.bounty(taskId), 0, "nothing was booked");
-        assertEq(flap.unassigned(), 0, "the tax was not converted");
-        assertTrue(flap.solvent(), "vault is short");
-
-        (uint128 left,,) = flap.scheduled(id);
-        assertEq(left, 0, "the request survived execution");
+        assertGe(flap.rewardPool() - poolBefore, uint256(floorOut), "the swap came in under its own floor");
+        assertEq(flap.reserved(), 0, "the reservation outlived the conversion");
+        assertGt(uint256(amount), 0, "nothing was scheduled");
+        assertTrue(flap.solvent());
     }
 
     function test_AnUnknownRequestIdIsRefused() public {
@@ -191,9 +211,8 @@ contract TriggerEndowTest is BaseTest {
         flap.trigger(id);
 
         // The record survived, because the revert undid the deletion along with everything else.
-        (uint128 bnbAmount,, uint256 storedTask) = flap.scheduled(id);
-        assertEq(bnbAmount, 0.05 ether, "the request was consumed by a failure");
-        assertEq(storedTask, taskId, "the task was lost");
+        (uint128 bnbAmount,) = flap.scheduled(id);
+        assertGt(bnbAmount, 0, "the request was consumed by a failure");
     }
 
     function test_ACancelledRequestCannotFireLater() public {
@@ -201,16 +220,16 @@ contract TriggerEndowTest is BaseTest {
         uint256 id = _schedule(_within(0.05 ether));
 
         vm.prank(CURATOR);
-        flap.cancelScheduledEndow(id);
+        flap.cancelConversion(id);
 
-        (uint128 left,,) = flap.scheduled(id);
+        (uint128 left,) = flap.scheduled(id);
         assertEq(left, 0, "cancel left the record behind");
 
         vm.prank(TRIGGER);
         vm.expectRevert(bytes(unicode"No such request / 无此请求"));
         flap.trigger(id);
 
-        assertEq(flap.unassigned(), 0.05 ether, "the tax moved on a cancelled request");
+        assertEq(flap.freeTax(), 0.05 ether, "the tax moved on a cancelled request");
     }
 
     function test_OnlyTheCuratorOrGuardianCancels() public {
@@ -219,10 +238,10 @@ contract TriggerEndowTest is BaseTest {
 
         vm.prank(ALICE);
         vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
-        flap.cancelScheduledEndow(id);
+        flap.cancelConversion(id);
 
         vm.prank(guardian);
-        flap.cancelScheduledEndow(id);
+        flap.cancelConversion(id);
     }
 
     // ---------------------------------------------------------------- the escape hatch
@@ -236,28 +255,97 @@ contract TriggerEndowTest is BaseTest {
         uint256 amt3_ = _within(0.05 ether);
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
-        flap.endow(taskId, amt3_, floor_);
+        flap.endow(amt3_, floor_);
 
         uint256 amt4_ = _within(0.05 ether);
         vm.prank(guardian);
-        assertGt(flap.endow(taskId, amt4_, floor_), 0, "the guardian cannot convert");
+        assertGt(flap.endow(amt4_, floor_), 0, "the guardian cannot convert");
     }
 
-    /// @notice Both paths book through the same code, so neither can drift from the other.
-    function test_BothPathsBookIdentically() public {
-        _tax(0.10 ether);
+    /// @notice Both conversion paths land in the same pool, so neither can book differently.
+    /// @dev They used to book into a task each named, which is exactly where the two could drift.
+    ///      Neither names anything now.
+    function test_BothPathsBookIntoTheSamePool() public {
+        _tax(0.1 ether);
 
-        uint256 id = _schedule(_within(0.05 ether));
+        uint256 direct = _within(0.02 ether);
+        uint256 floorD = (flap.quote(direct) * 97) / 100;
+        vm.prank(guardian);
+        uint256 outD = flap.endow(direct, floorD);
+        assertEq(flap.rewardPool(), outD, "the guardian path did not credit the pool");
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL());
+        uint256 fee = flap.schedulerFee();
+        vm.deal(ALICE, fee);
+        vm.prank(ALICE);
+        uint256 id = flap.triggerConversion{value: fee}();
         vm.prank(TRIGGER);
         flap.trigger(id);
-        uint256 viaScheduler = flap.bounty(taskId);
 
-        uint256 floor_ = (flap.quote(_within(0.05 ether)) * 99) / 100;
-        uint256 amt5_ = _within(0.05 ether);
-        vm.prank(guardian);
-        uint256 viaHatch = flap.endow(taskId, amt5_, floor_);
+        assertGt(flap.rewardPool(), outD, "the scheduled path did not credit the same pool");
+        assertTrue(flap.solvent());
+    }
 
-        assertEq(flap.bounty(taskId), viaScheduler + viaHatch, "the two paths book differently");
-        assertEq(flap.endowed(), flap.bounty(taskId), "the ledger disagrees with the task");
+    /// @notice The scheduler's fee is not tax and must never be converted as if it were.
+    /// @dev The fee arrives in this balance before the amount is sized, so the first version of
+    ///      the derived sizing counted it: a 0.05 window reserved 0.0502. That is somebody's fee
+    ///      turned into bounty, and it also reserves more than the window produced.
+    function test_TheSchedulerFeeIsNotConvertedAsTax() public {
+        _tax(0.05 ether);
+        uint256 fee = flap.schedulerFee();
+        vm.deal(ALICE, fee);
+
+        vm.prank(ALICE);
+        uint256 id = flap.triggerConversion{value: fee}();
+
+        (uint128 amount,) = flap.scheduled(id);
+        assertEq(uint256(amount), 0.05 ether, "the fee was converted along with the tax");
+        assertEq(flap.reserved(), 0.05 ether, "the fee was reserved as tax");
+    }
+
+    /// @notice Executing one conversion arms the next, so the cadence needs nobody to remember it.
+    /// @dev The Trigger Service has no recurrence of its own — its documentation says a requester
+    ///      schedules the next trigger from inside the callback — so this is the whole of the
+    ///      automation. Removing it broke no test until this one existed, which is why it does.
+    function test_ExecutingAConversionArmsTheNextEpoch() public {
+        _tax(0.05 ether);
+        uint256 fee = flap.schedulerFee();
+        vm.deal(ALICE, fee);
+        vm.prank(ALICE);
+        uint256 first = flap.triggerConversion{value: fee}();
+
+        // More tax arrives while the first conversion is in flight, and the vault keeps enough to
+        // pay for arming the next one.
+        _tax(0.05 ether);
+        vm.recordLogs();
+        vm.prank(TRIGGER);
+        flap.trigger(first);
+
+        // A second ConversionScheduled inside the callback is the next epoch being armed.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 wanted = keccak256("ConversionScheduled(uint256,uint256,uint256)");
+        uint256 armed;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(flap) && logs[i].topics[0] == wanted) ++armed;
+        }
+        assertGt(armed, 0, "executing a conversion did not arm the next epoch");
+        assertGt(flap.rewardPool(), 0, "the conversion itself did not land");
+    }
+
+    /// And a window with nothing left to convert simply stops arming, rather than reverting the
+    /// conversion that already happened.
+    function test_AnEmptyWindowStopsArmingWithoutUndoingTheConversion() public {
+        _tax(0.05 ether);
+        uint256 fee = flap.schedulerFee();
+        vm.deal(ALICE, fee);
+        vm.prank(ALICE);
+        uint256 id = flap.triggerConversion{value: fee}();
+
+        // No further tax: there is nothing for the next epoch to take.
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        assertGt(flap.rewardPool(), 0, "the conversion was undone by the failed arming");
+        assertEq(flap.reserved(), 0, "a reservation survived an epoch that armed nothing");
     }
 }

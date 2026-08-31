@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 
 /// @notice The reward asset, exercised against the real market it depends on.
@@ -29,7 +30,7 @@ contract RewardAssetTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
     }
 
     /// @dev Tax arrives the way Flap sends it: a plain native transfer.
@@ -75,7 +76,7 @@ contract RewardAssetTest is BaseTest {
 
     function test_TaxArrivesAsBnbAndIsEntirelyUnassigned() public {
         _tax(3 ether);
-        assertEq(flap.unassigned(), 3 ether, "native tax is unassigned by construction");
+        assertEq(flap.freeTax(), 3 ether, "native tax is unassigned by construction");
         assertEq(flap.endowed(), 0, "nothing is behind a task yet");
     }
 
@@ -88,12 +89,17 @@ contract RewardAssetTest is BaseTest {
 
         uint256 amt1_ = _within(2 ether);
         vm.prank(GUARDIAN);
-        uint256 got = flap.endow(taskId, amt1_, (quoted * 99) / 100);
+        uint256 got = flap.endow(amt1_, (quoted * 99) / 100);
 
         assertEq(IERC20(BTCB).balanceOf(address(flap)), got, "vault holds exactly what it booked");
         assertEq(flap.endowed(), got, "endowed tracks the tokens, not the coins spent");
-        assertEq(flap.bounty(taskId), got, "the bounty is the tokens");
-        assertEq(flap.unassigned(), 1 ether, "the unconverted remainder stays native");
+        // A conversion credits the pool, not a task. Naming a task while converting was where the
+        // curator's discretion lived, so the two are separate calls now.
+        assertEq(flap.rewardPool(), got, "the pool is the tokens");
+        assertEq(flap.bounty(taskId), 0, "a conversion funded a task by itself");
+        flap.fundTaskFromPool(taskId);
+        assertEq(flap.bounty(taskId), got, "the task did not take the pool");
+        assertEq(flap.freeTax(), 1 ether, "the unconverted remainder stays native");
         assertTrue(flap.solvent(), "every open bounty is covered");
         assertApproxEqRel(got, quoted, 0.01e18, "booked far from the quote");
     }
@@ -106,10 +112,10 @@ contract RewardAssetTest is BaseTest {
         uint256 amt2_ = _within(1 ether);
         vm.prank(GUARDIAN);
         vm.expectRevert();
-        flap.endow(taskId, amt2_, quoted * 2);
+        flap.endow(amt2_, quoted * 2);
 
         assertEq(flap.endowed(), 0, "a reverted conversion books nothing");
-        assertEq(flap.unassigned(), 2 ether, "and spends nothing");
+        assertEq(flap.freeTax(), 2 ether, "and spends nothing");
     }
 
     function test_OnlyTheGuardianUsesTheEscapeHatch() public {
@@ -118,13 +124,13 @@ contract RewardAssetTest is BaseTest {
         uint256 amt3_ = _within(1 ether);
         vm.prank(ALICE);
         vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
-        flap.endow(taskId, amt3_, floor_);
+        flap.endow(amt3_, floor_);
 
         // And the curator, who used to hold this, no longer does.
         uint256 amt4_ = _within(1 ether);
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
-        flap.endow(taskId, amt4_, floor_);
+        flap.endow(amt4_, floor_);
     }
 
     function test_CannotEndowMoreThanHasArrived() public {
@@ -133,7 +139,7 @@ contract RewardAssetTest is BaseTest {
         uint256 amt5_ = _within(2 ether);
         vm.prank(GUARDIAN);
         vm.expectRevert(bytes(unicode"Exceeds unconverted tax / 超过未兑换的税"));
-        flap.endow(taskId, amt5_, floor_);
+        flap.endow(amt5_, floor_);
     }
 
     /// @notice A scoring miner is paid in BTCB, and the native balance never moves for them.
@@ -142,7 +148,8 @@ contract RewardAssetTest is BaseTest {
         uint256 floor_ = _floor(_within(2 ether));
         uint256 amt6_ = _within(2 ether);
         vm.prank(GUARDIAN);
-        uint256 pot = flap.endow(taskId, amt6_, floor_);
+        uint256 pot = flap.endow(amt6_, floor_);
+        flap.fundTaskFromPool(taskId);
 
         _scoringMiner(ALICE, AGENT_ALICE);
 
@@ -167,7 +174,8 @@ contract RewardAssetTest is BaseTest {
         uint256 floor_ = _floor(_within(1 ether));
         uint256 amt7_ = _within(1 ether);
         vm.prank(GUARDIAN);
-        flap.endow(taskId, amt7_, floor_);
+        flap.endow(amt7_, floor_);
+        flap.fundTaskFromPool(taskId);
         _scoringMiner(ALICE, AGENT_ALICE);
 
         vm.prank(ALICE);
@@ -201,24 +209,22 @@ contract RewardAssetTest is BaseTest {
     /// @dev The failure this prevents is silent and total. There is no owner and no sweep here,
     ///      so BTCB booked against a task id nobody will ever score on cannot be recovered by
     ///      anyone, ever — a mistyped digit in an ops script is a permanent loss, and every
-    ///      accounting readout would still balance afterwards.
-    function test_CannotEndowBehindATaskThatDoesNotExist() public {
-        _tax(2 ether);
+    /// @notice Funding a task that does not exist is refused. Converting cannot name one at all.
+    /// @dev This checked that `endow` rejected an unknown task. `endow` takes no task now — that
+    ///      was the point of splitting conversion from funding — so the check moves to the call
+    ///      that does name one.
+    function test_CannotFundATaskThatDoesNotExist() public {
+        _tax(1 ether);
+        uint256 amt = _within(0.5 ether);
+        uint256 floor_ = (flap.quote(amt) * 99) / 100;
+        vm.prank(GUARDIAN);
+        flap.endow(amt, floor_);
+
         uint256 live = tournament.taskCount();
-        uint256 floor_ = _floor(_within(1 ether));
-
-        uint256 amt8_ = _within(1 ether);
-        vm.prank(GUARDIAN);
-        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
-        flap.endow(live + 1, amt8_, floor_);
-
-        uint256 amt9_ = _within(1 ether);
-        vm.prank(GUARDIAN);
-        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
-        flap.endow(0, amt9_, floor_);
-
-        assertEq(flap.endowed(), 0, "nothing was booked");
-        assertEq(flap.unassigned(), 2 ether, "and nothing was spent");
+        vm.expectRevert();
+        flap.fundTaskFromPool(live + 1);
+        vm.expectRevert();
+        flap.fundTaskFromPool(0);
     }
 
     function test_CannotSponsorATaskThatDoesNotExist() public {
@@ -241,7 +247,7 @@ contract RewardAssetTest is BaseTest {
         uint256 floor_ = _floor(_within(2 ether));
         uint256 amt10_ = _within(2 ether);
         vm.prank(GUARDIAN);
-        uint256 pot = flap.endow(taskId, amt10_, floor_);
+        uint256 pot = flap.endow(amt10_, floor_);
 
         (, , uint256 unassignedBnb, uint256 committedBtcb, uint256 paidBtcb, ) = flap.stats();
         assertEq(unassignedBnb, 1 ether, "unconverted tax is still BNB");

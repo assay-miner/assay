@@ -62,25 +62,20 @@ contract PostTask is Script {
         address flapVaultAddr = vm.envOr("FLAP_VAULT", address(0));
         if (flapVaultAddr != address(0)) {
             AssayFlapVault flap = AssayFlapVault(payable(flapVaultAddr));
-            uint256 free = flap.unassigned();
+            uint256 free = flap.freeTax();
             uint256 want = vm.envOr("ENDOW_BNB", free);
             if (want > free) want = free;
 
             if (want > 0) {
                 // The floor is derived from a quote taken in this same script, moments before the
                 // swap, and tightened by the tolerance the operator set rather than by a number
-                // they had to work out.
-                uint256 bps = vm.envOr("MAX_SLIPPAGE_BPS", uint256(200));
-                uint256 floor = (flap.quote(want) * (10_000 - bps)) / 10_000;
-
-                // Scheduled, not converted here. The curator prices the conversion; Flap's
-                // backend submits it. That split is the whole point — a conversion this script
-                // both priced and broadcast is one whose ordering the curator controls.
+                // Nothing is priced here any more. The vault derives the amount, the task and
+                // the floor from its own state, so this script has no numbers left to get wrong —
+                // and neither does anyone else who calls it.
                 uint256 fee = flap.schedulerFee();
-                uint256 requestId = flap.scheduleEndow{value: fee}(taskId, want, floor);
+                uint256 requestId = flap.triggerConversion{value: fee}();
 
-                console2.log("scheduled bnb", want);
-                console2.log("floor btcb   ", floor);
+                console2.log("scheduled    ", "vault-derived chunk and floor; no task named");
                 console2.log("request id   ", requestId);
                 console2.log("scheduler fee", fee);
             } else {

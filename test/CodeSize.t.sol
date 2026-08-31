@@ -9,7 +9,9 @@ import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 
@@ -47,7 +49,7 @@ contract CodeSizeTest is Test {
     }
 
     function test_TheFactoryFitsWithRoomToSpare() public {
-        uint256 size = address(new AssayFlapFactory(tournament)).code.length;
+        uint256 size = address(new AssayFlapFactory(tournament, new PriceGuard())).code.length;
         console2.log("factory runtime      ", size);
         console2.log("headroom to EIP-170  ", EIP170 - size);
         assertLt(size, EIP170, "factory exceeds EIP-170 and cannot be deployed at all");
@@ -60,7 +62,7 @@ contract CodeSizeTest is Test {
 
     function test_TheVaultFits() public {
         uint256 size =
-            address(new AssayFlapVault(tournament, address(1), address(2))).code.length;
+            address(new AssayFlapVault(tournament, address(1), address(2), new PriceGuard())).code.length;
         console2.log("vault runtime        ", size);
         assertLt(size, EIP170, "vault exceeds EIP-170");
     }

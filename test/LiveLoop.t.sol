@@ -109,7 +109,7 @@ contract LiveLoopTest is Test {
         vm.deal(address(flap), 0.05 ether);
         uint256 floor_ = (flap.quote(0.05 ether) * 97) / 100;
         vm.prank(GUARDIAN);
-        uint256 bounty = flap.endow(id, 0.05 ether, floor_);
+        uint256 bounty = flap.endow(0.05 ether, floor_);
         assertGt(bounty, 0, "no bounty was booked");
 
         // --- a miner buys in, enrols, and mines --------------------------------------------------

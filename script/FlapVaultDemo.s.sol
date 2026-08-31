@@ -8,6 +8,7 @@ import {TaxTokenMock} from "../test/TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 
@@ -38,7 +39,7 @@ contract FlapVaultDemo is Script {
         roster.setConsumer(address(tournament));
 
         // taxToken is recorded, never called — the portal passes a predicted address too.
-        AssayFlapVault flapVault = new AssayFlapVault(tournament, address(token), me);
+        AssayFlapVault flapVault = new AssayFlapVault(tournament, address(token), me, new PriceGuard());
         vm.stopBroadcast();
 
         string memory json = "d";

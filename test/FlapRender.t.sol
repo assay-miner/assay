@@ -8,6 +8,7 @@ import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {VaultUISchema, VaultMethodSchema, FieldDescriptor} from "../src/flap/IVaultSchemasV1.sol";
@@ -40,7 +41,7 @@ contract FlapRenderTest is Test {
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18);
         Tournament tournament = new Tournament(custody, roster, address(this));
-        vault = new AssayFlapVault(tournament, address(token), address(this));
+        vault = new AssayFlapVault(tournament, address(token), address(this), new PriceGuard());
     }
 
     /// @dev Flap's first bucket.

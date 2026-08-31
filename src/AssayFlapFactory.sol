@@ -6,6 +6,7 @@ import {IVaultFactory} from "./flap/IVaultFactory.sol";
 import {VaultDataSchema, FieldDescriptor} from "./flap/IVaultSchemasV1.sol";
 import {AssayFlapVault} from "./AssayFlapVault.sol";
 import {Tournament} from "./Tournament.sol";
+import {PriceGuard} from "./PriceGuard.sol";
 
 /// @title AssayFlapFactory
 /// @notice Creates an ASSAY vault when a token is launched through Flap's VaultPortal.
@@ -22,9 +23,15 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
     /// @notice The tournament every vault this factory creates will pay against.
     Tournament public immutable tournament;
 
+    /// @notice Prices every vault this factory creates. Fixed here so no vault is ever handed a
+    ///         pricing contract by whoever launched its token.
+    PriceGuard public immutable priceGuard;
+
     event VaultCreated(address indexed vault, address indexed taxToken, address indexed creator);
 
-    constructor(Tournament tournament_) {
+    constructor(Tournament tournament_, PriceGuard priceGuard_) {
+        require(address(priceGuard_) != address(0), unicode"PriceGuard address is zero / 定价合约地址为零");
+        priceGuard = priceGuard_;
         require(address(tournament_) != address(0), unicode"Tournament address is zero / 锦标赛地址为零");
         tournament = tournament_;
     }
@@ -44,7 +51,7 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
             unicode"Only the vault portal may create a vault / 只有金库门户可以创建金库"
         );
 
-        vault = address(new AssayFlapVault(tournament, taxToken, creator));
+        vault = address(new AssayFlapVault(tournament, taxToken, creator, priceGuard));
         emit VaultCreated(vault, taxToken, creator);
     }
 

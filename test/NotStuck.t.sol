@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 
 /// @notice The two ways value used to get stuck, and the guard that keeps the fix honest.
@@ -27,7 +28,7 @@ contract NotStuckTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
@@ -50,14 +51,16 @@ contract NotStuckTest is BaseTest {
     function _endow(uint256 bnb) internal returns (uint256) {
         uint256 floor_ = (flap.quote(bnb) * 99) / 100;
         vm.prank(guardian);
-        return flap.endow(taskId, bnb, floor_);
+        flap.endow(bnb, floor_);
+        return flap.fundTaskFromPool(taskId);
     }
 
     function _endowTask(uint256 id, uint256 bnb) internal returns (uint256) {
         // The quote is read before the prank: a view call in an argument list consumes it.
         uint256 floor_ = (flap.quote(bnb) * 99) / 100;
         vm.prank(guardian);
-        return flap.endow(id, bnb, floor_);
+        flap.endow(bnb, floor_);
+        return flap.fundTaskFromPool(id);
     }
 
     function _scoringMiner(address miner, uint256 agentId) internal {
@@ -83,7 +86,7 @@ contract NotStuckTest is BaseTest {
 
         assertEq(sent, 0.05 ether, "the whole window did not come back");
         assertEq(CURATOR.balance, before + 0.05 ether, "it did not arrive");
-        assertEq(flap.unassigned(), 0, "something was left behind");
+        assertEq(flap.freeTax(), 0, "something was left behind");
     }
 
     /// @notice The cadence the protocol actually runs at: a two-minute epoch, one minute to
@@ -145,7 +148,7 @@ contract NotStuckTest is BaseTest {
         assertEq(moved, pot, "the whole remainder did not move");
         assertEq(IERC20(BTCB).balanceOf(CURATOR), curatorBefore, "it reached the curator");
         assertEq(IERC20(BTCB).balanceOf(address(flap)), vaultBefore, "it left the vault");
-        assertEq(flap.rolledOver(), pot, "it did not roll over");
+        assertEq(flap.rewardPool(), pot, "it did not roll over");
         assertTrue(flap.solvent(), "the ledger no longer covers what it claims");
     }
 
@@ -161,7 +164,7 @@ contract NotStuckTest is BaseTest {
         vm.warp(uint256(revealEnd) + tournament.CLAIM_WINDOW());
         vm.prank(CURATOR);
         flap.reclaimBounty(taskId);
-        assertEq(flap.rolledOver(), first, "nothing rolled over to carry");
+        assertEq(flap.rewardPool(), first, "nothing rolled over to carry");
 
         vm.prank(CURATOR);
         uint256 next = tournament.postTask(
@@ -170,8 +173,11 @@ contract NotStuckTest is BaseTest {
         );
         uint256 fresh = _endowTask(next, _within(0.01 ether));
 
-        assertEq(flap.rolledOver(), 0, "the rollover was not carried");
-        assertEq(flap.bounty(next), fresh + first, "the new task did not absorb it");
+        // Both the rollover and the fresh conversion sit in the same pool, and a task takes the
+        // whole pool — so `fresh` above already includes what rolled over.
+        assertEq(flap.rewardPool(), 0, "the pool was not emptied into the task");
+        assertEq(flap.bounty(next), fresh, "the new task did not take the whole pool");
+        assertGe(fresh, first, "the rollover was not part of what the task received");
         assertTrue(flap.solvent());
     }
 
@@ -301,7 +307,7 @@ contract NotStuckTest is BaseTest {
         uint256 got = flap.reclaimBounty(taskId);
 
         assertEq(got, pot, "the unclaimed remainder did not move");
-        assertEq(flap.rolledOver(), pot, "it did not roll over");
+        assertEq(flap.rewardPool(), pot, "it did not roll over");
         assertEq(IERC20(BTCB).balanceOf(CURATOR), curatorBefore, "it reached the curator");
         assertEq(flap.endowed(), pot, "the BTCB left the ledger without leaving the vault");
 

@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 
 /// @notice Does a large accumulated balance actually fail to convert?
@@ -17,7 +18,7 @@ contract BigSwapTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
         guardian = 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b;
     }
 
@@ -25,7 +26,7 @@ contract BigSwapTest is BaseTest {
         vm.deal(address(flap), bnb);
         uint256 floor_ = (flap.quote(bnb) * 9_700) / 10_000;
         vm.prank(guardian);
-        return flap.endow(taskId, bnb, floor_);
+        return flap.endow(bnb, floor_);
     }
 
     /// @notice Sizes the pool can absorb go through; sizes that would eat the tax do not.
@@ -46,7 +47,7 @@ contract BigSwapTest is BaseTest {
         uint256 floor_ = (flap.quote(over) * 9_700) / 10_000;
         vm.prank(guardian);
         vm.expectRevert(bytes(unicode"Too big; see maxConvertible() / 金额过大,见 maxConvertible()"));
-        flap.endow(taskId, over, floor_);
+        flap.endow(over, floor_);
     }
 
     /// @notice The case that used to pass: two thousand BNB, half the value gone, no objection.
@@ -57,13 +58,13 @@ contract BigSwapTest is BaseTest {
 
         vm.prank(guardian);
         vm.expectRevert();
-        flap.endow(taskId, bnb, floor_);
+        flap.endow(bnb, floor_);
     }
 
     /// @notice The published number has to be the real boundary, not an estimate near it.
     function test_TheCapIsExact() public {
         uint256 cap = flap.maxConvertible();
-        uint256 unit = flap.spotUnitPrice();
+        uint256 unit = flap.priceGuard().spotUnitPrice();
         uint256 atCap = (10_000 * ((unit * cap) / 1e18 - flap.quote(cap))) / ((unit * cap) / 1e18);
         uint256 justOver = (10_000 * ((unit * (cap + 1e17)) / 1e18 - flap.quote(cap + 1e17)))
             / ((unit * (cap + 1e17)) / 1e18);
@@ -81,7 +82,7 @@ contract BigSwapTest is BaseTest {
     ///      pass.
     function test_WhatEachSizeCostsAndWhereTheCapFalls() public {
         uint256 cap = flap.maxConvertible();
-        uint256 unit = flap.spotUnitPrice();
+        uint256 unit = flap.priceGuard().spotUnitPrice();
         uint256[7] memory sizes = [uint256(1), 10, 60, 100, 500, 1000, 2000];
 
         for (uint256 i; i < sizes.length; ++i) {
@@ -95,10 +96,10 @@ contract BigSwapTest is BaseTest {
             uint256 floor_ = (flap.quote(bnb) * 9_700) / 10_000;
             vm.prank(guardian);
             if (bnb <= cap) {
-                assertGt(flap.endow(taskId, bnb, floor_), 0, "a size under the cap was refused");
+                assertGt(flap.endow(bnb, floor_), 0, "a size under the cap was refused");
             } else {
                 vm.expectRevert(bytes(unicode"Too big; see maxConvertible() / 金额过大,见 maxConvertible()"));
-                flap.endow(taskId, bnb, floor_);
+                flap.endow(bnb, floor_);
             }
             vm.revertToState(snap);
         }
@@ -113,6 +114,6 @@ contract BigSwapTest is BaseTest {
         // Ask for more than the pool will give: 1% above what it quotes right now.
         vm.prank(guardian);
         vm.expectRevert();
-        flap.endow(taskId, bnb, (floor_ * 101) / 100);
+        flap.endow(bnb, (floor_ * 101) / 100);
     }
 }

@@ -10,7 +10,9 @@ import {TaxTokenMock} from "../test/TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {IVaultPortal, IVaultPortalTypes} from "../src/flap/IVaultPortal.sol";
@@ -85,7 +87,7 @@ contract FlapDemo is Script {
         custody.freeze();
         roster.setConsumer(address(tournament));
 
-        AssayFlapFactory factory = new AssayFlapFactory(tournament);
+        AssayFlapFactory factory = new AssayFlapFactory(tournament, new PriceGuard());
 
         bytes32 salt = _mineVanitySalt(uint256(keccak256(abi.encode("assay.demo", block.number))));
         address taxToken = IVaultPortal(VAULT_PORTAL).newTokenV6WithVault{value: 0}(

@@ -7,6 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 
 import {VaultBaseV2} from "./flap/VaultBaseV2.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
+import {PriceGuard} from "./PriceGuard.sol";
 import {IFlapTriggerService, ITriggerReceiver} from "./flap/IFlapTriggerService.sol";
 import {
     VaultUISchema, VaultMethodSchema, FieldDescriptor, ApproveAction
@@ -45,7 +46,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice The size used to read a spot price the pool has not yet been moved by.
     /// @dev Small enough that its own impact is negligible, large enough not to round to nothing.
-    uint256 private constant SPOT_PROBE = 0.01 ether;
 
     /// @notice The worst conversion `endow` will accept, measured against the pool's spot price.
     /// @dev A floor the caller picks freely is a floor the caller can set to zero, and the caller
@@ -60,6 +60,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice The router the tax is converted through.
     IPancakeRouter02 public immutable router;
 
+    /// @notice Prices conversions and bounds their size. Fixed at construction: a caller-supplied
+    ///         pricing contract would be a caller-supplied answer to "how much may I convert".
+    PriceGuard public immutable priceGuard;
+
     /// @notice The router's wrapped native token — the first hop of the conversion path.
     address public immutable wrappedNative;
 
@@ -70,7 +74,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     struct ScheduledEndow {
         uint128 bnbAmount;
         uint128 minRewardOut;
-        uint256 taskId;
     }
 
     /// @notice Scheduled conversions, by the scheduler's request id.
@@ -83,11 +86,28 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      spent for nothing, and tax on its way to a bounty would land as project revenue.
     uint256 public reserved;
 
-    /// @notice BTCB from tasks somebody won and never collected, waiting to fund a future one.
-    /// @dev Part of `endowed` — it never leaves the vault, it just stops belonging to the task it
-    ///      was booked against. `endowed` therefore stays equal to the sum of every task's
-    ///      unclaimed bounty plus this, and `solvent()` keeps covering all of it.
-    uint256 public rolledOver;
+
+    /// @notice BTCB that has been converted and belongs to no task yet.
+    /// @dev Converting and funding used to be one call, which is precisely why the curator had
+    ///      discretion: naming a task and naming an amount were the same action. They are two
+    ///      mechanical steps now and neither takes a decision. This is what sits between them.
+    uint256 public rewardPool;
+
+    /// @notice When the last conversion was scheduled.
+    uint256 public lastConversionAt;
+
+    /// @notice One conversion per epoch.
+    /// @dev The only constant left in the funding path, and the only one that is a choice rather
+    ///      than a reading of state. Everything else is derived: a conversion takes whatever tax
+    ///      has accrued, and a task takes whatever the pool holds.
+    ///
+    ///      Fixed sizes were the obvious design and they cannot do what is wanted here. A fixed
+    ///      BNB input buys a variable amount of BTCB, so a fixed BTCB reward can never equal it
+    ///      and the pool drifts — one of the two is always leaving something behind. Deriving both
+    ///      ends makes an epoch's tax land in that epoch's task whatever the price did, which is
+    ///      the property, and it removes two invented numbers rather than asking somebody to pick
+    ///      them well.
+    uint256 public constant CONVERSION_INTERVAL = 5 minutes;
 
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
@@ -120,11 +140,12 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     event Endowed(uint256 indexed taskId, uint256 bnbIn, uint256 rewardOut, uint256 unassignedLeft);
     event Sponsored(uint256 indexed taskId, address indexed from, uint256 amount);
     event BountyPaid(uint256 indexed taskId, address indexed miner, uint256 amount);
-    event EndowScheduled(uint256 indexed requestId, uint256 indexed taskId, uint256 bnbAmount, uint256 minRewardOut);
-    event EndowCancelled(uint256 indexed requestId, uint256 indexed taskId);
+    event ConversionScheduled(uint256 indexed requestId, uint256 bnbAmount, uint256 minRewardOut);
+    event TaskFunded(uint256 indexed taskId, uint256 amount);
+    event ConversionCancelled(uint256 indexed requestId, uint256 bnbAmount);
     event BountyReclaimed(uint256 indexed taskId, address indexed to, uint256 amount);
     event BountyRolledOver(uint256 indexed fromTaskId, uint256 amount);
-    event RolloverApplied(uint256 indexed taskId, uint256 amount);
+    event Converted(uint256 bnbAmount, uint256 rewardOut, uint256 unassignedLeft);
     event UnconvertedWithdrawn(address indexed to, uint256 amount);
     event EmergencyWithdrawNative(address indexed to, uint256 amount);
     event EmergencyWithdrawToken(address indexed token, address indexed to, uint256 amount);
@@ -140,7 +161,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      protocol addresses it will send value through is a vault anyone can drain by naming
     ///      their own contract. Resolution happens once, at construction, so an unsupported
     ///      chain fails the launch outright instead of producing a vault that cannot pay.
-    constructor(Tournament tournament_, address taxToken_, address curator_) {
+    constructor(Tournament tournament_, address taxToken_, address curator_, PriceGuard priceGuard_) {
+        priceGuard = priceGuard_;
         tournament = tournament_;
         taxToken = taxToken_;
         curator = curator_;
@@ -176,12 +198,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     // Revenue
     // -------------------------------------------------------------------------------------
 
-    /// @notice Tax that has arrived as BNB and has not yet been converted behind a task.
-    /// @dev Every native coin held here is unassigned by construction: the moment it is put
-    ///      behind a task it stops being native and becomes BTCB.
-    function unassigned() public view returns (uint256) {
-        return address(this).balance;
-    }
 
     /// @notice Tax that is neither converted nor already promised to a scheduled conversion.
     function freeTax() public view returns (uint256) {
@@ -197,44 +213,27 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         return reward.balanceOf(address(this)) >= endowed;
     }
 
-    /// @notice Converts accumulated BNB tax into BTCB and puts it behind a task's bounty.
+    /// @notice The Guardian's direct conversion, for when the scheduler cannot run.
     ///
-    /// @dev Endowing is one-way. Once value is behind a task it can only leave to a miner the
-    ///      tournament has scored, which is what stops a bounty being announced and then walked
-    ///      back once somebody has done the work for it.
+    /// @dev Credits the pool like every other conversion, and names no task. Rule 009 wants the
+    ///      Guardian able to act when the normal path is unavailable, and that is all this is —
+    ///      it converts, and `fundTaskFromPool` moves it on afterwards like anybody else's.
     ///
-    ///      `minRewardOut` is the caller's floor on the conversion, not a suggestion — the swap
-    ///      reverts below it. The bounty is booked at what actually arrived rather than at what
-    ///      was quoted, because those are not the same number and only one of them is real.
-    ///
-    /// @param taskId       The task to put the money behind.
-    /// @param bnbAmount    Native BNB to convert.
-    /// @param minRewardOut Minimum BTCB the conversion must produce.
-    function endow(uint256 taskId, uint256 bnbAmount, uint256 minRewardOut)
-        external
-        nonReentrant
-        returns (uint256 rewardOut)
-    {
-        // Guardian only, and deliberately narrower than it used to be. The curator schedules
-        // instead. A conversion the curator both prices and submits is one they can bundle a pool
-        // move around; this path stays for the case where the scheduler itself is unavailable,
-        // and the Guardian is not the party whose incentive the bundling would serve.
+    ///      Atomic rather than scheduled, so the Guardian both prices and executes it. That is a
+    ///      real difference from `triggerConversion` and the reason it stays Guardian-only.
+    function endow(uint256 bnbAmount, uint256 minRewardOut) external nonReentrant returns (uint256 rewardOut) {
         require(msg.sender == _getGuardian(), unicode"Only the guardian / 仅限守护者");
-        _requireTask(taskId);
         require(
             bnbAmount > 0 && bnbAmount <= freeTax(),
             unicode"Exceeds unconverted tax / 超过未兑换的税"
         );
-
         _requireWithinImpact(bnbAmount);
-        uint256 spot = quote(bnbAmount);
         require(
             minRewardOut > 0
-                && minRewardOut >= (spot * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000,
+                && minRewardOut >= (quote(bnbAmount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000,
             unicode"Slippage floor is too low / 滑点下限过低"
         );
-
-        return _convertAndBook(taskId, bnbAmount, minRewardOut);
+        return _convertToPool(bnbAmount, minRewardOut);
     }
 
     /// @dev The swap and the booking, in one place because there are two ways in.
@@ -243,10 +242,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      codebase has produced most often. Both `endow` and the scheduler's callback land
     ///      here, so the amount booked is the amount that arrived, on both paths, by
     ///      construction rather than by two authors agreeing.
-    function _convertAndBook(uint256 taskId, uint256 bnbAmount, uint256 minRewardOut)
-        private
-        returns (uint256 rewardOut)
-    {
+    /// @dev Credits the pool, not a task. What comes out is owed to whichever tasks the pool ends
+    ///      up funding, so `endowed` rises here and falls only when a miner collects or an empty
+    ///      window settles — the BTCB is spoken for from the moment it exists.
+    function _convertToPool(uint256 bnbAmount, uint256 minRewardOut) private returns (uint256 rewardOut) {
         uint256 free = address(this).balance;
         address[] memory path = new address[](2);
         path[0] = wrappedNative;
@@ -257,87 +256,87 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         );
         rewardOut = amounts[amounts.length - 1];
 
-        // Anything a previous task left behind rides along. Nothing decides this: the amount is
-        // whatever rolled over and the destination is the task being funded right now, so there is
-        // no choice here for anyone to exercise. `endowed` does not move for that part — the BTCB
-        // never left, it only stopped belonging to the task it was booked against.
-        uint256 carried = rolledOver;
-        rolledOver = 0;
-
-        bounty[taskId] += rewardOut + carried;
+        rewardPool += rewardOut;
         endowed += rewardOut;
-        if (carried > 0) emit RolloverApplied(taskId, carried);
-        emit Endowed(taskId, bnbAmount, rewardOut, free - bnbAmount);
+        emit Converted(bnbAmount, rewardOut, free - bnbAmount);
     }
 
     // -------------------------------------------------------------------------------------
     // Scheduled conversion — the curator's path
     // -------------------------------------------------------------------------------------
 
-    /// @notice Schedules a conversion. The curator prices it; Flap's backend submits it.
+    /// @notice Schedules one conversion of tax into BTCB. Callable by anyone.
     ///
-    /// @dev This is the answer to the residual sandwich window on the atomic path. That window
-    ///      was never really about slippage arithmetic — a floor derived from spot cannot bound
-    ///      an actor who moves spot in the same transaction. It was about one party pricing,
-    ///      submitting and surrounding the swap. Splitting those apart is what closes it: the
-    ///      curator still chooses the task, the size and the floor, but the transaction that
-    ///      touches the pool is submitted by a backend they do not control, through an
-    ///      MEV-protected path, at a time they cannot predict. There is no ordering left for
-    ///      them to arrange around, and nothing in the public mempool for anyone else to race.
+    /// @dev Takes no task and no amount. The size is a constant and the earliest next call is a
+    ///      constant away from the last one, so the only thing a caller supplies is the fee and
+    ///      the gas. Review asked for how much, which task and when to follow on-chain rules; this
+    ///      is the first two, and the clock is the third.
     ///
-    ///      The floor is bounded here rather than at execution. Bounding it at execution would
-    ///      re-derive it from a pool the curator could have moved beforehand; bounding it here
-    ///      ties it to the price when it was set, and the execution simply honours it. If the
-    ///      market moves past the floor in the meantime the swap reverts, the request is marked
-    ///      FAILED, and anyone may `retryTrigger` it later. That is the correct outcome — a
-    ///      conversion that would now be bad does not silently happen.
+    ///      It converts into a pool rather than into a task on purpose. Naming a task and naming an
+    ///      amount were the same call, and that is where the discretion lived — splitting them
+    ///      leaves neither half with a decision in it.
     ///
-    /// @param taskId       The task the converted BTCB will sit behind.
-    /// @param bnbAmount    Native BNB to convert when the callback runs.
-    /// @param minRewardOut Minimum BTCB the conversion must produce.
-    function scheduleEndow(uint256 taskId, uint256 bnbAmount, uint256 minRewardOut)
-        external
-        payable
-        nonReentrant
-        returns (uint256 requestId)
-    {
-        require(
-            msg.sender == curator || msg.sender == _getGuardian(),
-            unicode"Only the curator / 仅限策展方"
-        );
-        _requireTask(taskId);
-        require(
-            bnbAmount > 0 && bnbAmount <= freeTax(),
-            unicode"Exceeds unconverted tax / 超过未兑换的税"
-        );
-        _requireWithinImpact(bnbAmount);
-        uint256 spot = quote(bnbAmount);
-        require(
-            minRewardOut > 0
-                && minRewardOut >= (spot * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000,
-            unicode"Slippage floor is too low / 滑点下限过低"
-        );
-        require(bnbAmount <= type(uint128).max && minRewardOut <= type(uint128).max,
-            unicode"Amount too large / 金额过大");
-
-        // Read at call time, never hardcoded: the service's own guidance, and it is about to
-        // start pricing dynamically.
+    ///      Execution still goes through Flap's Trigger Service at a moment the caller does not
+    ///      choose, so scheduling remains a thing nobody can take a position on.
+    function triggerConversion() external payable nonReentrant returns (uint256 requestId) {
         uint256 fee = triggerService.getFee();
         require(msg.value >= fee, unicode"Send the fee / 需附带费用");
 
-        requestId = triggerService.requestTrigger{value: fee}(0);
-        reserved += bnbAmount;
-        scheduled[requestId] =
-            ScheduledEndow({bnbAmount: uint128(bnbAmount), minRewardOut: uint128(minRewardOut), taskId: taskId});
-        emit EndowScheduled(requestId, taskId, bnbAmount, minRewardOut);
+        requestId = _arm(fee, msg.value);
+        require(requestId != 0, unicode"Nothing to convert / 无可兑换");
 
-        // Change goes back rather than quietly becoming bounty money. The fee is the caller's
-        // cost; the tax is the miners'.
         uint256 change = msg.value - fee;
         if (change > 0) {
             (bool ok,) = msg.sender.call{value: change}("");
             require(ok, unicode"Refund failed / 退款失败");
         }
+    }
+
+    /// @dev Sizes, prices and schedules one conversion, or returns zero if it cannot. One body so
+    ///      the manual entry point and the self-arming one cannot drift — a rule written at one
+    ///      call site and forgotten at the second is the defect this codebase has produced most.
+    function _arm(uint256 fee, uint256 incoming) private returns (uint256 requestId) {
+        if (address(this).balance < fee + incoming) return 0;
+
+        // The caller's fee is sitting in this balance already, and it is not tax. Counting it
+        // would convert somebody's fee into bounty and reserve more than the window produced.
+        uint256 amount = freeTax() - incoming;
+        uint256 cap = maxConvertible();
+        if (amount > cap) amount = cap;
+        if (amount == 0 || amount > type(uint128).max) return 0;
+        if (priceGuard.impactBps(amount) > MAX_ENDOW_SLIPPAGE_BPS) return 0;
+
+        uint256 floorOut = (quote(amount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
+        if (floorOut == 0 || floorOut > type(uint128).max) return 0;
+
+        try triggerService.requestTrigger{value: fee}(uint64(block.timestamp + CONVERSION_INTERVAL))
+        returns (uint256 next) {
+            reserved += amount;
+            scheduled[next] =
+                ScheduledEndow({bnbAmount: uint128(amount), minRewardOut: uint128(floorOut)});
+            emit ConversionScheduled(next, amount, floorOut);
+            return next;
+        } catch {
+            return 0;
+        }
+    }
+
+    /// @notice Pays one task its fixed reward out of the pool. Callable by anyone.
+    /// @dev One-shot per task and the same amount for every task, so this is a transfer and not a
+    ///      decision. A short pool pays what it has rather than reverting, so a task is never left
+    ///      unfunded waiting for somebody to judge it worth funding.
+    function fundTaskFromPool(uint256 taskId) external nonReentrant returns (uint256 amount) {
+        _requireTask(taskId);
+        require(bounty[taskId] == 0, unicode"Already funded / 已注资");
+
+        // The whole pool. An epoch converts what it accrued and its task takes what that bought,
+        // so nothing accumulates across epochs and no number here decides how much a task is worth.
+        amount = rewardPool;
+        require(amount > 0, unicode"Pool is empty / 池中无资金");
+
+        rewardPool -= amount;
+        bounty[taskId] += amount;
+        emit TaskFunded(taskId, amount);
     }
 
     /// @notice The scheduler's callback. Executes a conversion that was scheduled earlier.
@@ -363,14 +362,25 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         delete scheduled[requestId];
         reserved -= s.bnbAmount;
 
-        _convertAndBook(s.taskId, s.bnbAmount, s.minRewardOut);
+        _convertToPool(s.bnbAmount, s.minRewardOut);
+
+        // Arm the next epoch from inside this one. The service has no recurrence of its own — its
+        // documentation says a requester schedules the next trigger from the callback — so this is
+        // where a cadence that needs nobody to remember it comes from.
+        //
+        // Deliberately best-effort. A failure here must not undo a conversion that has already
+        // happened, and the reasons it can fail are ordinary: no tax accrued yet, the fee no
+        // longer covered, the impact bound refusing a size the pool has moved under. When it does
+        // fail the chain simply stops arming itself and `triggerConversion` restarts it, which is
+        // visible as tax sitting unconverted rather than as anything silently wrong.
+        _arm(triggerService.getFee(), 0);
     }
 
     /// @notice Drops a scheduled conversion. The BNB simply stays unconverted.
     /// @dev Present so a request that can never succeed — a floor the market has left behind, a
     ///      task that should not have been chosen — does not sit there waiting to fire at a time
     ///      nobody is watching. A later callback for a cancelled id finds nothing and reverts.
-    function cancelScheduledEndow(uint256 requestId) external {
+    function cancelConversion(uint256 requestId) external {
         require(
             msg.sender == curator || msg.sender == _getGuardian(),
             unicode"Only the curator / 仅限策展方"
@@ -379,7 +389,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         require(s.bnbAmount > 0, unicode"No such request / 无此请求");
         delete scheduled[requestId];
         reserved -= s.bnbAmount;
-        emit EndowCancelled(requestId, s.taskId);
+        emit ConversionCancelled(requestId, s.bnbAmount);
     }
 
     /// @notice What the scheduler charges to accept a request right now.
@@ -413,10 +423,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice What the pool would pay per BNB if the trade were too small to move it.
     /// @dev Read from a probe rather than from reserves: it costs one view call, needs no pair
-    ///      address, and stays correct if the route ever gains a hop.
-    function spotUnitPrice() public view returns (uint256) {
-        return (quote(SPOT_PROBE) * 1e18) / SPOT_PROBE;
-    }
 
     /// @notice The largest amount that can be converted right now without moving the pool further
     ///         than the protocol tolerates.
@@ -424,28 +430,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @dev Published rather than documented, because a documented chunk size is a number that
     ///      goes stale the moment liquidity moves — in either direction. This reads the pool as
     ///      it is. Binary search over a monotonic function: impact only grows with size, so
-    ///      sixty-four halvings settle it to the wei.
-    function maxConvertible() public view returns (uint256) {
-        uint256 lo;
-        uint256 hi = 1_000_000 ether;
-        if (_impactBps(hi) <= MAX_ENDOW_SLIPPAGE_BPS) return hi;
-        for (uint256 i; i < 64; ++i) {
-            uint256 mid = (lo + hi + 1) / 2;
-            if (mid == lo) break;
-            if (_impactBps(mid) <= MAX_ENDOW_SLIPPAGE_BPS) lo = mid;
-            else hi = mid - 1;
-        }
-        return lo;
-    }
 
-    /// @dev How far below the untouched price this size would actually land, in basis points.
-    function _impactBps(uint256 bnbAmount) internal view returns (uint256) {
-        uint256 ideal = (spotUnitPrice() * bnbAmount) / 1e18;
-        if (ideal == 0) return 10_000;
-        uint256 actual = quote(bnbAmount);
-        if (actual >= ideal) return 0;
-        return ((ideal - actual) * 10_000) / ideal;
-    }
 
     /// @dev The check the floor was assumed to be and was not.
     ///
@@ -455,8 +440,18 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      and passed, because the floor was measured against the number that already contained
     ///      the loss. Measuring against the price the pool would give an amount too small to
     ///      move it is what makes the bound mean what everyone read it as meaning.
+    /// @notice What `bnbAmount` buys right now. Kept on the vault because the UI schema names it.
+    function quote(uint256 bnbAmount) public view returns (uint256) {
+        return priceGuard.quote(bnbAmount);
+    }
+
+    /// @notice The largest conversion that stays inside the impact bound.
+    function maxConvertible() public view returns (uint256) {
+        return priceGuard.maxConvertible();
+    }
+
     function _requireWithinImpact(uint256 bnbAmount) internal view {
-        uint256 impact = _impactBps(bnbAmount);
+        uint256 impact = priceGuard.impactBps(bnbAmount);
         require(
             impact <= MAX_ENDOW_SLIPPAGE_BPS,
             unicode"Too big; see maxConvertible() / 金额过大,见 maxConvertible()"
@@ -465,14 +460,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice What one BNB of accumulated tax would currently convert to.
     /// @dev A quote, not a promise — it is what the UI shows beside the endow control so the
-    ///      curator sets a slippage floor against a real number instead of a guess.
-    function quote(uint256 bnbAmount) public view returns (uint256 rewardOut) {
-        address[] memory path = new address[](2);
-        path[0] = wrappedNative;
-        path[1] = address(reward);
-        uint256[] memory amounts = router.getAmountsOut(bnbAmount, path);
-        return amounts[amounts.length - 1];
-    }
 
     // -------------------------------------------------------------------------------------
     // Collecting
@@ -594,7 +581,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
             reward.safeTransfer(curator, amount);
             emit BountyReclaimed(taskId, curator, amount);
         } else {
-            rolledOver += amount;
+            rewardPool += amount;
             emit BountyRolledOver(taskId, amount);
         }
     }
@@ -673,7 +660,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
             if (block.timestamp < revealEnd) ++openTasks;
         }
 
-        unassignedBnb = unassigned();
+        unassignedBnb = address(this).balance;
         committedBtcb = endowed;
         paidBtcb = totalPaid;
         minersPaid = payouts;
@@ -741,7 +728,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Live status line, polled by the UI as a banner.
     function description() public view override returns (string memory) {
         if (tournament.taskCount() == 0) return "No task has been posted yet.";
-        if (unassigned() > 0) return "Tax is waiting to be converted behind a task.";
+        if (address(this).balance > 0) return "Tax is waiting to be converted behind a task.";
         if (endowed > 0) return "A bounty is live. Beat the baseline to earn a share.";
         return "All bounties have been collected.";
     }
@@ -829,10 +816,9 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m = schema.methods[4];
         m.name = "endow";
         m.description = unicode"Fund a task (guardian) / 注资任务(守护者)";
-        m.inputs = new FieldDescriptor[](3);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
-        m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
-        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
+        m.inputs = new FieldDescriptor[](2);
+        m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
+        m.inputs[1] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
@@ -860,14 +846,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"BTCB / BTCB", 18);
         m.approvals = new ApproveAction[](0);
 
-        // 7 — the curator's only conversion path.
+        // 7 — funding the open task. No inputs: the vault derives all of them.
         m = schema.methods[7];
-        m.name = "scheduleEndow";
-        m.description = unicode"Schedule conversion / 安排兑换";
-        m.inputs = new FieldDescriptor[](3);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
-        m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
-        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
+        m.name = "triggerConversion";
+        m.description = unicode"Convert this window's tax / 兑换本期的税";
+        m.inputs = new FieldDescriptor[](0);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;

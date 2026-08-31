@@ -9,6 +9,7 @@ import {AssayVault} from "../src/AssayVault.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {TaskGenerator} from "../src/TaskGenerator.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {UpgradeableBeacon} from "@openzeppelin/proxy/beacon/UpgradeableBeacon.sol";
 import {BeaconProxy} from "@openzeppelin/proxy/beacon/BeaconProxy.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
@@ -220,7 +221,10 @@ contract Deploy is Script {
         // The factory is part of the stack, not part of the token launch. Skipping the launch and
         // skipping the factory were the same flag once, so a deploy that deliberately held the
         // token back also produced no factory — and the factory is the contract Flap audits.
-        address flapFactory = address(new AssayFlapFactory(tournament));
+        // Pricing lives in its own contract because the factory embeds the vault's creation code
+        // and sits under EIP-170. Deployed here so every vault this factory makes shares one.
+        PriceGuard priceGuard = new PriceGuard();
+        address flapFactory = address(new AssayFlapFactory(tournament, priceGuard));
         address taxToken;
         address flapVault;
 
@@ -288,6 +292,7 @@ contract Deploy is Script {
         vm.serializeAddress(json, "salvage", salvage);
         vm.serializeAddress(json, "roster", address(roster));
         vm.serializeUint(json, "minStake", minStake);
+        vm.serializeAddress(json, "priceGuard", address(priceGuard));
         vm.serializeAddress(json, "taskGenerator", generator);
         vm.serializeAddress(json, "taskGeneratorBeacon", address(beacon));
         vm.serializeAddress(json, "taskGeneratorImpl", generatorImpl);

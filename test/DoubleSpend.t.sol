@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 
 /// @notice Two ways the same BTCB could leave the vault twice, and one way a miner's stake could
@@ -19,7 +20,7 @@ contract DoubleSpendTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
@@ -38,7 +39,8 @@ contract DoubleSpendTest is BaseTest {
     function _endowTask(uint256 id, uint256 bnb) internal returns (uint256) {
         uint256 floor_ = (flap.quote(bnb) * 97) / 100; // read before the prank; a view consumes it
         vm.prank(guardian);
-        return flap.endow(id, bnb, floor_);
+        flap.endow(bnb, floor_);
+        return flap.fundTaskFromPool(id);
     }
 
     /// @notice A miner who scored but never collected must not be payable out of another task's
@@ -98,15 +100,17 @@ contract DoubleSpendTest is BaseTest {
         vm.deal(CURATOR, fee);
 
         vm.prank(CURATOR);
-        flap.scheduleEndow{value: fee}(taskId, size, floor_);
+        flap.triggerConversion{value: fee}();
 
         // The whole balance must no longer be free: `size` of it is spoken for.
         // A finished window is the precondition now, not a permission — see
         // test_NobodyMayWithdrawWhileTheEpochIsOpen.
         vm.warp(revealEnd);
+        // An armed conversion now reserves the whole window, so there is nothing free to take —
+        // which is the same property stated more strongly than when it reserved only part.
         vm.prank(CURATOR);
-        uint256 sent = flap.withdrawUnconverted(0);
-        assertLe(sent, 0.05 ether - size, "a withdrawal took BNB an armed conversion was holding");
+        vm.expectRevert(bytes(unicode"No unconverted tax / 无未兑换的税"));
+        flap.withdrawUnconverted(0);
         assertGe(address(flap).balance, size, "the armed conversion can no longer be funded");
     }
 

@@ -7,6 +7,7 @@ import {Bytecode} from "./Bytecode.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
@@ -31,7 +32,7 @@ contract GateBypassTest is Test {
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
-        flap = new AssayFlapVault(tournament, address(token), CURATOR);
+        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
     }
 
     function _vec() internal pure returns (bytes[] memory v) {
