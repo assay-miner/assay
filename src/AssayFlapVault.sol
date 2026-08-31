@@ -83,6 +83,12 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      spent for nothing, and tax on its way to a bounty would land as project revenue.
     uint256 public reserved;
 
+    /// @notice BTCB from tasks somebody won and never collected, waiting to fund a future one.
+    /// @dev Part of `endowed` — it never leaves the vault, it just stops belonging to the task it
+    ///      was booked against. `endowed` therefore stays equal to the sum of every task's
+    ///      unclaimed bounty plus this, and `solvent()` keeps covering all of it.
+    uint256 public rolledOver;
+
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
 
@@ -117,6 +123,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     event EndowScheduled(uint256 indexed requestId, uint256 indexed taskId, uint256 bnbAmount, uint256 minRewardOut);
     event EndowCancelled(uint256 indexed requestId, uint256 indexed taskId);
     event BountyReclaimed(uint256 indexed taskId, address indexed to, uint256 amount);
+    event BountyRolledOver(uint256 indexed fromTaskId, uint256 amount);
+    event RolloverApplied(uint256 indexed taskId, uint256 amount);
     event UnconvertedWithdrawn(address indexed to, uint256 amount);
     event EmergencyWithdrawNative(address indexed to, uint256 amount);
     event EmergencyWithdrawToken(address indexed token, address indexed to, uint256 amount);
@@ -249,8 +257,16 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         );
         rewardOut = amounts[amounts.length - 1];
 
-        bounty[taskId] += rewardOut;
+        // Anything a previous task left behind rides along. Nothing decides this: the amount is
+        // whatever rolled over and the destination is the task being funded right now, so there is
+        // no choice here for anyone to exercise. `endowed` does not move for that part — the BTCB
+        // never left, it only stopped belonging to the task it was booked against.
+        uint256 carried = rolledOver;
+        rolledOver = 0;
+
+        bounty[taskId] += rewardOut + carried;
         endowed += rewardOut;
+        if (carried > 0) emit RolloverApplied(taskId, carried);
         emit Endowed(taskId, bnbAmount, rewardOut, free - bnbAmount);
     }
 
@@ -563,13 +579,24 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         amount = bounty[taskId] - paid[taskId];
         require(amount > 0, unicode"Nothing left / 已无剩余");
 
-        // Booked as paid so the ledger cannot hand the same BTCB out twice, and `endowed` falls
-        // by exactly what left — the same bookkeeping `collect` does.
+        // Booked as paid either way, so the ledger cannot hand the same BTCB out twice. Where it
+        // goes depends on why nobody holds it, and those are two different situations:
+        //
+        // Nobody scored. The window drew no winner at all, so this is the empty-window case the
+        // protocol is built around — it belongs to the project, and `endowed` falls by what left.
+        //
+        // Somebody scored and never collected. A miner earned this and walked away from it. It is
+        // not the project's, and after a review asked for it, it is not written off either: it
+        // stays here and funds a later task. `endowed` does not move, because the BTCB does not.
         paid[taskId] += amount;
-        endowed -= amount;
-
-        reward.safeTransfer(curator, amount);
-        emit BountyReclaimed(taskId, curator, amount);
+        if (totalScore == 0) {
+            endowed -= amount;
+            reward.safeTransfer(curator, amount);
+            emit BountyReclaimed(taskId, curator, amount);
+        } else {
+            rolledOver += amount;
+            emit BountyRolledOver(taskId, amount);
+        }
     }
 
     // -------------------------------------------------------------------------------------
@@ -746,8 +773,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.outputs = new FieldDescriptor[](6);
         m.outputs[0] = FieldDescriptor("tasks", "uint256", unicode"Tasks posted / 已发布任务", 0);
         m.outputs[1] = FieldDescriptor("openTasks", "uint256", unicode"Still open / 进行中", 0);
-        m.outputs[2] = FieldDescriptor("unassignedBnb", "uint256", unicode"BNB tax awaiting conversion / 待兑换的 BNB 税", 18);
-        m.outputs[3] = FieldDescriptor("committedBtcb", "uint256", unicode"BTCB behind bounties / 已投入的 BTCB", 18);
+        m.outputs[2] = FieldDescriptor("unassignedBnb", "uint256", unicode"BNB awaiting conversion / 待兑换的 BNB", 18);
+        m.outputs[3] = FieldDescriptor("committedBtcb", "uint256", unicode"BTCB in bounties / 赏金中的 BTCB", 18);
         m.outputs[4] = FieldDescriptor("paidBtcb", "uint256", unicode"BTCB paid to miners / 已付矿工的 BTCB", 18);
         m.outputs[5] = FieldDescriptor("minersPaid", "uint256", unicode"Payouts made / 支付笔数", 0);
         m.approvals = new ApproveAction[](0);
@@ -772,16 +799,16 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "getBounties";
         m.description = unicode"Tasks and bounties / 任务与赏金";
         m.inputs = new FieldDescriptor[](3);
-        m.inputs[0] = FieldDescriptor("you", "address", unicode"Miner address / 矿工地址", 0);
-        m.inputs[1] = FieldDescriptor("offset", "uint256", unicode"Skip / 跳过", 0);
-        m.inputs[2] = FieldDescriptor("limit", "uint256", unicode"Page size / 每页数量", 0);
+        m.inputs[0] = FieldDescriptor("you", "address", unicode"Miner", 0);
+        m.inputs[1] = FieldDescriptor("offset", "uint256", unicode"Skip", 0);
+        m.inputs[2] = FieldDescriptor("limit", "uint256", unicode"Page size", 0);
         m.outputs = new FieldDescriptor[](9);
-        m.outputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.outputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.outputs[1] = FieldDescriptor("baselineGas", "uint256", unicode"Baseline to beat / 要跑赢的基准", 0);
-        m.outputs[2] = FieldDescriptor("bountyBtcb", "uint256", unicode"BTCB bounty / BTCB 赏金", 18);
-        m.outputs[3] = FieldDescriptor("paidBtcb", "uint256", unicode"Already paid / 已支付", 18);
-        m.outputs[4] = FieldDescriptor("entrants", "uint256", unicode"Scoring miners / 有得分的矿工", 0);
-        m.outputs[5] = FieldDescriptor("phase", "uint256", unicode"0 commit 1 reveal 2 settled / 0 承诺 1 揭示 2 结算", 0);
+        m.outputs[2] = FieldDescriptor("bountyBtcb", "uint256", unicode"BTCB bounty", 18);
+        m.outputs[3] = FieldDescriptor("paidBtcb", "uint256", unicode"Paid", 18);
+        m.outputs[4] = FieldDescriptor("entrants", "uint256", unicode"Scorers", 0);
+        m.outputs[5] = FieldDescriptor("phase", "uint256", unicode"0/1/2 commit reveal settled / 承诺 揭示 结算", 0);
         m.outputs[6] = FieldDescriptor("endsAt", "time", unicode"Phase ends / 本阶段结束", 0);
         m.outputs[7] = FieldDescriptor("yourScore", "uint256", unicode"Your score / 你的得分", 18);
         m.outputs[8] = FieldDescriptor("yourBtcb", "uint256", unicode"Collectable now / 现在可领", 18);
@@ -793,7 +820,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "collect";
         m.description = unicode"Collect your share of a bounty / 领取你的赏金份额";
         m.inputs = new FieldDescriptor[](1);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
@@ -803,9 +830,9 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "endow";
         m.description = unicode"Fund a task (guardian) / 注资任务(守护者)";
         m.inputs = new FieldDescriptor[](3);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
-        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Minimum BTCB accepted / 最少接受的 BTCB", 18);
+        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
@@ -815,7 +842,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "sponsor";
         m.description = unicode"Add BTCB to a bounty / 追加 BTCB";
         m.inputs = new FieldDescriptor[](2);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.inputs[1] = FieldDescriptor("amount", "uint256", unicode"BTCB to add / 追加的 BTCB", 18);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](1);
@@ -827,8 +854,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "collectable";
         m.description = unicode"What an address can collect / 某地址能领多少";
         m.inputs = new FieldDescriptor[](2);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
-        m.inputs[1] = FieldDescriptor("miner", "address", unicode"Miner address / 矿工地址", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
+        m.inputs[1] = FieldDescriptor("miner", "address", unicode"Miner", 0);
         m.outputs = new FieldDescriptor[](1);
         m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"BTCB / BTCB", 18);
         m.approvals = new ApproveAction[](0);
@@ -836,11 +863,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 7 — the curator's only conversion path.
         m = schema.methods[7];
         m.name = "scheduleEndow";
-        m.description = unicode"Schedule a conversion / 安排兑换";
+        m.description = unicode"Schedule conversion / 安排兑换";
         m.inputs = new FieldDescriptor[](3);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.inputs[1] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
-        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Minimum BTCB accepted / 最少接受的 BTCB", 18);
+        m.inputs[2] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
@@ -860,7 +887,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "reclaimBounty";
         m.description = unicode"Return an unwon bounty / 收回无人赢得的赏金";
         m.inputs = new FieldDescriptor[](1);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;

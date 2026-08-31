@@ -284,6 +284,21 @@ There is no owner, no admin role and no mutable parameter. Two addresses have ca
 | Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus post a task if the curator's key is lost, plus the Rule 009 emergency drain | Be replaced or revoked; withdraw a window that is still open |
 | Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller; **post the next task once the previous one has settled**, for a window of at most `OPEN_POST_MAX_SPAN` | Settle a window while its task is still open; post while a task is live; post a window longer than ten minutes |
 
+**Unclaimed rewards.** A bounty nobody holds is two different situations and they are told apart
+by whether anybody scored. A window that drew no winner at all is the empty-window case this
+protocol is built around, and it settles to the project. A bounty somebody won and never collected
+was earned by a miner; after review asked for it, it is neither the project's nor written off —
+it stays in the vault as `rolledOver` and the next task funded absorbs it, with nobody choosing
+that. `endowed` does not fall in that case, because the BTCB never leaves.
+
+Three things are still the curator's to decide and are not yet automated: how much accrued tax a
+conversion takes, which task receives it, and when it happens. The same review asked for all three
+to follow on-chain rules instead. They are one question rather than three — a rule that funds a
+task automatically has to answer all of them at once — and they are being taken together in a
+following change rather than half-answered here. What has shipped in that direction so far is
+narrower and worth naming precisely: the withdrawal is a condition rather than a permission, open
+posting needs no permission at all, and the rollover above moves without anyone directing it.
+
 `TaskGenerator.generateAndPost()` is how an address with no tooling posts one: it takes no task
 parameters, seeds from the previous block's hash, and draws, evaluates and compiles the whole task
 on chain. Its gas is block-dependent — the seed decides how many draws are needed before one is

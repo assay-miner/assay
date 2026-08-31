@@ -21,6 +21,14 @@ forge build >/dev/null
 # The deployment tables in SUBMISSION.md are derived from the manifests. A redeploy used to leave
 # them naming the previous contracts, which asks an auditor to look at addresses that do not hold
 # the code under review. Refuse to package a stale document rather than ship one.
+# The self-describing schema is what a generic UI builds its forms from, and a field that
+# disagrees with the ABI produces a form that collects the wrong type. Nothing in the contract
+# tests reads the schema, so this is the only place that comparison happens.
+node tools/check-schema.mjs || {
+  echo "refusing to package: a vaultUISchema field disagrees with the ABI" >&2
+  exit 1
+}
+
 node tools/sync-submission.mjs --check || {
   echo "refusing to package: SUBMISSION.md does not match deployments/*-latest.json" >&2
   exit 1

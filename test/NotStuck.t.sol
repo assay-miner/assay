@@ -119,6 +119,62 @@ contract NotStuckTest is BaseTest {
         assertTrue(flap.solvent());
     }
 
+    /// @notice A window nobody entered is the project's; a bounty somebody won and abandoned is
+    ///         not, and is not written off either — it funds the next task.
+    /// @dev Two situations that both look like "nobody holds this" and are not the same thing.
+    ///      A reviewer asked for unclaimed rewards to roll over rather than reach the curator; the
+    ///      owner's rule is that an empty window belongs to the project. Both hold, because the
+    ///      two cases are told apart by whether anybody scored at all.
+    function test_AnAbandonedBountyRollsOverInsteadOfReachingTheCurator() public {
+        _tax(0.05 ether);
+        uint256 pot = _endow(_within(0.05 ether));
+
+        // ALICE scores and then never comes back for it.
+        _enroll(ALICE, AGENT_ALICE);
+        _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+        vm.warp(commitEnd);
+        _reveal(ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+        vm.warp(uint256(revealEnd) + tournament.CLAIM_WINDOW());
+
+        uint256 curatorBefore = IERC20(BTCB).balanceOf(CURATOR);
+        uint256 vaultBefore = IERC20(BTCB).balanceOf(address(flap));
+
+        vm.prank(CURATOR);
+        uint256 moved = flap.reclaimBounty(taskId);
+
+        assertEq(moved, pot, "the whole remainder did not move");
+        assertEq(IERC20(BTCB).balanceOf(CURATOR), curatorBefore, "it reached the curator");
+        assertEq(IERC20(BTCB).balanceOf(address(flap)), vaultBefore, "it left the vault");
+        assertEq(flap.rolledOver(), pot, "it did not roll over");
+        assertTrue(flap.solvent(), "the ledger no longer covers what it claims");
+    }
+
+    /// And the next task funded picks it up, with nobody choosing to.
+    function test_TheNextFundedTaskAbsorbsTheRollover() public {
+        _tax(0.05 ether);
+        uint256 first = _endow(_within(0.02 ether));
+
+        _enroll(ALICE, AGENT_ALICE);
+        _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+        vm.warp(commitEnd);
+        _reveal(ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+        vm.warp(uint256(revealEnd) + tournament.CLAIM_WINDOW());
+        vm.prank(CURATOR);
+        flap.reclaimBounty(taskId);
+        assertEq(flap.rolledOver(), first, "nothing rolled over to carry");
+
+        vm.prank(CURATOR);
+        uint256 next = tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+        );
+        uint256 fresh = _endowTask(next, _within(0.01 ether));
+
+        assertEq(flap.rolledOver(), 0, "the rollover was not carried");
+        assertEq(flap.bounty(next), fresh + first, "the new task did not absorb it");
+        assertTrue(flap.solvent());
+    }
+
     /// @notice And it cannot touch what is already behind a task.
     function test_WithdrawingCannotReachAnEndowedBounty() public {
         _tax(0.10 ether);
@@ -230,17 +286,24 @@ contract NotStuckTest is BaseTest {
     }
 
     /// @notice Once the tournament's claim window has passed, the remainder is reclaimable.
-    function test_TheRemainderComesBackAfterTheClaimWindow() public {
+    /// @dev This used to assert the remainder reached the curator. It does not any more, and the
+    ///      distinction is the point: somebody scored here, so the money was earned and merely not
+    ///      collected. It stays in the protocol and funds a later task. `endowed` therefore does
+    ///      not fall — the BTCB never left the vault.
+    function test_TheRemainderRollsOverAfterTheClaimWindow() public {
         _tax(0.05 ether);
         uint256 pot = _endow(_within(0.05 ether));
         _scoringMiner(ALICE, AGENT_ALICE);
 
         vm.warp(revealEnd + tournament.CLAIM_WINDOW() + 1);
+        uint256 curatorBefore = IERC20(BTCB).balanceOf(CURATOR);
         vm.prank(CURATOR);
         uint256 got = flap.reclaimBounty(taskId);
 
-        assertEq(got, pot, "the unclaimed remainder did not come back");
-        assertEq(flap.endowed(), 0, "the ledger disagrees");
+        assertEq(got, pot, "the unclaimed remainder did not move");
+        assertEq(flap.rolledOver(), pot, "it did not roll over");
+        assertEq(IERC20(BTCB).balanceOf(CURATOR), curatorBefore, "it reached the curator");
+        assertEq(flap.endowed(), pot, "the BTCB left the ledger without leaving the vault");
 
         // And the miner who slept through the window can no longer take it twice.
         vm.prank(ALICE);
