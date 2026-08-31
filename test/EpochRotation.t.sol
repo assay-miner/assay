@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
 import {Crucible} from "../src/Crucible.sol";
-import {TaskGen} from "../script/TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 
 /// @notice The properties that make an epoch's task machine-work rather than a replayed answer.
 ///

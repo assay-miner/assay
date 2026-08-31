@@ -8,7 +8,7 @@ import {Tournament} from "../src/Tournament.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {Crucible} from "../src/Crucible.sol";
-import {TaskGen} from "./TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 
 /// @notice The miner. One mode per window, because commit and reveal are different windows.
 ///

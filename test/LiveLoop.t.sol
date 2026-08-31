@@ -9,7 +9,7 @@ import {AgentRoster} from "../src/AgentRoster.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {Crucible} from "../src/Crucible.sol";
-import {TaskGen} from "../script/TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 
 /// @notice One full epoch against the contracts actually deployed on BNB testnet.
 ///

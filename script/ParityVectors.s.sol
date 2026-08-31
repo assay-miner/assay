@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Script} from "forge-std/Script.sol";
-import {TaskGen} from "./TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 
 /// @notice Emits the compiler's own answers so the JavaScript client can be checked against them.
 /// @dev The client re-implements TaskGen. "It looks equivalent" is not a check; this is.

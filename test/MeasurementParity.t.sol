@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
 import {Crucible} from "../src/Crucible.sol";
-import {TaskGen} from "../script/TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @notice The baseline is measured in one place and enforced in another. If those two disagree,

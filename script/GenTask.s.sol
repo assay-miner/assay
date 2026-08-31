@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {Crucible} from "../src/Crucible.sol";
 import {CrucibleHarness} from "../test/CrucibleHarness.sol";
-import {TaskGen} from "./TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 
 /// @notice Draws one epoch's task, measures its baseline on a real EVM, and writes the spec.
 ///

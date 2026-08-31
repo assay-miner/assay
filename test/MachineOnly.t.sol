@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
 import {Crucible} from "../src/Crucible.sol";
-import {TaskGen} from "../script/TaskGen.sol";
+import {TaskGen} from "../src/TaskGen.sol";
 
 /// @notice The task is meant to be work for a program, not for a person.
 ///
