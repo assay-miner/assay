@@ -60,8 +60,7 @@ contract DoubleSpendTest is BaseTest {
 
         // Task 2: a second, separately funded task whose money must stay its own.
         vm.prank(CURATOR);
-        uint256 second = tournament.postTask(
-            inputs, expected, baselineGas, GAS_CAP,
+        uint256 second = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
             uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
         uint256 bounty2 = _endowTask(second, _within(0.025 ether));
@@ -118,8 +117,7 @@ contract DoubleSpendTest is BaseTest {
     ///      the Guardian is a per-chain constant and resolves to zero on a local chain.
     function test_TheGuardianMayPostWhenTheCuratorCannot() public {
         vm.prank(guardian);
-        uint256 id = tournament.postTask(
-            inputs, expected, baselineGas, GAS_CAP,
+        uint256 id = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
             uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
         assertGt(id, 0, "the Guardian could not post");
@@ -127,8 +125,7 @@ contract DoubleSpendTest is BaseTest {
         // And a stranger still cannot — the fallback is a second key, not an open door.
         vm.prank(ALICE);
         vm.expectRevert(bytes4(keccak256("NotCurator()")));
-        tournament.postTask(
-            inputs, expected, baselineGas, GAS_CAP,
+        tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
             uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
     }
@@ -142,7 +139,7 @@ contract DoubleSpendTest is BaseTest {
         uint64 commitEnds = uint64(block.timestamp + 60);
         vm.prank(CURATOR);
         vm.expectRevert(bytes4(keccak256("BadWindow()")));
-        tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnds, type(uint64).max, 0);
+        tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnds, type(uint64).max, 0);
     }
 
     /// @notice And the bound is a real ceiling a task may run right up to, not a formality.
@@ -150,8 +147,7 @@ contract DoubleSpendTest is BaseTest {
         uint64 span = tournament.MAX_TASK_SPAN();
         uint64 commitEnds = uint64(block.timestamp + 60);
         vm.prank(CURATOR);
-        uint256 id = tournament.postTask(
-            inputs, expected, baselineGas, GAS_CAP, commitEnds, uint64(block.timestamp) + span, 0
+        uint256 id = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnds, uint64(block.timestamp) + span, 0
         );
         assertGt(id, 0, "a task at exactly the bound was refused");
     }

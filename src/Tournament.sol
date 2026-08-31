@@ -137,6 +137,7 @@ contract Tournament {
     error TooManyVectors(uint256 count);
     error BadGasCap(uint32 gasCap);
     error BadBaseline();
+    error ReferenceFailsItsOwnVectors();
     error BadWindow();
     error EmptyPot();
     error UnknownTask(uint256 taskId);
@@ -173,12 +174,13 @@ contract Tournament {
     ///      that signs off delivery. The verification core below does not change to get there.
     /// @param inputs Calldata handed to each submission.
     /// @param expected keccak256 of the return data each corresponding input must produce.
-    /// @param baselineGas Total gas the reference implementation spends across all vectors.
+    /// @param referenceRuntime An implementation that answers these vectors. The chain runs it and
+    ///        the gas it costs becomes the baseline, so the difficulty is measured, not asserted.
     /// @param gasCap Per-vector gas ceiling applied to a submission.
     function postTask(
         bytes[] calldata inputs,
         bytes32[] calldata expected,
-        uint32 baselineGas,
+        bytes calldata referenceRuntime,
         uint32 gasCap,
         uint64 commitEnd,
         uint64 revealEnd,
@@ -196,11 +198,32 @@ contract Tournament {
         if (n == 0 || n != expected.length) revert NoVectors();
         if (n > MAX_VECTORS) revert TooManyVectors(n);
         if (gasCap == 0 || gasCap > MAX_GAS_CAP) revert BadGasCap(gasCap);
-        if (baselineGas == 0) revert BadBaseline();
         if (
             commitEnd <= block.timestamp || revealEnd <= commitEnd
                 || uint256(revealEnd) > block.timestamp + MAX_TASK_SPAN
         ) revert BadWindow();
+
+        // The difficulty is measured here, not accepted here.
+        //
+        // It used to arrive as a number and the only check on it was non-zero, so a poster could
+        // name any difficulty they liked: a baseline of 1 makes the task unwinnable and pays
+        // nobody, and a baseline of 2^32-1 makes a deliberately wasteful submission score. Neither
+        // is detectable from the parameters — the contract had nothing to compare them against.
+        //
+        // It has, though: the same Crucible that settles a reveal can run a reference
+        // implementation against these very vectors. So a poster supplies the implementation the
+        // baseline is meant to describe, and the chain measures what it costs. That makes the
+        // number provably the price of a program that answers the task, and makes the task
+        // provably answerable — a reference that fails its own vectors is rejected outright.
+        Crucible.Vector[] memory probe = new Crucible.Vector[](n);
+        for (uint256 i; i < n; ++i) {
+            probe[i] = Crucible.Vector({input: inputs[i], expected: expected[i]});
+        }
+        (bool referenceOk, uint256 measured) =
+            Crucible.assay(Crucible.deployRuntime(referenceRuntime), probe, gasCap);
+        if (!referenceOk) revert ReferenceFailsItsOwnVectors();
+        if (measured == 0 || measured > type(uint32).max) revert BadBaseline();
+        uint32 baselineGas = uint32(measured);
 
         taskId = ++taskCount;
         tasks[taskId] = Task({

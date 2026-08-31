@@ -77,17 +77,19 @@ abstract contract BaseTest is Test {
         }
 
         // Calibrate the baseline by measuring the reference, exactly as a task author would.
-        (bool ok, uint256 gasUsed,) = harness.measure(Bytecode.padded(), _vectors(), GAS_CAP);
+        (bool ok, uint256 gasUsed,) = harness.measure(Bytecode.verbose(), _vectors(), GAS_CAP);
         require(ok, "reference implementation must pass its own vectors");
         referenceGas = gasUsed;
-        baselineGas = uint32(gasUsed * 2);
+        // The chain measures the baseline from this same reference now, so the recorded number is
+        // whatever `padded()` actually costs — asserted below rather than assumed.
+        baselineGas = uint32(gasUsed);
 
         commitEnd = uint64(block.timestamp + 1 hours);
         revealEnd = uint64(block.timestamp + 2 hours);
 
         vm.startPrank(CURATOR);
         token.approve(address(vault), type(uint256).max);
-        taskId = tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnd, revealEnd, POT);
+        taskId = tournament.postTask(inputs, expected, Bytecode.verbose(), GAS_CAP, commitEnd, revealEnd, POT);
         // Seed miners so they can stake.
         token.transfer(ALICE, MIN_STAKE * 10);
         token.transfer(BOB, MIN_STAKE * 10);

@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
+import {Bytecode} from "./Bytecode.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -85,8 +86,7 @@ contract NoTaskEverTest is Test {
         uint64 span = tournament.MAX_TASK_SPAN();
 
         vm.prank(CURATOR);
-        tournament.postTask(
-            _oneVector(), _oneExpected(), 2000, 100_000,
+        tournament.postTask(_oneVector(), _oneExpected(), Bytecode.tight(), 100_000,
             uint64(block.timestamp + 60), uint64(block.timestamp) + span, 0
         );
 

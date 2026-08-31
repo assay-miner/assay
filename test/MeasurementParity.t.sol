@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
+import {Bytecode} from "./Bytecode.sol";
 import {Crucible} from "../src/Crucible.sol";
 import {TaskGen} from "../script/TaskGen.sol";
 import {console2} from "forge-std/console2.sol";
@@ -32,7 +33,7 @@ contract MeasurementParityTest is BaseTest {
         // What settlement will actually record, through the same call the tournament makes.
         vm.prank(CURATOR);
         uint256 id = tournament.postTask(
-            ins, exp, type(uint32).max, GAS_CAP, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+            ins, exp, code, GAS_CAP, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
         (bool okC, uint256 gasChain,) = tournament.previewAssay(id, code);
         assertTrue(okC, "the settlement path rejected the reference");

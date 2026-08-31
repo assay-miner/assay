@@ -109,6 +109,6 @@ contract RosterTest is BaseTest {
     function test_OnlyCuratorPostsTasks() public {
         vm.prank(ALICE);
         vm.expectRevert(Tournament.NotCurator.selector);
-        tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnd, revealEnd, POT);
+        tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnd, revealEnd, POT);
     }
 }

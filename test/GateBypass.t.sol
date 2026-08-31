@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
+import {Bytecode} from "./Bytecode.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -55,8 +56,7 @@ contract GateBypassTest is Test {
 
         // Task 1: a long window, still open throughout this test.
         vm.prank(CURATOR);
-        uint256 long_ = tournament.postTask(
-            _vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 3600), uint64(block.timestamp + 7200), 0
+        uint256 long_ = tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 3600), uint64(block.timestamp + 7200), 0
         );
 
         // The gate holds, as intended.
@@ -66,7 +66,7 @@ contract GateBypassTest is Test {
 
         // Task 2: posted later, closes sooner.
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
         vm.warp(block.timestamp + 121);
 
         (,, uint64 longReveal,,,,,,) = tournament.tasks(long_);
@@ -91,8 +91,7 @@ contract GateBypassTest is Test {
     function test_AStrangerMayPostOnceNothingIsLive() public {
         address stranger = address(0x571A);
         vm.prank(stranger);
-        uint256 id = tournament.postTask(
-            _vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+        uint256 id = tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
         assertGt(id, 0, "a stranger could not post into an empty gap");
     }
@@ -100,11 +99,11 @@ contract GateBypassTest is Test {
     /// But not while one is running.
     function test_AStrangerCannotPostWhileATaskIsLive() public {
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
 
         vm.prank(address(0x571A));
         vm.expectRevert(bytes4(keccak256("NotCurator()")));
-        tournament.postTask(_vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
     }
 
     /// And not for a window long enough to matter.
@@ -120,14 +119,12 @@ contract GateBypassTest is Test {
 
         vm.prank(address(0x571A));
         vm.expectRevert(bytes4(keccak256("BadWindow()")));
-        tournament.postTask(
-            _vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + maxSpan, 0
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + maxSpan, 0
         );
 
         // Ten minutes is the most they can hold it, and the curator keeps the full range.
         vm.prank(address(0x571A));
-        tournament.postTask(
-            _vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + openSpan, 0
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + openSpan, 0
         );
         assertLe(
             uint256(tournament.latestRevealEnd()) - block.timestamp,
@@ -139,10 +136,10 @@ contract GateBypassTest is Test {
     /// The pointer only ever moves forward, whatever order tasks arrive in.
     function test_TheRevealPointerIsMonotonic() public {
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 3600), uint64(block.timestamp + 7200), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 3600), uint64(block.timestamp + 7200), 0);
         uint64 high = tournament.latestRevealEnd();
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), 2000, 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
         assertEq(tournament.latestRevealEnd(), high, "a shorter task moved the pointer backwards");
     }
 }

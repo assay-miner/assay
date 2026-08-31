@@ -95,11 +95,12 @@ contract TournamentTest is BaseTest {
 
     /// @dev A submission that merely matches the baseline has not mined anything.
     function test_MatchingBaselineEarnsNothing() public {
-        // Re-post a task whose baseline is exactly the reference cost.
+        // A task whose baseline is exactly the reference cost — which is now every task, since
+        // the chain measures the baseline from the reference it is handed.
         vm.startPrank(CURATOR);
         token.approve(address(tournament), POT);
         uint256 strictTask = tournament.postTask(
-            inputs, expected, uint32(referenceGas), GAS_CAP, commitEnd, revealEnd, POT
+            inputs, expected, Bytecode.padded(), GAS_CAP, commitEnd, revealEnd, POT
         );
         vm.stopPrank();
 
@@ -112,7 +113,11 @@ contract TournamentTest is BaseTest {
         tournament.reveal(strictTask, Bytecode.padded(), salt);
 
         (,, uint32 gasUsed, uint128 score,,) = tournament.submissions(strictTask, ALICE);
-        assertEq(gasUsed, referenceGas, "reference must meter at the baseline");
+        // `referenceGas` is the base fixture's reference, and this task was posted with a
+        // different one. What matters is that the submission metered at the baseline this task
+        // actually recorded — which is what the chain measured from the reference it was handed.
+        (,,,, uint32 strictBaseline,,,,) = tournament.tasks(strictTask);
+        assertEq(gasUsed, uint256(strictBaseline), "the submission did not meter at its own task's baseline");
         assertEq(score, 0, "matching the baseline is not an improvement");
     }
 

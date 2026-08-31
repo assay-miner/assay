@@ -42,7 +42,21 @@ contract LiveLoopTest is Test {
         vm.createSelectFork(vm.envOr("BSC_TESTNET_RPC", string("https://bsc-testnet-rpc.publicnode.com")));
     }
 
+    /// True when the deployed tournament is built from this tree rather than an older one.
+    function _deploymentIsCurrent() internal view returns (bool ok) {
+        (ok,) = TOURNAMENT.staticcall(abi.encodeWithSignature("OPEN_POST_MAX_SPAN()"));
+    }
+
     function test_OneEpochEndToEnd() public {
+        // This suite exists to test the deployment, so a deployment older than this tree is a real
+        // failure and not something to skip past — but it should say which, because a bare
+        // EvmError inside postTask reads like a bug in the contract rather than an out-of-date
+        // chain. Redeploying testnet is what clears it.
+        assertTrue(
+            _deploymentIsCurrent(),
+            "the deployed tournament predates this tree; redeploy testnet before running this suite"
+        );
+
         // --- the deployment is the single-token one -------------------------------------------
         assertEq(address(AssayVault(CUSTODY).asset()), TAX_TOKEN, "custody is not denominated in the tax token");
         assertEq(flap.taxToken(), TAX_TOKEN, "the flap vault settles a different token");
@@ -74,7 +88,11 @@ contract LiveLoopTest is Test {
         uint64 commitEnd = uint64(block.timestamp + 60);
         uint64 revealEnd = commitEnd + 60;
         vm.prank(CURATOR);
-        uint256 id = t.postTask(ins, exp, uint32(baseline), GAS_CAP, commitEnd, revealEnd, 0);
+        // The literal translation is the reference. The chain measures it, so `baseline` above is
+        // now a prediction this asserts against rather than a number the task is told to believe.
+        uint256 id = t.postTask(ins, exp, TaskGen.compileNaive(ops), GAS_CAP, commitEnd, revealEnd, 0);
+        (,,,, uint32 recorded,,,,) = t.tasks(id);
+        assertEq(uint256(recorded), baseline, "the chain measured a different baseline than the test did");
 
         // --- tax arrives and is put behind the task ---------------------------------------------
         vm.deal(address(flap), 0.05 ether);

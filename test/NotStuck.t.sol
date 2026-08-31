@@ -95,7 +95,7 @@ contract NotStuckTest is BaseTest {
         uint64 revealEnds = commitEnds + 60;
 
         vm.prank(CURATOR);
-        uint256 id = tournament.postTask(inputs, expected, baselineGas, GAS_CAP, commitEnds, revealEnds, 0);
+        uint256 id = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnds, revealEnds, 0);
 
         _tax(0.05 ether);
         uint256 pot = _endowTask(id, _within(0.05 ether));

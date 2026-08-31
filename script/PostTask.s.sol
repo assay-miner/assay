@@ -19,6 +19,7 @@ import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 contract PostTask is Script {
     error VectorCountMismatch(uint256 inputs, uint256 expected);
     error BaselineNotBeatable(uint32 baselineGas);
+    error BaselineDisagrees(uint32 stated, uint32 measured);
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -33,6 +34,11 @@ contract PostTask is Script {
             revert VectorCountMismatch(inputs.length, expected.length);
         }
 
+        // The baseline is measured on chain from this, not read from the file. The file still
+        // carries the number the generator measured locally, and the assertion after the post
+        // checks the two agree — a disagreement means the spec and the chain do not describe the
+        // same program.
+        bytes memory referenceRuntime = vm.parseJsonBytes(json, ".referenceRuntime");
         uint32 baselineGas = uint32(vm.parseJsonUint(json, ".baselineGas"));
         uint32 gasCap = uint32(vm.parseJsonUint(json, ".gasCap"));
         uint256 pot = vm.parseJsonUint(json, ".pot");
@@ -47,8 +53,10 @@ contract PostTask is Script {
         vm.startBroadcast(pk);
         token.approve(address(tournament.vault()), pot);
         uint256 taskId = tournament.postTask(
-            inputs, expected, baselineGas, gasCap, commitEnd, revealEnd, uint128(pot)
+            inputs, expected, referenceRuntime, gasCap, commitEnd, revealEnd, uint128(pot)
         );
+        (,,,, uint32 measured,,,,) = tournament.tasks(taskId);
+        if (measured != baselineGas) revert BaselineDisagrees(baselineGas, measured);
         // The tax layer. Absent before the token has been launched, and absent on a chain where
         // nothing has traded yet — neither is a failure, so neither aborts the post.
         address flapVaultAddr = vm.envOr("FLAP_VAULT", address(0));

@@ -18,6 +18,15 @@ library Bytecode {
             hex"60005060005060005060005060005060005060005060005060005060005060206000f3";
     }
 
+    /// The same computation again, more wastefully still. This is what a task's baseline is
+    /// measured from: the chain records the reference's own cost, so a reference must be worse
+    /// than anything a miner would submit or nothing can score.
+    function verbose() internal pure returns (bytes memory) {
+        return hex"6000358002600052"
+            hex"6000506000506000506000506000506000506000506000506000506000506000506000506000506000506000506000506000506000506000506000"
+            hex"60206000f3";
+    }
+
     /// Returns the input unchanged instead of squaring it: passes nothing.
     function wrong() internal pure returns (bytes memory) {
         return hex"600035600052" hex"60206000f3";
