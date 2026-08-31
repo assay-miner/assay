@@ -49,7 +49,7 @@ contract LaunchToken is Script {
         }
 
         vm.startBroadcast(pk);
-        address taxToken = IVaultPortal(payable(venue.vaultPortal)).newTokenV6WithVault{value: 0}(
+        address taxToken = IVaultPortal(payable(venue.vaultPortal)).newTokenV6WithVault{value: vm.envOr("DEV_BUY_WEI", uint256(0))}(
             helper.launchParams(factory, salt, name, symbol)
         );
         vm.stopBroadcast();

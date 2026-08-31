@@ -107,7 +107,7 @@ contract Deploy is Script {
     ///      is the only accepted threshold, and BNB needs V2_MIGRATOR.
     function launchParams(address factory, bytes32 salt, string memory name, string memory symbol)
         public
-        pure
+        view
         returns (IVaultPortalTypes.NewTokenV6WithVaultParams memory p)
     {
         p.name = name;
@@ -117,7 +117,11 @@ contract Deploy is Script {
         p.salt = salt;
         p.migratorType = IPortalTypes.MigratorType.V2_MIGRATOR;
         p.quoteToken = address(0);
-        p.quoteAmt = 0;
+        // The creation buy, in native BNB. Zero means the whole supply goes into the pool and the
+        // launcher holds none, which is what every launch so far did. It is configurable because a
+        // same-block bundle needs it: the bundle runner refuses a launch whose value is zero, since
+        // a launch that buys nothing gives it nothing to sequence the first buys behind.
+        p.quoteAmt = vm.envOr("DEV_BUY_WEI", uint256(0));
         p.dexId = IPortalTypes.DEXId.DEX0;
         // 200 bps each way. The rate is what funds every bounty this protocol pays, so it is
         // pinned by a test rather than left as a number somebody can nudge: at 2% Rule 002's
@@ -207,7 +211,7 @@ contract Deploy is Script {
         address flapVault;
 
         if (!vm.envOr("SKIP_TOKEN", false)) {
-            taxToken = IVaultPortal(payable(venue.vaultPortal)).newTokenV6WithVault{value: 0}(
+            taxToken = IVaultPortal(payable(venue.vaultPortal)).newTokenV6WithVault{value: vm.envOr("DEV_BUY_WEI", uint256(0))}(
                 launchParams(
                     flapFactory,
                     salt,

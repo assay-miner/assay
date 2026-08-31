@@ -138,6 +138,10 @@ contract GenTask is Script {
             '  "program": [\n', prog, "  ],\n",
             '  "inputs": [\n', ins, "  ],\n",
             '  "expected": [\n', exp, "  ],\n",
+            // The bytes the baseline is measured from. postTask derives the difficulty by running
+            // this against these vectors, so the number below is a prediction the poster checks
+            // against what the chain records rather than a figure the task is told to believe.
+            '  "referenceRuntime": "', vm.toString(TaskGen.compileNaive(ops)), '",\n',
             '  "baselineGas": ', vm.toString(baseGas), ",\n",
             '  "referenceGas": ', vm.toString(tightGas), ",\n",
             '  "gasCap": ', vm.toString(GAS_CAP), ",\n",

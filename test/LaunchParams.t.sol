@@ -55,7 +55,39 @@ contract LaunchParamsTest is Test {
     }
 
     /// @notice No dev buy at launch. Nothing is bought for us out of the launch itself.
-    function test_NoDevBuy() public view {
-        assertEq(_params().quoteAmt, 0, "a dev buy appeared in the launch parameters");
+    /// With nothing configured the launch buys nothing and the whole supply goes into the pool.
+    /// @dev Sets the variable rather than relying on it being unset: another test in this file
+    ///      changes it, and a test that only passes in one ordering is not a test.
+    function test_NoDevBuyByDefault() public {
+        vm.setEnv("DEV_BUY_WEI", "0");
+        assertEq(_params().quoteAmt, 0, "a dev buy appeared without being asked for");
+    }
+
+    /// The creation buy is paid, not just declared.
+    ///
+    /// `quoteAmt` says how much of the launch is a developer buy and `msg.value` is what actually
+    /// funds it. They are set from the same environment variable so they cannot drift — a launch
+    /// declaring a buy it did not pay for either reverts at the Portal or mints against nothing,
+    /// and a same-block bundle is built on the assumption that this value is real.
+    function test_TheDeclaredDeveloperBuyIsTheValueSent() public {
+        // Self-contained: set it on every iteration and leave it at zero, so neither this test nor
+        // any other depends on the order they run in.
+        for (uint256 wei_ = 0; wei_ <= 1e15; wei_ += 5e14) {
+            vm.setEnv("DEV_BUY_WEI", vm.toString(wei_));
+            IVaultPortalTypes.NewTokenV6WithVaultParams memory p =
+                deploy.launchParams(address(this), bytes32(uint256(1)), "Assay", "ASSAY");
+            assertEq(p.quoteAmt, wei_, "quoteAmt does not follow DEV_BUY_WEI");
+            assertEq(p.quoteToken, address(0), "the creation buy must be in native BNB");
+        }
+        vm.setEnv("DEV_BUY_WEI", "0");
+    }
+
+    /// And the bundle's own floor: it refuses a launch whose value is zero, so a dev buy of zero
+    /// is a launch that cannot be sniped in the same block. Recorded here so the two stay in view.
+    function test_AZeroDeveloperBuyCannotBeBundled() public {
+        vm.setEnv("DEV_BUY_WEI", "0");
+        IVaultPortalTypes.NewTokenV6WithVaultParams memory p =
+            deploy.launchParams(address(this), bytes32(uint256(1)), "Assay", "ASSAY");
+        assertEq(p.quoteAmt, 0, "the default is still a pool-only launch");
     }
 }
