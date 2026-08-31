@@ -8,6 +8,9 @@ import {Tournament} from "../src/Tournament.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
+import {TaskGenerator} from "../src/TaskGenerator.sol";
+import {UpgradeableBeacon} from "@openzeppelin/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/proxy/beacon/BeaconProxy.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {IVaultPortal, IVaultPortalTypes} from "../src/flap/IVaultPortal.sol";
 import {IPortalTypes, IPortalCommonTypes} from "../src/flap/IPortal.sol";
@@ -199,6 +202,17 @@ contract Deploy is Script {
 
         roster.setConsumer(address(tournament));
 
+        // The on-chain task generator, behind a beacon Flap owns. Drawing a good task is a question
+        // that will keep changing; what a settled task pays is not. This is the only upgradeable
+        // piece of the system, and the address that can upgrade it is the one the tournament and
+        // the vault already treat as the trusted operator — so it adds no party that was not
+        // already trusted, and the settlement contracts stay immutable behind it.
+        address generatorImpl = address(new TaskGenerator());
+        UpgradeableBeacon beacon = new UpgradeableBeacon(generatorImpl, _flapGuardian());
+        address generator = address(new BeaconProxy(
+            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
+        ));
+
         // The token layer. A protocol whose prize money comes from a token's trading tax is not
         // launched until that token exists, so this is part of the launch and not a second
         // errand — which also means the vault address is chained into the manifest instead of
@@ -274,6 +288,9 @@ contract Deploy is Script {
         vm.serializeAddress(json, "salvage", salvage);
         vm.serializeAddress(json, "roster", address(roster));
         vm.serializeUint(json, "minStake", minStake);
+        vm.serializeAddress(json, "taskGenerator", generator);
+        vm.serializeAddress(json, "taskGeneratorBeacon", address(beacon));
+        vm.serializeAddress(json, "taskGeneratorImpl", generatorImpl);
         vm.serializeAddress(json, "flapFactory", flapFactory);
         vm.serializeAddress(json, "taxToken", taxToken);
         vm.serializeAddress(json, "flapVault", flapVault);
@@ -294,5 +311,13 @@ contract Deploy is Script {
         console2.log("taxToken         ", taxToken);
         console2.log("flapVault        ", flapVault);
         console2.log("manifest         ", path);
+    }
+
+    /// @dev The Flap Guardian for this chain, resolved the way VaultBase and Tournament do.
+    function _flapGuardian() internal view returns (address) {
+        uint256 chainId = block.chainid;
+        if (chainId == 56) return 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b;
+        if (chainId == 97) return 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
+        revert UnsupportedChain(chainId);
     }
 }

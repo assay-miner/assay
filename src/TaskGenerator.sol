@@ -51,6 +51,12 @@ contract TaskGenerator is Initializable {
     }
 
     /// @notice Draws this epoch's task from the previous block hash and posts it.
+    ///
+    /// @dev **Estimate generously.** How much gas this costs depends on how many draws the block's
+    ///      seed needs before one is usable, and the seed changes every block — so an estimate
+    ///      taken at block N can be far too low at block N+1. The first live call reverted out of
+    ///      gas at 474,590 against an estimate made a block earlier; the same call with room
+    ///      succeeded at 1,318,610. Send at least 3,000,000.
     /// @dev Callable by anyone, taking nothing. The tournament's own rules still apply: this posts
     ///      as a stranger, so it only succeeds in the gap after the previous task has settled and
     ///      only for a window the tournament considers short.

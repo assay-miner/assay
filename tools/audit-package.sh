@@ -28,8 +28,10 @@ node tools/sync-submission.mjs --check || {
 
 # Our own contracts, plus Flap's base contracts exactly as they were imported.
 cp -R src/flap src/interfaces src/mocks "$OUT/src/"
-cp src/AssayFlapVault.sol src/AssayFlapFactory.sol src/Tournament.sol src/AgentRoster.sol \
-   src/AssayVault.sol src/Crucible.sol "$OUT/src/"
+# Every contract, not a list of them. Naming the files meant TaskGen.sol and TaskGenerator.sol
+# were added to src/ and never reached the archive, which then did not compile — the same drift
+# that had SUBMISSION.md naming contracts from two deployments earlier.
+cp src/*.sol "$OUT/src/"
 
 # The whole suite, not a hand-picked four. The first archive shipped only the Flap-facing suites
 # while the docs quoted the repository's total, so a reviewer counted 33 tests against a claim of
@@ -133,7 +135,7 @@ raw comparison always differs there and nowhere else.
 
 | Path | Use |
 |---|---|
-| `src/` + `foundry.toml` | The repository layout. `src/` and `foundry.toml` are at the archive root, not inside a wrapper folder, so a tool that does not recurse still finds the contracts. |
+| \`src/\` + \`foundry.toml\` | The repository layout. \`src/\` and \`foundry.toml\` are at the archive root, not inside a wrapper folder, so a tool that does not recurse still finds the contracts. |
 | `flat/*.flat.sol` | One self-contained file per audited contract, for portals that accept only that. Compile-checked in a clean project: identical runtime length to the repository build, differing only in the trailing CBOR metadata, which encodes source paths and therefore always changes when files are flattened. |
 | `standard-json/*.json` | The exact solc input. This is the only form that reproduces the deployed bytecode byte for byte. |
 

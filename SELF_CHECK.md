@@ -284,6 +284,14 @@ There is no owner, no admin role and no mutable parameter. Two addresses have ca
 | Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus post a task if the curator's key is lost, plus the Rule 009 emergency drain | Be replaced or revoked; withdraw a window that is still open |
 | Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller; **post the next task once the previous one has settled**, for a window of at most `OPEN_POST_MAX_SPAN` | Settle a window while its task is still open; post while a task is live; post a window longer than ten minutes |
 
+`TaskGenerator.generateAndPost()` is how an address with no tooling posts one: it takes no task
+parameters, seeds from the previous block's hash, and draws, evaluates and compiles the whole task
+on chain. Its gas is block-dependent — the seed decides how many draws are needed before one is
+usable — so a caller must estimate generously. The first live call reverted out of gas at 474,590
+against an estimate made one block earlier, and the same call with room succeeded at 1,318,610.
+It sits behind a beacon owned by Flap's Guardian, the only upgradeable piece of the system and the
+one address the tournament and the vault already treat as the trusted operator.
+
 Open posting is a reviewer's suggestion, taken with one bound added. The tournament should not stop
 because a key went quiet, so anybody may post in the gap between tasks. The bound exists because of
 how it meets the withdrawal gate: `latestRevealEnd` is a high-water mark that no later post can
