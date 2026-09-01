@@ -109,11 +109,6 @@ export const vaultAbi = [
     "name": "endow",
     "inputs": [
       {
-        "name": "taskId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "bnbAmount",
         "type": "uint256",
         "internalType": "uint256"
@@ -273,7 +268,7 @@ export const vaultAbi = [
     ],
     "outputs": [
       {
-        "name": "rewardOut",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -327,32 +322,16 @@ export const vaultAbi = [
   },
   {
     "type": "function",
-    "name": "scheduleEndow",
-    "inputs": [
-      {
-        "name": "taskId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "bnbAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "minRewardOut",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "rewardPool",
+    "inputs": [],
     "outputs": [
       {
-        "name": "requestId",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "payable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -451,16 +430,16 @@ export const vaultAbi = [
   },
   {
     "type": "function",
-    "name": "unassigned",
+    "name": "triggerConversion",
     "inputs": [],
     "outputs": [
       {
-        "name": "",
+        "name": "requestId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "payable"
   },
   {
     "type": "function",

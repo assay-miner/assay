@@ -33,7 +33,7 @@ const called = [...component.matchAll(/functionName: *"([A-Za-z0-9_]+)"/g)].map(
 // Reads the component derives from rather than calls by name, and the ledger fields a reviewer
 // checks solvency against.
 const SUPPORTING = ["bounty", "collected", "endowed", "payouts", "reward", "taxToken",
-  "totalPaid", "unassigned", "reserved", "freeTax", "description"];
+  "totalPaid", "reserved", "freeTax", "rewardPool", "description"];
 
 const WANT = new Set([...declared, ...called, ...SUPPORTING]);
 
