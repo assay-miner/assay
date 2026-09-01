@@ -72,7 +72,8 @@ contract PoolDrainTest is BaseTest {
         // Scores are already final here, so funding now would divide a pot among people who are
         // done competing for it — and this miner is the only one of them.
         vm.prank(ATTACKER);
-        vm.expectRevert(bytes(unicode"Settled / 已结算"));
+        // The gate names commitment, not settlement: a settled task is past commitEnd too.
+        vm.expectRevert(bytes(unicode"Commitment closed / 承诺已截止"));
         flap.fundTaskFromPool(taskId);
 
         // And with the money still in the pool there is nothing to collect.
@@ -113,6 +114,63 @@ contract PoolDrainTest is BaseTest {
         uint256 funded = flap.fundTaskFromPool(taskId);
         assertEq(funded, pool, "the pool still moves");
         assertEq(flap.bounty(taskId), pool + 1, "and it sits alongside the sponsorship");
+    }
+
+    // ------------------------------------------------ the reveal window: the field is frozen
+
+    /// @dev The half the first fix missed. Commitment closes at commitEnd, so across the whole
+    ///      reveal window nobody new can enter while the pool could still be moved onto the task.
+    ///      Anyone already committed could wait for that window and take a pot no one else could
+    ///      still compete for. Point the gate back at revealEnd and this passes by not reverting.
+    function test_ATaskInItsRevealWindowCannotStillBeFunded() public {
+        _enroll(ATTACKER, ATTACKER_AGENT);
+        _commit(ATTACKER, ATTACKER_AGENT, Bytecode.padded(), bytes32(ATTACKER_AGENT));
+
+        // Past commitment, before settlement: the field is closed, the task is not.
+        vm.warp(commitEnd + 1);
+        uint256 pool = _fillPool(0.05 ether);
+        assertGt(pool, 0, "the pool has to hold something for this to be worth taking");
+        assertLt(block.timestamp, revealEnd, "still inside the reveal window");
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(bytes(unicode"Commitment closed / 承诺已截止"));
+        flap.fundTaskFromPool(taskId);
+
+        assertEq(flap.rewardPool(), pool, "the pool did not move");
+    }
+
+    // ------------------------------------------------ a bounty that moves after settlement
+
+    /// @dev `collectable` reads the live bounty as the pot, so a sponsorship landing between two
+    ///      equal-scoring miners' collections pays the second more than the first. The gate that
+    ///      stops it was written for fundTaskFromPool and not for sponsor. Remove it here and this
+    ///      passes by not reverting.
+    function test_ASettledTaskCannotBeSponsored() public {
+        _fillPool(0.05 ether);
+        flap.fundTaskFromPool(taskId);
+        vm.warp(revealEnd + 1);
+
+        deal(BTCB, ATTACKER, 1e15);
+        vm.startPrank(ATTACKER);
+        IERC20(BTCB).approve(address(flap), 1e15);
+        vm.expectRevert(bytes(unicode"Settled / 已结算"));
+        flap.sponsor(taskId, 1e15);
+        vm.stopPrank();
+    }
+
+    /// @dev And the same call is still the intended one while the task is live, so the gate is the
+    ///      task's state and not a permission.
+    function test_ALiveTaskCanStillBeSponsored() public {
+        _fillPool(0.05 ether);
+        uint256 funded = flap.fundTaskFromPool(taskId);
+
+        deal(BTCB, ATTACKER, 1e15);
+        vm.startPrank(ATTACKER);
+        IERC20(BTCB).approve(address(flap), 1e15);
+        flap.sponsor(taskId, 1e15);
+        vm.stopPrank();
+
+        assertEq(flap.bounty(taskId), funded + 1e15, "the sponsorship landed");
     }
 
     /// @dev The one-shot rule still has to hold, or the pool could be moved onto one task twice.

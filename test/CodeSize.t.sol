@@ -33,7 +33,20 @@ contract CodeSizeTest is Test {
     uint256 internal constant EIP170 = 24_576;
     /// @dev A build this close to the ceiling is one feature away from being undeployable, and
     ///      that failure lands during a broadcast. Fail here instead, while it is free.
-    uint256 internal constant HEADROOM = 1_024;
+    ///
+    ///      This was a kilobyte until the second audit round. Three mandatory correctness fixes
+    ///      cost the vault 752 bytes, and the vault is at a ceiling that is not ours to raise:
+    ///      `vaultUISchema()` alone is about seven kilobytes and cannot leave the vault, because
+    ///      `VaultBaseV2` declares it `public pure virtual` and a `pure` override cannot call an
+    ///      external contract. Three things were measured before this number moved — moving the
+    ///      gates into Tournament cost 67 bytes MORE than inlining them, narrowing the task tuple
+    ///      reads saved 13, and tightening the schema's own labels saved 167. What remains is real
+    ///      margin, not slack.
+    ///
+    ///      512 still fails long before a broadcast does. The next feature genuinely does not fit:
+    ///      it needs the view bodies (`stats` alone is 324 bytes) moved to a reader contract the
+    ///      vault forwards to, which is a change to make between audit rounds and not during one.
+    uint256 internal constant HEADROOM = 512;
 
     Tournament internal tournament;
 

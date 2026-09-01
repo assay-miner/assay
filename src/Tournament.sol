@@ -443,6 +443,21 @@ contract Tournament {
     }
 
     /// @notice Live one-line status, polled by the UI as a banner.
+    /// @notice The three fields a gate needs from a task, without decoding the rest of it.
+    /// @dev The vault reads task state at seven call sites, each only to decide whether a window
+    ///      is open or whether anybody scored. Going through `tasks()` made every one of them
+    ///      decode all nine fields, and the vault is the contract with no code size to spare —
+    ///      it is embedded whole in the factory, which sits under EIP-170. This returns the three
+    ///      that are actually read.
+    function taskGates(uint256 taskId)
+        external
+        view
+        returns (uint64 commitEnd, uint64 revealEnd, uint256 totalScore)
+    {
+        Task storage t = tasks[taskId];
+        return (t.commitEnd, t.revealEnd, t.totalScore);
+    }
+
     function description() external view returns (string memory) {
         uint256 n = taskCount;
         if (n == 0) return unicode"No task has been posted yet. / 尚未发布任务。";

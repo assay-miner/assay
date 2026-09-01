@@ -55,6 +55,56 @@ contract TriggerEndowTest is BaseTest {
         return flap.triggerConversion{value: fee}();
     }
 
+    // ------------------------------------------------- the vault arming itself pays its own fee
+
+    /// @dev The self-arming path is the second call site of the fee netting and never got it.
+    ///      `triggerConversion` subtracts the fee the caller sent; `trigger()` re-arms with
+    ///      `_arm(fee, 0)`, where the fee leaves the vault's own balance — which is tax — and the
+    ///      old code reserved the un-netted amount. It over-reserved by exactly one fee, and the
+    ///      next callback then tried to swap more BNB than the vault held.
+    ///
+    ///      The assertion is on the newly armed request and not on cumulative `reserved`, and the
+    ///      vault is left with no spare balance. The first version of this test funded the vault
+    ///      with twenty fees of slack and passed with the bug still in place, which is worse than
+    ///      having no test: over-reserving by one fee cannot break an invariant that has twenty
+    ///      fees of room. Delete the `if (incoming == 0)` block in `_arm` and this fails.
+    function test_SelfArmingArmsOnlyWhatTheVaultCanPay() public {
+        _tax(_within(0.05 ether));
+        uint256 id = _schedule(_within(0.05 ether));
+        assertGt(id, 0, "the first conversion armed");
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() + 1);
+
+        // Fresh tax for exactly one more window, and nothing spare. FEE_COVER_MULTIPLE means the
+        // window has to be worth more than ten fees before the vault will arm at all.
+        uint256 fee = flap.schedulerFee();
+        _tax(fee * 12);
+
+        vm.recordLogs();
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        // Find the request the vault armed for itself inside that callback.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 armed;
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(flap)
+                    && logs[i].topics[0] == keccak256("ConversionScheduled(uint256,uint256,uint256)")
+            ) {
+                armed = uint256(logs[i].topics[1]);
+            }
+        }
+        assertGt(armed, 0, "the callback armed the next window");
+
+        (uint128 bnbAmount,) = flap.scheduled(armed);
+        assertLe(
+            uint256(bnbAmount),
+            address(flap).balance,
+            "the vault armed a swap larger than the BNB it holds: the next callback cannot pay it"
+        );
+    }
+
     // ---------------------------------------------------------------- the service is real
 
     function test_TheSchedulerIsLiveAndPricesItself() public view {
