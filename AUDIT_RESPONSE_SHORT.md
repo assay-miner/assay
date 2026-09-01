@@ -89,6 +89,6 @@ Margin after the change: factory **1,055** bytes, `Tournament` **3,034** bytes.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x7aa4BBdc94A69a7cc4924c6E354756731DbFA7bc` | `0x7E94BF3F4a881F1051b2724634E996918579C230` |
-| `Tournament` | `0xd0266f3375162B38D810E6E58d4653Ac8a678775` | `0x2be2d3EA801f963eCDb3333D03dd3F5536162482` |
+| `AssayFlapFactory` | `0x31A19fddE5ab164EA790ffcAc25CbeB65658c1d0` | `0xAa3EC76ACf14efb15C75fb9F01cb16F8A61F9C94` |
+| `Tournament` | `0xb7c1A8ccfc95Cd0B7bEdd53228dC65d1a95Df44d` | `0x31A19fddE5ab164EA790ffcAc25CbeB65658c1d0` |
 | Tax token | not launched | not launched |
