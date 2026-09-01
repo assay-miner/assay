@@ -61,7 +61,7 @@ mkdir -p "$OUT/tasks"
 cp tasks/*.json "$OUT/tasks/"
 
 # remappings live inside foundry.toml, not a separate file
-cp SELF_CHECK.md SUBMISSION.md foundry.toml "$OUT/"
+cp SELF_CHECK.md SUBMISSION.md AUDIT_RESPONSE.md foundry.toml "$OUT/"
 cp "$MANIFEST" "$OUT/deployments/"
 [ -s deployments/97-latest.json ] && cp deployments/97-latest.json "$OUT/deployments/"
 
