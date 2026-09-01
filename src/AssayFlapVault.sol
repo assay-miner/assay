@@ -844,15 +844,15 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "getBounties";
         m.description = unicode"Tasks / 任务与赏金";
         m.inputs = new FieldDescriptor[](3);
-        m.inputs[0] = FieldDescriptor("you", "address", unicode"Miner", 0);
-        m.inputs[1] = FieldDescriptor("offset", "uint256", unicode"Skip", 0);
-        m.inputs[2] = FieldDescriptor("limit", "uint256", unicode"Page size", 0);
+        m.inputs[0] = FieldDescriptor("you", "address", unicode"Miner / 矿工", 0);
+        m.inputs[1] = FieldDescriptor("offset", "uint256", unicode"Skip / 跳过", 0);
+        m.inputs[2] = FieldDescriptor("limit", "uint256", unicode"Page size / 每页", 0);
         m.outputs = new FieldDescriptor[](9);
-        m.outputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
+        m.outputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.outputs[1] = FieldDescriptor("baselineGas", "uint256", unicode"Baseline to beat / 要跑赢的基准", 0);
-        m.outputs[2] = FieldDescriptor("bountyBtcb", "uint256", unicode"BTCB bounty", 18);
-        m.outputs[3] = FieldDescriptor("paidBtcb", "uint256", unicode"Paid", 18);
-        m.outputs[4] = FieldDescriptor("entrants", "uint256", unicode"Scorers", 0);
+        m.outputs[2] = FieldDescriptor("bountyBtcb", "uint256", unicode"Bounty / 赏金", 18);
+        m.outputs[3] = FieldDescriptor("paidBtcb", "uint256", unicode"Paid / 已付", 18);
+        m.outputs[4] = FieldDescriptor("entrants", "uint256", unicode"Scorers / 得分者", 0);
         m.outputs[5] = FieldDescriptor("phase", "uint256", unicode"0/1/2 commit reveal settled / 承诺 揭示 结算", 0);
         m.outputs[6] = FieldDescriptor("endsAt", "time", unicode"Phase ends / 本阶段结束", 0);
         m.outputs[7] = FieldDescriptor("yourScore", "uint256", unicode"Your score / 你的得分", 18);
@@ -865,7 +865,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "collect";
         m.description = unicode"Collect / 领取份额";
         m.inputs = new FieldDescriptor[](1);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
@@ -886,7 +886,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "sponsor";
         m.description = unicode"Add BTCB / 追加 BTCB";
         m.inputs = new FieldDescriptor[](2);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.inputs[1] = FieldDescriptor("amount", "uint256", unicode"BTCB to add / 追加的 BTCB", 18);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](1);
@@ -898,10 +898,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "collectable";
         m.description = unicode"Collectable / 能领多少";
         m.inputs = new FieldDescriptor[](2);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
-        m.inputs[1] = FieldDescriptor("miner", "address", unicode"Miner", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
+        m.inputs[1] = FieldDescriptor("miner", "address", unicode"Miner / 矿工", 0);
         m.outputs = new FieldDescriptor[](1);
-        m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"BTCB / BTCB", 18);
+        m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"Amount / 数量", 18);
         m.approvals = new ApproveAction[](0);
 
         // 7 — funding the open task. No inputs: the vault derives all of them.
@@ -928,7 +928,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "reclaimBounty";
         m.description = unicode"Return bounty / 收回无人赢的赏金";
         m.inputs = new FieldDescriptor[](1);
-        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
+        m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task / 任务", 0);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
@@ -939,7 +939,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.description = unicode"Max convertible / 最多能兑换";
         m.inputs = new FieldDescriptor[](0);
         m.outputs = new FieldDescriptor[](1);
-        m.outputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB / BNB", 18);
+        m.outputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"Amount / 数量", 18);
         m.approvals = new ApproveAction[](0);
 
         // 11 — the conversion the curator is about to accept.
@@ -947,9 +947,9 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.name = "quote";
         m.description = unicode"Converts to / 能换到多少";
         m.inputs = new FieldDescriptor[](1);
-        m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB / BNB", 18);
+        m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"Amount / 数量", 18);
         m.outputs = new FieldDescriptor[](1);
-        m.outputs[0] = FieldDescriptor("rewardOut", "uint256", unicode"BTCB / BTCB", 18);
+        m.outputs[0] = FieldDescriptor("rewardOut", "uint256", unicode"Amount / 数量", 18);
         m.approvals = new ApproveAction[](0);
     }
 }

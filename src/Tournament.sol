@@ -614,15 +614,15 @@ contract Tournament {
         m.name = "postTask";
         m.description = unicode"Publish a task / 发布一个任务";
         m.inputs = new FieldDescriptor[](7);
-        m.inputs[0] = FieldDescriptor("inputs", "bytes", unicode"Calldata per vector / 每个向量的调用数据", 0);
-        m.inputs[1] = FieldDescriptor("expected", "bytes32", unicode"keccak256 of each expected output / 每个期望输出的 keccak256", 0);
+        m.inputs[0] = FieldDescriptor("inputs", "bytes[]", unicode"Calldata per vector / 每个向量的调用数据", 0);
+        m.inputs[1] = FieldDescriptor("expected", "bytes32[]", unicode"keccak256 of each expected output / 每个期望输出的 keccak256", 0);
         m.inputs[2] = FieldDescriptor(
             "referenceRuntime", "bytes", unicode"Reference implementation; its measured cost becomes the baseline / 参考实现,链上实测其开销作为基准", 0
         );
-        m.inputs[3] = FieldDescriptor("gasCap", "uint256", unicode"Per-vector cap / 单向量上限", 0);
-        m.inputs[4] = FieldDescriptor("commitEnd", "time", unicode"Commitments close / 承诺截止", 0);
-        m.inputs[5] = FieldDescriptor("revealEnd", "time", unicode"Reveals close / 揭示截止", 0);
-        m.inputs[6] = FieldDescriptor("pot", "uint256", unicode"Prize pot / 奖池", 18);
+        m.inputs[3] = FieldDescriptor("gasCap", "uint32", unicode"Per-vector cap / 单向量上限", 0);
+        m.inputs[4] = FieldDescriptor("commitEnd", "uint64", unicode"Commitments close / 承诺截止", 0);
+        m.inputs[5] = FieldDescriptor("revealEnd", "uint64", unicode"Reveals close / 揭示截止", 0);
+        m.inputs[6] = FieldDescriptor("pot", "uint128", unicode"Prize pot / 奖池", 18);
         m.outputs = new FieldDescriptor[](0);
         m.approvals = new ApproveAction[](1);
         m.approvals[0] = ApproveAction("taxToken", "pot");

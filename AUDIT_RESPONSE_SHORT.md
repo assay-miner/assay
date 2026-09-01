@@ -1,91 +1,56 @@
-# Flap Vault Interaction Risk Report — response
+# Flap Vault Interaction Risk Report
 
-Project: ASSAY (`AssayFlapVault`) · Report 2026-09-01 10:05:41 UTC · Response commit `21378a7`
+Generated: 2026-09-01 16:41:21 UTC
 
-Both findings accepted and fixed.
+## Vault Security Rating
+**High**
 
----
+Project: ASSAY (`AssayFlapVault`)
 
-## Finding 1 — SYS-REQ-LITERAL-ERRORS
-
-**Status: [x] TP  [ ] FP  [ ] By Design  [ ] Acknowledged**
-
-Fixed. All 47 custom errors removed and all 65 revert sites converted to
-`require(condition, "English / 中文")`:
-
-| Contract | Errors | Revert sites |
-|---|---|---|
-| `src/Tournament.sol` | 20 | 25 |
-| `src/AgentRoster.sol` | 10 | 13 |
-| `src/AssayVault.sol` | 10 | 19 |
-| `src/Crucible.sol` | 4 | 4 |
-| `src/TaskGenerator.sol` | 2 | 2 |
-| `src/PriceGuard.sol` | 1 | 1 |
-| `src/AssayFlapVault.sol` | 0 | 1 standalone `revert(unicode"…")` |
-| **Total** | **47** | **65** |
-
-The standalone `revert(unicode"Unsupported chain / 不支持该链")` in the `AssayFlapVault`
-constructor became a positive assertion after the chain branch.
-
-We had wrongly read the rule as applying to the vault contract only, on the reasoning that the
-vault is what Flap's UI renders. It applies to any revert a user can reach, and every listed
-contract is on a user path: enrolling calls `AgentRoster`, committing and revealing call
-`Tournament`.
-
-**Stated plainly:** this conversion loses the error arguments.
-`InsufficientAccount(account, have, want)` is now
-`require(have >= amount, unicode"Account is short / 账户余额不足")` and no longer carries the two
-amounts. We read that as the rule's intent — a message the user can read beats a value they cannot
-decode — but it is a real loss of debugging detail, flagged here rather than left to be found.
-
-**Verify:**
-
-```
-grep -rn '^\s*error [A-Z]' src/*.sol           # 0 matches
-grep -rn 'revert [A-Z]\|revert(' src/*.sol     # 0 matches
-```
+Both findings are accepted and fixed. They share one cause: the schema is the only part of these
+contracts that nothing executes — no test calls a fieldType or reads a label — so it drifts
+silently. Our existing gate for that class compared field names and not types, which is why both
+reached you. It compares types and labels now.
 
 ---
 
-## Finding 2 — SYS-REQ-MULTILANG
+## Risk Findings
 
-**Status: [x] TP  [ ] FP  [ ] By Design  [ ] Acknowledged**
+### Finding 1: Tournament vaultUISchema declares postTask parameter types that do not match the actual function signature (SYS-REQ-INHERITANCE)
+- **Severity:** High
+- **Confidence:** High
+- **Detected by:** attacker_review, rule_review
 
-Fixed. Both `description()` banners are bilingual now.
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+> **Reason (if FP / By Design / Acknowledged):** Fixed, and the reason it survived is worth reporting with it. Every type the finding names was wrong: `inputs` declared "bytes" against `bytes[]`, `expected` "bytes32" against `bytes32[]`, `gasCap` "uint256" against `uint32`, `pot` "uint256" against `uint128`, and `commitEnd`/`revealEnd` "time" against `uint64` — IVaultSchemasV1 defines "time" as an alias whose ABI encoding is identical to uint256, so those two are mismatches as well. A schema-following UI would have computed `postTask(bytes,bytes32,bytes,uint256,uint256,uint256,uint256)` and called a function that does not exist. The schema now declares the real ABI types.
 
-`src/AssayFlapVault.sol`:
+`commitEnd` and `revealEnd` therefore lose their date-picker rendering, because "time" is defined only as a uint256 alias and these parameters are `uint64`. We chose an invokable method over a nicer input widget rather than widening the signature, since the packing of those two fields is deliberate.
 
-- `No task yet / 尚未发布任务`
-- `Tax unconverted / 税款待兑换`
-- `Bounty live / 赏金进行中`
-- `Bounties collected / 赏金已领取`
+We already had a gate for exactly this class — `tools/check-schema.mjs`, written after an earlier round caught `postTask` describing a parameter that no longer existed. It compared only the field NAMES. Every name here was correct, so the gate stayed green while the types drifted, which is why this reached you. It now derives the ABI type from each declared fieldType, applies the documented "time" → uint256 alias, and prints the selector a schema-following UI would call so a mismatch is visible as the wrong function. Run against the code you reviewed it reports exactly the six mismatches in this finding and nothing else.
 
-`src/Tournament.sol`:
 
-- `No task posted yet. / 尚未发布任务。`
-- `A task is open. Commitments are being taken. / 任务进行中，正在接受提交承诺。`
-- `Commitments are closed. Submissions are being revealed and assayed. / 承诺已截止，正在揭示并计量提交。`
-- `The latest task is settled. Winners may claim. / 最新一期已结算，获胜者可领取。`
+### Finding 2: AssayFlapVault vaultUISchema contains single-language UI strings while the contract establishes bilingual intent (SYS-REQ-MULTILANG)
+- **Severity:** High
+- **Confidence:** High
+- **Detected by:** rule_review
 
-**Why the vault's banners are shorter than the tournament's:** the factory embeds the vault's
-creation code, and adding the Chinese left only 861 bytes under EIP-170. The obvious remedy —
-moving `vaultUISchema()` out, at 7,015 bytes the largest single item in the vault — is not
-available: `VaultBaseV2` declares it `public pure virtual`, and a `pure` override cannot call an
-external contract. So the vault's banners were tightened instead; each still names its state in
-both languages. `Tournament` deploys standalone and keeps the full sentences.
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+> **Reason (if FP / By Design / Acknowledged):** Fixed. All 16 labels are bilingual: the English-only ones ("Miner", "Skip", "Page size", "Task", "BTCB bounty", "Paid", "Scorers") now carry a Chinese half, and the four that repeated the same token on both sides of the separator ("BTCB / BTCB", "BNB / BNB") are now "Amount / 数量", which names the field rather than the unit.
 
-Margin after the change: factory **1,055** bytes, `Tournament` **3,034** bytes.
+The same gate was extended to cover this, since the two findings come from one blind spot — nothing in a test suite executes a schema label any more than it executes a schema type. `tools/check-schema.mjs` now rejects a label with no separator, a label whose two halves are identical, and a label with no CJK after the separator. That last check is what catches the "BTCB / BTCB" shape, which passes a naive test for the separator and is precisely what the rule prohibits.
+
+The gate found 22 problems in total across both findings, the same set you reported and no others.
+
+Shortening some labels was necessary rather than cosmetic: the factory embeds the vault's creation code, and the added Chinese pushed it to 410 bytes under EIP-170, below the margin our CodeSize test requires. Labels were tightened to "Bounty / 赏金", "Scorers / 得分者", "Amount / 数量" and "Paid / 已付", restoring the margin to 537 bytes while keeping both languages on every field. We want to flag that headroom directly: `vaultUISchema()` is about 7KB and cannot be moved out of the vault, because VaultBaseV2 declares it `public pure virtual` and a `pure` override cannot call an external contract. The next change of any size needs a structural answer, not more shortening.
 
 ---
 
 ## Status
 
-- 215 tests pass across 32 suites.
-- 55 test assertions moved from `vm.expectRevert(Contract.Error.selector)` and
-  `vm.expectRevert(bytes4(keccak256("Error()")))` to `vm.expectRevert(bytes(unicode"… / …"))`, so
-  each now asserts the exact string a user sees rather than a selector.
-- Both chains redeployed so the deployed bytecode matches the packaged source; the packaging step
-  verifies that byte for byte.
+- `node tools/check-schema.mjs` reports every write method's schema matching its ABI type and
+  every label bilingual.
+- Both chains redeployed from this source, so the deployed bytecode matches the packaged source.
+- No token has been launched on either chain.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
