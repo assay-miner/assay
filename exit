@@ -20,9 +20,19 @@ MANIFEST="deployments/${CHAIN_ID}-latest.json"
 [ -s "$MANIFEST" ] || { echo "no manifest at $MANIFEST — nothing was ever deployed here" >&2; exit 1; }
 
 export TOURNAMENT="$(jq -r .tournament "$MANIFEST")"
-export TOKEN="$(jq -r .token "$MANIFEST")"
+export TOKEN="$(jq -r .taxToken "$MANIFEST")"
+
+# The tax vault is optional and chained, never pasted. jq prints "null" for an absent key; that is
+# not an address and neither is the zero one.
+FLAP_VAULT="$(jq -r '.flapVault // ""' "$MANIFEST")"
+case "$FLAP_VAULT" in
+  0x0000000000000000000000000000000000000000|null|"") FLAP_VAULT="" ;;
+esac
+[ -n "$FLAP_VAULT" ] && export FLAP_VAULT
+
 echo "tournament $TOURNAMENT"
 echo "token      $TOKEN"
+[ -n "$FLAP_VAULT" ] && echo "flap vault $FLAP_VAULT"
 
 forge script script/Exit.s.sol:ExitAll \
   --rpc-url "$RPC" --broadcast -g 300 --slow "$@"

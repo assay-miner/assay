@@ -131,6 +131,17 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Whether a miner has taken their share of a task's bounty.
     mapping(uint256 taskId => mapping(address miner => bool)) public collected;
 
+    /// @dev Whether the pool has already been moved onto a task. Internal because nothing reads it
+    ///      from outside and the getter costs code size the factory does not have; the event
+    ///      `TaskFunded` already tells anyone watching that this happened.
+    ///
+    ///      This exists because `bounty[taskId] == 0` was the wrong question. `sponsor` is
+    ///      deliberately open to anyone, so anyone could make a task's bounty non-zero with one wei
+    ///      of BTCB and that task could then never be funded from the pool at all — a permanent
+    ///      denial for the price of dust. What the one-shot rule is actually about is this pool
+    ///      being moved once, so ask that directly and let sponsorship sit alongside it.
+    mapping(uint256 taskId => bool) internal pooledInto;
+
     /// @notice Sum of every task's unpaid bounty, in BTCB.
     uint256 public endowed;
 
@@ -339,7 +350,15 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      unfunded waiting for somebody to judge it worth funding.
     function fundTaskFromPool(uint256 taskId) external nonReentrant returns (uint256 amount) {
         _requireTask(taskId);
-        require(bounty[taskId] == 0, unicode"Already funded / 已注资");
+        require(!pooledInto[taskId], unicode"Already funded / 已注资");
+
+        // The task has to still be running. Without this the call is a drain: scores on a settled
+        // task are already final, so anybody holding one on some old task that was never funded
+        // could move the whole pool onto it and collect their share of it in the same transaction,
+        // and a sole scorer would take all of it. Funding only a live task means the money is in
+        // place before the scores that divide it exist.
+        (,, uint64 revealEnd,,,,,,) = tournament.tasks(taskId);
+        require(block.timestamp < revealEnd, unicode"Settled / 已结算");
 
         // The whole pool. An epoch converts what it accrued and its task takes what that bought,
         // so nothing accumulates across epochs and no number here decides how much a task is worth.
@@ -347,6 +366,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         require(amount > 0, unicode"Pool is empty / 池中无资金");
 
         rewardPool -= amount;
+        pooledInto[taskId] = true;
         bounty[taskId] += amount;
         emit TaskFunded(taskId, amount);
     }

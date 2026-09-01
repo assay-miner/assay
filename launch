@@ -68,7 +68,7 @@ esac
   echo "VITE_TOURNAMENT=$(jq -r .tournament "$MANIFEST")"
   echo "VITE_ROSTER=$(jq -r .roster "$MANIFEST")"
   echo "VITE_VAULT=$(jq -r .vault "$MANIFEST")"
-  echo "VITE_TOKEN=$(jq -r .token "$MANIFEST")"
+  echo "VITE_TOKEN=$(jq -r .taxToken "$MANIFEST")"
   [ -n "$FLAP_VAULT" ] && echo "VITE_FLAP_VAULT=$FLAP_VAULT"
 } > app/.env.local
 echo

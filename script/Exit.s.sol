@@ -5,6 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AssayVault} from "../src/AssayVault.sol";
+import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice Pulls every recoverable token back to the deployer.
@@ -25,6 +26,25 @@ contract ExitAll is Script {
         uint256 skipped;
 
         vm.startBroadcast(pk);
+
+        // The tax that was never converted comes out first, because it is the only money here that
+        // needs nobody's permission and no tournament outcome: `withdrawUnconverted` pays the fixed
+        // curator address whatever BNB is not already promised to a scheduled swap. It reverts
+        // while a task is still open, which is a wait and not a defect, so it cannot be allowed to
+        // stop the reclaims below.
+        //
+        // Only the unconverted leg is recoverable this way. BTCB that a conversion already bought
+        // leaves only through `collect`, to a miner the tournament scored — there is no path back
+        // to the curator, by design.
+        address flapVaultAddr = vm.envOr("FLAP_VAULT", address(0));
+        if (flapVaultAddr != address(0)) {
+            try AssayFlapVault(payable(flapVaultAddr)).withdrawUnconverted(0) returns (uint256 sent) {
+                console2.log("unconverted BNB", sent);
+            } catch {
+                console2.log("unconverted BNB", "none free, or an epoch is still open");
+            }
+        }
+
         for (uint256 id = 1; id <= count; ++id) {
             try tournament.reclaim(id) returns (uint256 amount) {
                 recovered += amount;

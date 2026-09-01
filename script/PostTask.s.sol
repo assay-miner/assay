@@ -62,6 +62,23 @@ contract PostTask is Script {
         address flapVaultAddr = vm.envOr("FLAP_VAULT", address(0));
         if (flapVaultAddr != address(0)) {
             AssayFlapVault flap = AssayFlapVault(payable(flapVaultAddr));
+
+            // Put the pool behind this task. Without this the tax converts into `rewardPool` and
+            // stops there: `bounty` stays zero, `collectable` returns zero, and `collect` reverts
+            // for the winner of a task that was funded on paper. Nothing called this in production
+            // — only tests did — so the loop had never actually closed.
+            //
+            // The pool this draws on is what *earlier* epochs converted, not the conversion armed
+            // below. That one lands five minutes from now, long after a sixty-second task has
+            // settled, so it belongs to the next task and not this one.
+            uint256 pool = flap.rewardPool();
+            if (pool > 0) {
+                uint256 funded = flap.fundTaskFromPool(taskId);
+                console2.log("funded       ", funded);
+            } else {
+                console2.log("funded       ", "pool is empty; nothing converted yet");
+            }
+
             uint256 free = flap.freeTax();
             uint256 want = vm.envOr("ENDOW_BNB", free);
             if (want > free) want = free;
