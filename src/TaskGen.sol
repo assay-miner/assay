@@ -128,17 +128,9 @@ library TaskGen {
                 code = abi.encodePacked(code, _push(ops[i].c), _opcode(ops[i].kind));
             }
         }
-        // PUSH0 MSTORE CALLDATASIZE PUSH0 RETURN
+        // PUSH0 MSTORE PUSH1 0x20 PUSH0 RETURN
         //
-        // CALLDATASIZE for the return length, not PUSH1 0x20. Every vector this generator draws is
-        // one 32-byte word, so the two are the same number and CALLDATASIZE is a gas cheaper. It
-        // applies to every instance rather than to the ones with a particular shape, which makes it
-        // eight gas of margin on all of them.
-        //
-        // The assumption is checked rather than assumed: postTask runs this reference against the
-        // task's own vectors and refuses it if the answers do not match, so a task whose inputs
-        // were not one word would reject this compilation instead of posting it.
-        code = abi.encodePacked(code, hex"5f52365ff3");
+        code = abi.encodePacked(code, hex"5f5260205ff3");
     }
 
     /// @notice A reference peephole pass. Miners are free to do better; this only has to prove the
@@ -180,88 +172,7 @@ library TaskGen {
                     // Shifts fold the same way and were the one pair left out. The data says they
                     // are also the pair that actually turns up: a drawn program of nine ops lands
                     // two adjacent shifts often enough to be the cheapest instruction available.
-                    if (o.kind == SHL || o.kind == SHR) {
-                        uint256 total = p.c + o.c;
-                        // Past the word, everything is shifted out and the result is zero — not a
-                        // shift by 255, which keeps a bit. Clamping was the first version and the
-                        // semantics check caught it once the sample was wide enough to reach a
-                        // pair that summed past 256.
-                        buf[n - 1] = total >= 256
-                            ? Op({kind: AND, c: 0})
-                            : Op({kind: o.kind, c: total});
-                        continue;
-                    }
                 }
-            }
-
-            // 3b — a left shift undone by a right one is a mask, and vice versa. Neither is a
-            //      neighbour of its own kind, so rule 3 cannot see them.
-            if (n > 0 && o.kind == SHR && buf[n - 1].kind == SHL) {
-                uint256 up = buf[n - 1].c;
-                if (up == o.c) {
-                    // Up then down by the same amount clears the top `up` bits and nothing else.
-                    buf[n - 1] = Op({kind: AND, c: type(uint256).max >> up});
-                    continue;
-                }
-            }
-            if (n > 0 && o.kind == SHL && buf[n - 1].kind == SHR) {
-                uint256 down = buf[n - 1].c;
-                if (down == o.c) {
-                    buf[n - 1] = Op({kind: AND, c: (type(uint256).max >> down) << down});
-                    continue;
-                }
-            }
-
-            // 3a — a shift beside a multiply is one multiply.
-            //
-            //   (x << k) * c = (c << k) * x
-            //   (c * x) << k = (c << k) * x
-            //
-            // Both directions collapse, and the instruction that disappears is a whole PUSH plus a
-            // SHL — six gas a vector, where the complement rules below only ever trade a NOT for
-            // something the same price. Chosen by counting which pairs actually survive the pass
-            // rather than by which identity reads best: SHL beside MUL turned up in twelve of
-            // sixty drawn programs.
-            if (n > 0 && o.kind == MUL && buf[n - 1].kind == SHL && buf[n - 1].c < 256) {
-                unchecked {
-                    buf[n - 1] = Op({kind: MUL, c: o.c << buf[n - 1].c});
-                }
-                continue;
-            }
-            if (n > 0 && o.kind == SHL && buf[n - 1].kind == MUL && o.c < 256) {
-                unchecked {
-                    buf[n - 1] = Op({kind: MUL, c: buf[n - 1].c << o.c});
-                }
-                continue;
-            }
-
-            // 3c — a complement, one operation, and a complement back.
-            //
-            //   ~(c + ~x) = x - c      so NOT ADD c NOT is ADD (-c)
-            //   c ^ ~x = ~(c ^ x)      so NOT XOR c NOT is XOR c
-            //
-            // Three instructions become one, which is about ninety-six gas over eight vectors —
-            // twice what any other rule here recovers. Neither is visible to a pass that only
-            // compares neighbours, because the two complements are never adjacent.
-            if (o.kind == NOT && n >= 2 && buf[n - 2].kind == NOT) {
-                Op memory mid = buf[n - 1];
-                if (mid.kind == ADD) {
-                    unchecked {
-                        buf[n - 2] = Op({kind: ADD, c: 0 - mid.c});
-                    }
-                    --n;
-                    continue;
-                }
-                if (mid.kind == XOR) {
-                    buf[n - 2] = Op({kind: XOR, c: mid.c});
-                    --n;
-                    continue;
-                }
-                // MUL and SHL middles were here and are gone. They do remove an instruction each
-                // — ~(c*~x) is MUL then ADD, ~((~x)<<k) is SHL then OR — but the instruction they
-                // remove is a NOT at 3 gas and the one they add is a PUSH plus an op at 6, so the
-                // count falls and the gas does not. Measured across thirty instances: 4752 total
-                // margin with them, 4752 without. Instruction count is not the metric.
             }
 
             // 4 — multiplying by a power of two is a shift: MUL's 5 gas against SHL's 3.
