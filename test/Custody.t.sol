@@ -30,7 +30,7 @@ contract CustodyTest is BaseTest {
         // There is no function on the roster that moves stake anywhere but back to its owner.
         // `withdraw` pays msg.sender, so the curator calling it is simply not enrolled.
         vm.prank(CURATOR);
-        vm.expectRevert(abi.encodeWithSelector(AgentRoster.NotEnrolled.selector, CURATOR));
+        vm.expectRevert(bytes(unicode"Not enrolled / 未注册"));
         roster.withdraw();
 
         assertEq(vault.balanceOf(roster.stakeAccount(ALICE)), MIN_STAKE, "stake untouched");
@@ -45,7 +45,7 @@ contract CustodyTest is BaseTest {
 
         // And nobody but the tournament may even do that.
         vm.prank(CURATOR);
-        vm.expectRevert(AgentRoster.NotConsumer.selector);
+        vm.expectRevert(bytes(unicode"Not the consumer / 非消费者"));
         roster.lockUntil(ALICE, uint64(block.timestamp + 30 days));
     }
 
@@ -55,7 +55,7 @@ contract CustodyTest is BaseTest {
         _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32("a"));
 
         vm.prank(CURATOR);
-        vm.expectRevert(Tournament.RevealNotClosed.selector);
+        vm.expectRevert(bytes(unicode"Reveal not closed / 揭示尚未结束"));
         tournament.reclaim(taskId);
 
         vm.warp(commitEnd);
@@ -64,7 +64,7 @@ contract CustodyTest is BaseTest {
 
         // Someone scored, so the pot is theirs for the whole claim window.
         vm.prank(CURATOR);
-        vm.expectRevert(Tournament.ClaimWindowOpen.selector);
+        vm.expectRevert(bytes(unicode"Claim window is open / 领取窗口未结束"));
         tournament.reclaim(taskId);
 
         assertEq(vault.balanceOf(tournament.potAccount(taskId)), POT, "pot still escrowed");
@@ -80,7 +80,7 @@ contract CustodyTest is BaseTest {
 
         // `claim` pays msg.sender and reads msg.sender's submission; the curator has none.
         vm.prank(CURATOR);
-        vm.expectRevert(Tournament.NoScore.selector);
+        vm.expectRevert(bytes(unicode"No score / 无得分"));
         tournament.claim(taskId);
 
         uint256 before = token.balanceOf(ALICE);
@@ -117,7 +117,7 @@ contract CustodyTest is BaseTest {
         vm.warp(revealEnd);
         tournament.reclaim(taskId);
 
-        vm.expectRevert(Tournament.AlreadyReclaimed.selector);
+        vm.expectRevert(bytes(unicode"Already reclaimed / 已回收"));
         tournament.reclaim(taskId);
     }
 
@@ -130,7 +130,7 @@ contract CustodyTest is BaseTest {
     function test_ConsumerCannotBeRepointed() public {
         assertTrue(roster.consumerFrozen(), "frozen at deploy");
         // As the deployer: the freeze is what must stop this, not the caller check in front of it.
-        vm.expectRevert(AgentRoster.ConsumerAlreadyFrozen.selector);
+        vm.expectRevert(bytes(unicode"Consumer is frozen / 消费者已冻结"));
         roster.setConsumer(address(0xBAD));
         assertEq(roster.consumer(), address(tournament), "still the real tournament");
     }

@@ -103,7 +103,7 @@ contract GateBypassTest is Test {
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
 
         vm.prank(address(0x571A));
-        vm.expectRevert(bytes4(keccak256("NotCurator()")));
+        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
     }
 
@@ -119,7 +119,7 @@ contract GateBypassTest is Test {
         uint64 openSpan = tournament.OPEN_POST_MAX_SPAN();
 
         vm.prank(address(0x571A));
-        vm.expectRevert(bytes4(keccak256("BadWindow()")));
+        vm.expectRevert(bytes(unicode"Bad window / 时间窗口不合法"));
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + maxSpan, 0
         );
 

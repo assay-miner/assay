@@ -83,19 +83,9 @@ contract AssayVault {
     event SweptToken(address indexed token, address indexed to, uint256 amount);
     event SweptNative(address indexed to, uint256 amount);
 
-    error NotDeployer();
-    error AlreadyFrozen();
-    error NotFrozen();
-    error NotController(address caller);
-    error ZeroAddress();
-    error InsufficientAccount(bytes32 account, uint256 have, uint256 want);
-    error NothingUnaccounted();
-    error SweepTouchedAsset();
-    error NativeSweepFailed();
-    error SweepReentered();
 
     constructor(IERC20 asset_, address salvage_) {
-        if (address(asset_) == address(0) || salvage_ == address(0)) revert ZeroAddress();
+        require(address(asset_) != address(0) && salvage_ != address(0), unicode"Zero address / 零地址");
         asset = asset_;
         salvage = salvage_;
         deployer = msg.sender;
@@ -110,8 +100,8 @@ contract AssayVault {
     ///      Refusing to move value until the controller set is sealed makes that gap unusable
     ///      instead of merely unused, in this deployment and in every future one.
     modifier onlyController() {
-        if (!controllersFrozen) revert NotFrozen();
-        if (!isController[msg.sender]) revert NotController(msg.sender);
+        require(controllersFrozen, unicode"Controllers not frozen / 控制者尚未冻结");
+        require(isController[msg.sender], unicode"Not a controller / 非控制者");
         _;
     }
 
@@ -128,7 +118,7 @@ contract AssayVault {
         assembly ("memory-safe") {
             locked := tload(_SWEEP_LOCK)
         }
-        if (locked != 0) revert SweepReentered();
+        require(locked == 0, unicode"Sweep reentered / 清扫重入");
         assembly ("memory-safe") {
             tstore(_SWEEP_LOCK, 1)
         }
@@ -146,17 +136,17 @@ contract AssayVault {
     /// @dev Only callable before freezing, and freezing is irreversible. After `freeze()` the
     ///      controller set is part of the deployment rather than a setting.
     function addController(address controller) external {
-        if (msg.sender != deployer) revert NotDeployer();
-        if (controllersFrozen) revert AlreadyFrozen();
-        if (controller == address(0)) revert ZeroAddress();
+        require(msg.sender == deployer, unicode"Not the deployer / 非部署者");
+        require(!controllersFrozen, unicode"Controllers are frozen / 控制者已冻结");
+        require(controller != address(0), unicode"Zero address / 零地址");
         isController[controller] = true;
         emit ControllerAdded(controller);
     }
 
     /// @notice Seals the controller set forever.
     function freeze() external {
-        if (msg.sender != deployer) revert NotDeployer();
-        if (controllersFrozen) revert AlreadyFrozen();
+        require(msg.sender == deployer, unicode"Not the deployer / 非部署者");
+        require(!controllersFrozen, unicode"Controllers are frozen / 控制者已冻结");
         controllersFrozen = true;
         emit ControllersFrozen();
     }
@@ -205,7 +195,7 @@ contract AssayVault {
         bytes32 from = ownAccount(fromKind, fromKey);
         bytes32 to = ownAccount(toKind, toKey);
         uint256 have = balanceOf[from];
-        if (have < amount) revert InsufficientAccount(from, have, amount);
+        require(have >= amount, unicode"Account is short / 账户余额不足");
         unchecked {
             balanceOf[from] = have - amount;
         }
@@ -218,10 +208,10 @@ contract AssayVault {
     ///      the named account's own balance, so a controller cannot overdraw into another
     ///      account, nor into a stray transfer.
     function payOut(bytes32 kind, bytes32 key, address to, uint256 amount) external onlyController {
-        if (to == address(0)) revert ZeroAddress();
+        require(to != address(0), unicode"Zero address / 零地址");
         bytes32 account = ownAccount(kind, key);
         uint256 have = balanceOf[account];
-        if (have < amount) revert InsufficientAccount(account, have, amount);
+        require(have >= amount, unicode"Account is short / 账户余额不足");
         unchecked {
             balanceOf[account] = have - amount;
             totalAccounted -= amount;
@@ -254,7 +244,7 @@ contract AssayVault {
     ///      `asset`, and there is no code path that could ever credit a foreign token to one. A
     ///      caller can therefore read what a sweep would move before paying for it.
     function sweepable(IERC20 token) public view returns (uint256) {
-        if (address(token) == address(0)) revert ZeroAddress();
+        require(address(token) != address(0), unicode"Zero address / 零地址");
         if (token == asset) return unaccounted();
         return token.balanceOf(address(this));
     }
@@ -284,17 +274,17 @@ contract AssayVault {
     ///      much as one wei, the whole call reverts. An alias cannot pass that, and neither can a
     ///      token whose `transfer` re-enters and tries to take the accounted side with it.
     function sweepToken(IERC20 token) external nonReentrantSweep returns (uint256 amount) {
-        if (address(token) == address(0)) revert ZeroAddress();
+        require(address(token) != address(0), unicode"Zero address / 零地址");
         if (token == asset) return _sweepAsset();
 
         uint256 assetHeldBefore = asset.balanceOf(address(this));
         amount = token.balanceOf(address(this));
-        if (amount == 0) revert NothingUnaccounted();
+        require(amount != 0, unicode"Nothing unaccounted / 无未入账余额");
 
         token.safeTransfer(salvage, amount);
 
         // The only line standing between a foreign-token sweep and an aliased `asset`.
-        if (asset.balanceOf(address(this)) < assetHeldBefore) revert SweepTouchedAsset();
+        require(asset.balanceOf(address(this)) >= assetHeldBefore, unicode"Sweep touched the asset / 清扫动到了本币");
 
         emit SweptToken(address(token), salvage, amount);
     }
@@ -308,16 +298,16 @@ contract AssayVault {
     ///      thing about the salvage address that is worth checking at deploy time.
     function sweepNative() external nonReentrantSweep returns (uint256 amount) {
         amount = address(this).balance;
-        if (amount == 0) revert NothingUnaccounted();
+        require(amount != 0, unicode"Nothing unaccounted / 无未入账余额");
         (bool ok,) = salvage.call{value: amount}("");
-        if (!ok) revert NativeSweepFailed();
+        require(ok, unicode"Native sweep failed / 原生币清扫失败");
         emit SweptNative(salvage, amount);
     }
 
     /// @dev The surplus-only branch, shared by both entry points so the rule cannot drift apart.
     function _sweepAsset() private returns (uint256 amount) {
         amount = unaccounted();
-        if (amount == 0) revert NothingUnaccounted();
+        require(amount != 0, unicode"Nothing unaccounted / 无未入账余额");
         asset.safeTransfer(salvage, amount);
         emit SweptUnaccounted(salvage, amount);
     }

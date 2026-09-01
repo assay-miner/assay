@@ -77,7 +77,7 @@ contract BaselineTrustTest is Test {
     /// answerable by at least the program its difficulty was measured from.
     function test_AReferenceThatFailsItsOwnVectorsIsRejected() public {
         vm.prank(STRANGER);
-        vm.expectRevert(bytes4(keccak256("ReferenceFailsItsOwnVectors()")));
+        vm.expectRevert(bytes(unicode"Reference fails its own vectors / 参考实现跑不过自己的向量"));
         tournament.postTask(
             _vec(), _exp(), Bytecode.wrong(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
@@ -86,7 +86,7 @@ contract BaselineTrustTest is Test {
     /// Including one that reverts outright rather than answering wrongly.
     function test_ARevertingReferenceIsRejected() public {
         vm.prank(STRANGER);
-        vm.expectRevert(bytes4(keccak256("ReferenceFailsItsOwnVectors()")));
+        vm.expectRevert(bytes(unicode"Reference fails its own vectors / 参考实现跑不过自己的向量"));
         tournament.postTask(
             _vec(), _exp(), Bytecode.reverting(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );

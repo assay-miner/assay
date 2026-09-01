@@ -79,7 +79,7 @@ contract TournamentTest is BaseTest {
 
         vm.warp(revealEnd);
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.NoScore.selector);
+        vm.expectRevert(bytes(unicode"No score / 无得分"));
         tournament.claim(taskId);
     }
 
@@ -140,7 +140,7 @@ contract TournamentTest is BaseTest {
 
         // Now Carol has Alice's winning bytecode and salt in the clear. It does her no good.
         vm.prank(CAROL);
-        vm.expectRevert(Tournament.CommitmentMismatch.selector);
+        vm.expectRevert(bytes(unicode"Commitment mismatch / 承诺不匹配"));
         tournament.reveal(taskId, Bytecode.tight(), bytes32("a"));
     }
 
@@ -148,7 +148,7 @@ contract TournamentTest is BaseTest {
         _enroll(ALICE, AGENT_ALICE);
         _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32("a"));
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.AlreadyCommitted.selector);
+        vm.expectRevert(bytes(unicode"Already committed / 已提交承诺"));
         tournament.commit(taskId, _commitment(Bytecode.padded(), bytes32("z"), AGENT_ALICE));
     }
 
@@ -158,7 +158,7 @@ contract TournamentTest is BaseTest {
         vm.warp(commitEnd);
         _reveal(ALICE, Bytecode.tight(), bytes32("a"));
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.AlreadyRevealed.selector);
+        vm.expectRevert(bytes(unicode"Already revealed / 已揭示"));
         tournament.reveal(taskId, Bytecode.tight(), bytes32("a"));
     }
 
@@ -170,7 +170,7 @@ contract TournamentTest is BaseTest {
         _enroll(ALICE, AGENT_ALICE);
         vm.warp(commitEnd);
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.CommitClosed.selector);
+        vm.expectRevert(bytes(unicode"Commit window closed / 承诺窗口已关闭"));
         tournament.commit(taskId, _commitment(Bytecode.tight(), bytes32("a"), AGENT_ALICE));
     }
 
@@ -178,7 +178,7 @@ contract TournamentTest is BaseTest {
         _enroll(ALICE, AGENT_ALICE);
         _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32("a"));
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.NotInRevealWindow.selector);
+        vm.expectRevert(bytes(unicode"Not in the reveal window / 不在揭示窗口内"));
         tournament.reveal(taskId, Bytecode.tight(), bytes32("a"));
     }
 
@@ -187,7 +187,7 @@ contract TournamentTest is BaseTest {
         _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32("a"));
         vm.warp(revealEnd);
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.NotInRevealWindow.selector);
+        vm.expectRevert(bytes(unicode"Not in the reveal window / 不在揭示窗口内"));
         tournament.reveal(taskId, Bytecode.tight(), bytes32("a"));
     }
 
@@ -197,7 +197,7 @@ contract TournamentTest is BaseTest {
         vm.warp(commitEnd);
         _reveal(ALICE, Bytecode.tight(), bytes32("a"));
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.RevealNotClosed.selector);
+        vm.expectRevert(bytes(unicode"Reveal not closed / 揭示尚未结束"));
         tournament.claim(taskId);
     }
 
@@ -247,7 +247,7 @@ contract TournamentTest is BaseTest {
         vm.warp(commitEnd);
         _reveal(ALICE, Bytecode.tight(), bytes32("a"));
         vm.warp(revealEnd);
-        vm.expectRevert(Tournament.ClaimWindowOpen.selector);
+        vm.expectRevert(bytes(unicode"Claim window is open / 领取窗口未结束"));
         tournament.reclaim(taskId);
     }
 }

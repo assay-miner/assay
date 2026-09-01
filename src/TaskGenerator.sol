@@ -38,8 +38,6 @@ contract TaskGenerator is Initializable {
     /// @notice How many draws to try before giving up on this block's seed.
     uint256 public constant MAX_DRAWS = 32;
 
-    error NoUsableInstance();
-    error SeedUnavailable();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -65,7 +63,7 @@ contract TaskGenerator is Initializable {
         returns (uint256 taskId)
     {
         bytes32 seed = blockhash(block.number - 1);
-        if (seed == bytes32(0)) revert SeedUnavailable();
+        require(seed != bytes32(0), unicode"No seed / 无可用种子");
 
         // Redraw until the instance is usable, exactly as the off-chain generator does. Dropping
         // that loop was the first thing that broke here: a single draw collapses or has no slack
@@ -87,7 +85,7 @@ contract TaskGenerator is Initializable {
         // An explicit flag, not `draws == MAX_DRAWS`. Comparing the counter to the bound means the
         // guard silently stops working if the bound ever changes — and what slips through then is
         // not a revert but a posted task whose vectors collapse or whose baseline nothing can beat.
-        if (!found) revert NoUsableInstance();
+        require(found, unicode"No usable instance / 无可用实例");
 
         // Two refusals, both cheap, both about instances that would waste everybody's epoch.
         //

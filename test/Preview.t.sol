@@ -69,7 +69,7 @@ contract PreviewTest is BaseTest {
     }
 
     function test_PreviewOnAnUnknownTaskReverts() public {
-        vm.expectRevert(abi.encodeWithSelector(Tournament.UnknownTask.selector, uint256(999)));
+        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
         tournament.previewAssay(999, Bytecode.tight());
     }
 

@@ -144,8 +144,8 @@ raw comparison always differs there and nowhere else.
 | Path | Use |
 |---|---|
 | \`src/\` + \`foundry.toml\` | The repository layout. \`src/\` and \`foundry.toml\` are at the archive root, not inside a wrapper folder, so a tool that does not recurse still finds the contracts. |
-| `flat/*.flat.sol` | One self-contained file per audited contract, for portals that accept only that. Compile-checked in a clean project: identical runtime length to the repository build, differing only in the trailing CBOR metadata, which encodes source paths and therefore always changes when files are flattened. |
-| `standard-json/*.json` | The exact solc input. This is the only form that reproduces the deployed bytecode byte for byte. |
+| \`flat/*.flat.sol\` | One self-contained file per audited contract, for portals that accept only that. Compile-checked in a clean project: identical runtime length to the repository build, differing only in the trailing CBOR metadata, which encodes source paths and therefore always changes when files are flattened. |
+| \`standard-json/*.json\` | The exact solc input. This is the only form that reproduces the deployed bytecode byte for byte. |
 
 ## Reading order
 
@@ -205,6 +205,18 @@ EOF
 ( cd "$OUT" && zip -qr ../assay-vault-audit.zip . )
 echo "  $(ls -lh dist/assay-vault-audit.zip | awk '{print $5}')  dist/assay-vault-audit.zip"
 echo "  $(find "$OUT" -type f | wc -l | tr -d ' ') files"
+# The README is written through an unquoted heredoc, so it interpolates — which means a backtick
+# that is not escaped runs as a command and its output replaces the text. That has now silently
+# deleted a filename from the shipped README twice: once foundry.toml, once the two rows naming
+# flat/ and standard-json/. A reader just sees an empty table cell. Check the product, not the
+# template: an empty cell is the signature and nothing legitimate produces one.
+if grep -nE '^\|[[:space:]]*\|[[:space:]]*[^|[:space:]]' "$OUT/README.md" >/dev/null; then
+  echo "refusing to package: README.md has an empty table cell — an unescaped backtick in the" >&2
+  echo "heredoc ran as a command and ate the text. Escape it as \\\` and re-run." >&2
+  grep -nE '^\|[[:space:]]*\|[[:space:]]*[^|[:space:]]' "$OUT/README.md" >&2
+  exit 1
+fi
+
 echo
 echo "verifying the archive the way a reviewer will…"
 ./tools/verify-audit-package.sh dist/assay-vault-audit.zip

@@ -38,7 +38,7 @@ contract FreezeGateTest is Test {
         vault.addController(ATTACKER);
 
         vm.prank(ATTACKER);
-        vm.expectRevert(AssayVault.NotFrozen.selector);
+        vm.expectRevert(bytes(unicode"Controllers not frozen / 控制者尚未冻结"));
         vault.deposit(KIND, bytes32(uint256(uint160(ATTACKER))), VICTIM, 500e18);
 
         assertEq(token.balanceOf(VICTIM), 500e18, "victim untouched");
@@ -52,13 +52,13 @@ contract FreezeGateTest is Test {
         vault.addController(ATTACKER);
         vm.startPrank(ATTACKER);
 
-        vm.expectRevert(AssayVault.NotFrozen.selector);
+        vm.expectRevert(bytes(unicode"Controllers not frozen / 控制者尚未冻结"));
         vault.deposit(KIND, bytes32(0), VICTIM, 1);
 
-        vm.expectRevert(AssayVault.NotFrozen.selector);
+        vm.expectRevert(bytes(unicode"Controllers not frozen / 控制者尚未冻结"));
         vault.move(KIND, bytes32(0), KIND, bytes32(uint256(1)), 1);
 
-        vm.expectRevert(AssayVault.NotFrozen.selector);
+        vm.expectRevert(bytes(unicode"Controllers not frozen / 控制者尚未冻结"));
         vault.payOut(KIND, bytes32(0), ATTACKER, 1);
 
         vm.stopPrank();

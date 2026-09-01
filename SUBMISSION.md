@@ -117,24 +117,24 @@ Repository at `abfa000`.
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0x4D286aDa262281466903e79Eb2CF5a831441EE1F` |
+| Factory (the contract Flap audits) | `0x7E94BF3F4a881F1051b2724634E996918579C230` |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0x26cF5311E7E2B89C6d251ccA378fCC3AEBE0947D` |
-| Custody ledger | `0x84bDB06Dc31D1c73c55FC460f398FEB76810719c` |
-| Roster | `0xF17adAc45Ed749f816Ef573b730d296c2d4d83a6` |
+| Tournament | `0x2be2d3EA801f963eCDb3333D03dd3F5536162482` |
+| Custody ledger | `0xF51D65C209B63843550457b8a86cae894A1Df6bB` |
+| Roster | `0xf42993b5Cc8E055538C88BcD7C6c86f5D3E4763B` |
 | Deployer / curator | `0x8F1054643baF32fe6c06C5CA9B3a990197883D8b` |
 
 ## BNB Smart Chain testnet (97) — the proof deployment
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0xcB51E301ba9F0590BeE55873BF1912ec21503CF5` |
+| Factory (the contract Flap audits) | `0x7aa4BBdc94A69a7cc4924c6E354756731DbFA7bc` |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0xbf636Ac78535140d686BBb157fE5F9670d0A5774` |
-| Custody ledger | `0xf83B356FEF5Cee2c7b27734A8B84b3475e768096` |
-| Roster | `0x9F8CE82B6Fc7eA9eC4fA9A52A563455D45013551` |
+| Tournament | `0xd0266f3375162B38D810E6E58d4653Ac8a678775` |
+| Custody ledger | `0xCfa49923d7C08b0EC72a35d2Eb1029DB99DB5973` |
+| Roster | `0xA5F9486c8968a8014572c7bE40F2227414789746` |
 | Deployer / curator | `0x8F1054643baF32fe6c06C5CA9B3a990197883D8b` |
 
 <!-- deployments:end -->

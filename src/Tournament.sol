@@ -132,26 +132,6 @@ contract Tournament {
     event Claimed(uint256 indexed taskId, address indexed miner, uint256 amount);
     event Reclaimed(uint256 indexed taskId, address indexed poster, uint256 amount);
 
-    error NotCurator();
-    error NoVectors();
-    error TooManyVectors(uint256 count);
-    error BadGasCap(uint32 gasCap);
-    error BadBaseline();
-    error ReferenceFailsItsOwnVectors();
-    error BadWindow();
-    error EmptyPot();
-    error UnknownTask(uint256 taskId);
-    error CommitClosed();
-    error AlreadyCommitted();
-    error NotInRevealWindow();
-    error NothingCommitted();
-    error AlreadyRevealed();
-    error CommitmentMismatch();
-    error RevealNotClosed();
-    error NoScore();
-    error AlreadyClaimed();
-    error ClaimWindowOpen();
-    error AlreadyReclaimed();
 
     constructor(AssayVault vault_, AgentRoster roster_, address curator_) {
         vault = vault_;
@@ -191,17 +171,21 @@ contract Tournament {
         // fallback on every privileged function and the tournament had none at all.
         if (msg.sender != curator && msg.sender != _getGuardian()) {
         // Open posting, but only in the gap between tasks and only for a short window.
-        if (block.timestamp < latestRevealEnd) revert NotCurator();
-        if (uint256(revealEnd) > block.timestamp + OPEN_POST_MAX_SPAN) revert BadWindow();
+        require(block.timestamp >= latestRevealEnd, unicode"Not the curator / 非策展方");
+        require(
+                uint256(revealEnd) <= block.timestamp + OPEN_POST_MAX_SPAN,
+                unicode"Bad window / 时间窗口不合法"
+            );
     }
         uint256 n = inputs.length;
-        if (n == 0 || n != expected.length) revert NoVectors();
-        if (n > MAX_VECTORS) revert TooManyVectors(n);
-        if (gasCap == 0 || gasCap > MAX_GAS_CAP) revert BadGasCap(gasCap);
-        if (
-            commitEnd <= block.timestamp || revealEnd <= commitEnd
-                || uint256(revealEnd) > block.timestamp + MAX_TASK_SPAN
-        ) revert BadWindow();
+        require(n != 0 && n == expected.length, unicode"No vectors / 无测试向量");
+        require(n <= MAX_VECTORS, unicode"Too many vectors / 测试向量过多");
+        require(gasCap != 0 && gasCap <= MAX_GAS_CAP, unicode"Bad gas cap / gas 上限不合法");
+        require(
+            commitEnd > block.timestamp && revealEnd > commitEnd
+                && uint256(revealEnd) <= block.timestamp + MAX_TASK_SPAN,
+            unicode"Bad window / 时间窗口不合法"
+        );
 
         // The difficulty is measured here, not accepted here.
         //
@@ -221,8 +205,8 @@ contract Tournament {
         }
         (bool referenceOk, uint256 measured) =
             Crucible.assay(Crucible.deployRuntime(referenceRuntime), probe, gasCap);
-        if (!referenceOk) revert ReferenceFailsItsOwnVectors();
-        if (measured == 0 || measured > type(uint32).max) revert BadBaseline();
+        require(referenceOk, unicode"Reference fails its own vectors / 参考实现跑不过自己的向量");
+        require(measured != 0 && measured <= type(uint32).max, unicode"Bad baseline / 基准不合法");
         uint32 baselineGas = uint32(measured);
 
         taskId = ++taskCount;
@@ -263,11 +247,11 @@ contract Tournament {
     ///      commitment under a different agent id, and commitments are already closed by then.
     function commit(uint256 taskId, bytes32 commitment) external {
         Task storage t = tasks[taskId];
-        if (t.poster == address(0)) revert UnknownTask(taskId);
-        if (block.timestamp >= t.commitEnd) revert CommitClosed();
+        require(t.poster != address(0), unicode"No such task / 该任务不存在");
+        require(block.timestamp < t.commitEnd, unicode"Commit window closed / 承诺窗口已关闭");
 
         Submission storage s = submissions[taskId][msg.sender];
-        if (s.commitment != bytes32(0)) revert AlreadyCommitted();
+        require(s.commitment == bytes32(0), unicode"Already committed / 已提交承诺");
 
         uint256 agentId = roster.requireEnrolled(msg.sender);
         s.commitment = commitment;
@@ -281,17 +265,19 @@ contract Tournament {
     /// @notice Opens a sealed submission, runs it, and records its score.
     function reveal(uint256 taskId, bytes calldata runtime, bytes32 salt) external {
         Task storage t = tasks[taskId];
-        if (t.poster == address(0)) revert UnknownTask(taskId);
-        if (block.timestamp < t.commitEnd || block.timestamp >= t.revealEnd) {
-            revert NotInRevealWindow();
-        }
+        require(t.poster != address(0), unicode"No such task / 该任务不存在");
+        require(
+            block.timestamp >= t.commitEnd && block.timestamp < t.revealEnd,
+            unicode"Not in the reveal window / 不在揭示窗口内"
+        );
 
         Submission storage s = submissions[taskId][msg.sender];
-        if (s.commitment == bytes32(0)) revert NothingCommitted();
-        if (s.revealed) revert AlreadyRevealed();
-        if (keccak256(abi.encode(runtime, salt, uint256(s.agentId))) != s.commitment) {
-            revert CommitmentMismatch();
-        }
+        require(s.commitment != bytes32(0), unicode"Nothing committed / 没有承诺");
+        require(!s.revealed, unicode"Already revealed / 已揭示");
+        require(
+            keccak256(abi.encode(runtime, salt, uint256(s.agentId))) == s.commitment,
+            unicode"Commitment mismatch / 承诺不匹配"
+        );
         s.revealed = true;
 
         address impl = Crucible.deployRuntime(runtime);
@@ -322,12 +308,12 @@ contract Tournament {
     /// @notice Pays a scoring miner their share of the pot.
     function claim(uint256 taskId) external returns (uint256 amount) {
         Task storage t = tasks[taskId];
-        if (t.poster == address(0)) revert UnknownTask(taskId);
-        if (block.timestamp < t.revealEnd) revert RevealNotClosed();
+        require(t.poster != address(0), unicode"No such task / 该任务不存在");
+        require(block.timestamp >= t.revealEnd, unicode"Reveal not closed / 揭示尚未结束");
 
         Submission storage s = submissions[taskId][msg.sender];
-        if (s.score == 0) revert NoScore();
-        if (s.claimed) revert AlreadyClaimed();
+        require(s.score != 0, unicode"No score / 无得分");
+        require(!s.claimed, unicode"Already claimed / 已领取");
         s.claimed = true;
 
         amount = (uint256(t.pot) * s.score) / t.totalScore;
@@ -343,12 +329,13 @@ contract Tournament {
     ///      Available immediately when nothing scored, and after the claim window otherwise.
     function reclaim(uint256 taskId) external returns (uint256 amount) {
         Task storage t = tasks[taskId];
-        if (t.poster == address(0)) revert UnknownTask(taskId);
-        if (block.timestamp < t.revealEnd) revert RevealNotClosed();
-        if (t.reclaimed) revert AlreadyReclaimed();
-        if (t.totalScore != 0 && block.timestamp < t.revealEnd + CLAIM_WINDOW) {
-            revert ClaimWindowOpen();
-        }
+        require(t.poster != address(0), unicode"No such task / 该任务不存在");
+        require(block.timestamp >= t.revealEnd, unicode"Reveal not closed / 揭示尚未结束");
+        require(!t.reclaimed, unicode"Already reclaimed / 已回收");
+        require(
+            t.totalScore == 0 || block.timestamp >= t.revealEnd + CLAIM_WINDOW,
+            unicode"Claim window is open / 领取窗口未结束"
+        );
         t.reclaimed = true;
 
         amount = uint256(t.pot) - t.paidOut;
@@ -458,11 +445,15 @@ contract Tournament {
     /// @notice Live one-line status, polled by the UI as a banner.
     function description() external view returns (string memory) {
         uint256 n = taskCount;
-        if (n == 0) return "No task has been posted yet.";
+        if (n == 0) return unicode"No task has been posted yet. / 尚未发布任务。";
         Task storage t = tasks[n];
-        if (block.timestamp < t.commitEnd) return "A task is open. Commitments are being taken.";
-        if (block.timestamp < t.revealEnd) return "Commitments are closed. Submissions are being revealed and assayed.";
-        return "The latest task is settled. Winners may claim.";
+        if (block.timestamp < t.commitEnd) {
+            return unicode"A task is open. Commitments are being taken. / 任务进行中，正在接受提交承诺。";
+        }
+        if (block.timestamp < t.revealEnd) {
+            return unicode"Commitments are closed. Submissions are being revealed and assayed. / 承诺已截止，正在揭示并计量提交。";
+        }
+        return unicode"The latest task is settled. Winners may claim. / 最新一期已结算，获胜者可领取。";
     }
 
     // ---------------------------------------------------------------------------------------
@@ -486,7 +477,7 @@ contract Tournament {
         returns (bool passed, uint256 gasUsed, uint256 score)
     {
         Task storage t = tasks[taskId];
-        if (t.poster == address(0)) revert UnknownTask(taskId);
+        require(t.poster != address(0), unicode"No such task / 该任务不存在");
 
         address impl = Crucible.deployRuntime(runtime);
         (passed, gasUsed) = Crucible.assay(impl, _vectors[taskId], t.gasCap);

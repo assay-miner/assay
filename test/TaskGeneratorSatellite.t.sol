@@ -65,7 +65,7 @@ contract TaskGeneratorSatelliteTest is Test {
             uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
         vm.prank(STRANGER);
-        vm.expectRevert(bytes4(keccak256("NotCurator()")));
+        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
         generator.generateAndPost(60, 60);
     }
 
@@ -73,7 +73,7 @@ contract TaskGeneratorSatelliteTest is Test {
     function test_TheGeneratorCannotPostALongWindow() public {
         uint64 openSpan = tournament.OPEN_POST_MAX_SPAN();
         vm.prank(STRANGER);
-        vm.expectRevert(bytes4(keccak256("BadWindow()")));
+        vm.expectRevert(bytes(unicode"Bad window / 时间窗口不合法"));
         generator.generateAndPost(60, openSpan);
     }
 

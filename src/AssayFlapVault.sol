@@ -196,9 +196,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
             rewardToken = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8; // BTCB, BNB testnet
             routerAddr = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1; // PancakeSwap V2, testnet
             triggerAddr = 0x560E9830926C9e0EB98a59c6b9902383Fc0D9Eb2; // FlapTriggerService, testnet
-        } else {
-            revert(unicode"Unsupported chain / 不支持该链");
         }
+        require(rewardToken != address(0), unicode"Bad chain / 链不支持");
 
         reward = IERC20(rewardToken);
         router = IPancakeRouter02(routerAddr);
@@ -746,10 +745,14 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice Live status line, polled by the UI as a banner.
     function description() public view override returns (string memory) {
-        if (tournament.taskCount() == 0) return "No task has been posted yet.";
-        if (address(this).balance > 0) return "Tax is waiting to be converted behind a task.";
-        if (endowed > 0) return "A bounty is live. Beat the baseline to earn a share.";
-        return "All bounties have been collected.";
+        if (tournament.taskCount() == 0) return unicode"No task yet / 尚未发布任务";
+        if (address(this).balance > 0) {
+            return unicode"Tax unconverted / 税款待兑换";
+        }
+        if (endowed > 0) {
+            return unicode"Bounty live / 赏金进行中";
+        }
+        return unicode"Bounties collected / 赏金已领取";
     }
 
     // -------------------------------------------------------------------------------------

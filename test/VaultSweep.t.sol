@@ -157,12 +157,12 @@ contract VaultSweepTest is BaseTest {
 
     function test_SweepingAnEmptyForeignTokenReverts() public {
         StrayToken stray = new StrayToken(address(this), 1e18);
-        vm.expectRevert(AssayVault.NothingUnaccounted.selector);
+        vm.expectRevert(bytes(unicode"Nothing unaccounted / 无未入账余额"));
         vault.sweepToken(IERC20(address(stray)));
     }
 
     function test_ZeroTokenIsRejected() public {
-        vm.expectRevert(AssayVault.ZeroAddress.selector);
+        vm.expectRevert(bytes(unicode"Zero address / 零地址"));
         vault.sweepToken(IERC20(address(0)));
     }
 
@@ -192,7 +192,7 @@ contract VaultSweepTest is BaseTest {
 
         door.setBite(1);
         vm.prank(BOB);
-        vm.expectRevert(AssayVault.SweepTouchedAsset.selector);
+        vm.expectRevert(bytes(unicode"Sweep touched the asset / 清扫动到了本币"));
         v.sweepToken(IERC20(address(door)));
 
         assertEq(t.balanceOf(address(v)), 400e18, "not one wei left");
@@ -205,7 +205,7 @@ contract VaultSweepTest is BaseTest {
 
         door.setBite(400e18);
         vm.prank(BOB);
-        vm.expectRevert(AssayVault.SweepTouchedAsset.selector);
+        vm.expectRevert(bytes(unicode"Sweep touched the asset / 清扫动到了本币"));
         v.sweepToken(IERC20(address(door)));
 
         assertEq(t.balanceOf(address(v)), 400e18, "accounted funds still here");
@@ -231,7 +231,7 @@ contract VaultSweepTest is BaseTest {
         evil.transfer(address(vault), 100e18);
 
         vm.prank(BOB);
-        vm.expectRevert(AssayVault.SweepReentered.selector);
+        vm.expectRevert(bytes(unicode"Sweep reentered / 清扫重入"));
         vault.sweepToken(IERC20(address(evil)));
     }
 
@@ -260,7 +260,7 @@ contract VaultSweepTest is BaseTest {
     }
 
     function test_NativeSweepWithNothingToSweepReverts() public {
-        vm.expectRevert(AssayVault.NothingUnaccounted.selector);
+        vm.expectRevert(bytes(unicode"Nothing unaccounted / 无未入账余额"));
         vault.sweepNative();
     }
 
@@ -268,7 +268,7 @@ contract VaultSweepTest is BaseTest {
         TaxTokenMock t = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault v = new AssayVault(IERC20(address(t)), address(new RejectingSalvage()));
         vm.deal(address(v), 1 ether);
-        vm.expectRevert(AssayVault.NativeSweepFailed.selector);
+        vm.expectRevert(bytes(unicode"Native sweep failed / 原生币清扫失败"));
         v.sweepNative();
     }
 

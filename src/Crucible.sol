@@ -39,18 +39,14 @@ library Crucible {
         bytes32 expected;
     }
 
-    error RuntimeEmpty();
-    error RuntimeTooLarge(uint256 size);
-    error DeployFailed();
-    error InsufficientGas(uint256 available, uint256 required);
 
     /// @notice Deploys `runtime` verbatim as a contract with no constructor execution.
     /// @param runtime The exact bytes that will become the deployed contract's code.
     /// @return impl Address of the deployed submission.
     function deployRuntime(bytes memory runtime) internal returns (address impl) {
         uint256 n = runtime.length;
-        if (n == 0) revert RuntimeEmpty();
-        if (n > MAX_RUNTIME) revert RuntimeTooLarge(n);
+        require(n != 0, unicode"Runtime is empty / 运行码为空");
+        require(n <= MAX_RUNTIME, unicode"Runtime too large / 运行码过大");
 
         // PUSH4 n | DUP1 | PUSH1 14 | PUSH1 0 | CODECOPY | PUSH1 0 | RETURN
         // 14 bytes of prologue, then the payload. Copies payload to memory[0..n] and returns it.
@@ -59,7 +55,7 @@ library Crucible {
         assembly ("memory-safe") {
             impl := create(0, add(initcode, 0x20), mload(initcode))
         }
-        if (impl == address(0)) revert DeployFailed();
+        require(impl != address(0), unicode"Deploy failed / 部署失败");
     }
 
     /// @notice Runs every vector against `impl` and totals the gas burned.
@@ -80,7 +76,7 @@ library Crucible {
         // Fail loudly rather than let an under-funded call silently starve a correct submission
         // into looking like a failing one.
         uint256 required = (count * gasCap * GAS_HEADROOM_NUM) / GAS_HEADROOM_DEN + 50_000;
-        if (gasleft() < required) revert InsufficientGas(gasleft(), required);
+        require(gasleft() >= required, unicode"Not enough gas / gas 不足");
 
         uint256 total;
         for (uint256 i; i < count; ++i) {

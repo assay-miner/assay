@@ -128,7 +128,7 @@ contract DoubleSpendTest is BaseTest {
 
         // And a stranger still cannot — the fallback is a second key, not an open door.
         vm.prank(ALICE);
-        vm.expectRevert(bytes4(keccak256("NotCurator()")));
+        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
         tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
             uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
@@ -142,7 +142,7 @@ contract DoubleSpendTest is BaseTest {
     function test_ATaskCannotLockStakeForever() public {
         uint64 commitEnds = uint64(block.timestamp + 60);
         vm.prank(CURATOR);
-        vm.expectRevert(bytes4(keccak256("BadWindow()")));
+        vm.expectRevert(bytes(unicode"Bad window / 时间窗口不合法"));
         tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnds, type(uint64).max, 0);
     }
 

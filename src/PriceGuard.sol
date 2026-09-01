@@ -25,7 +25,6 @@ contract PriceGuard {
     /// @notice The most a conversion may move the pool against itself.
     uint256 public constant MAX_SLIPPAGE_BPS = 300;
 
-    error UnsupportedChain(uint256 chainId);
 
     constructor() {
         uint256 chainId = block.chainid;
@@ -37,9 +36,8 @@ contract PriceGuard {
         } else if (chainId == 97) {
             rewardToken = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8;
             routerAddr = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1;
-        } else {
-            revert UnsupportedChain(chainId);
         }
+        require(routerAddr != address(0), unicode"Bad chain / 链不支持");
         reward = IERC20(rewardToken);
         router = IPancakeRouter02(routerAddr);
         wrappedNative = IPancakeRouter02(routerAddr).WETH();

@@ -11,7 +11,7 @@ contract RosterTest is BaseTest {
         // Alice does not own agent 99 and was never authorised for it.
         vm.startPrank(ALICE);
         token.approve(address(vault), type(uint256).max);
-        vm.expectRevert(abi.encodeWithSelector(AgentRoster.NotAuthorizedForAgent.selector, ALICE, 99));
+        vm.expectRevert(bytes(unicode"Not authorised for this agent / 无该 agent 的权限"));
         roster.enroll(99, MIN_STAKE);
         vm.stopPrank();
     }
@@ -39,7 +39,7 @@ contract RosterTest is BaseTest {
         vm.startPrank(BOB);
         token.approve(address(vault), type(uint256).max);
         vm.expectRevert(
-            abi.encodeWithSelector(AgentRoster.AgentAlreadyBound.selector, AGENT_ALICE, ALICE)
+            bytes(unicode"Agent already bound / agent 已被绑定")
         );
         roster.enroll(AGENT_ALICE, MIN_STAKE);
         vm.stopPrank();
@@ -49,7 +49,7 @@ contract RosterTest is BaseTest {
         vm.startPrank(ALICE);
         token.approve(address(vault), type(uint256).max);
         vm.expectRevert(
-            abi.encodeWithSelector(AgentRoster.StakeBelowMinimum.selector, MIN_STAKE - 1, MIN_STAKE)
+            bytes(unicode"Stake below minimum / 质押低于下限")
         );
         roster.enroll(AGENT_ALICE, MIN_STAKE - 1);
         vm.stopPrank();
@@ -57,7 +57,7 @@ contract RosterTest is BaseTest {
 
     function test_UnenrolledCannotCommit() public {
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(AgentRoster.NotEnrolled.selector, ALICE));
+        vm.expectRevert(bytes(unicode"Not enrolled / 未注册"));
         tournament.commit(taskId, _commitment(Bytecode.tight(), bytes32("a"), AGENT_ALICE));
     }
 
@@ -68,7 +68,7 @@ contract RosterTest is BaseTest {
         _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32("a"));
 
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(AgentRoster.StakeLockedUntil.selector, revealEnd));
+        vm.expectRevert(bytes(unicode"Stake is locked / 质押锁定中"));
         roster.withdraw();
 
         vm.warp(revealEnd);
@@ -96,19 +96,19 @@ contract RosterTest is BaseTest {
     function test_OnlyTournamentCanLockStake() public {
         _enroll(ALICE, AGENT_ALICE);
         vm.prank(ALICE);
-        vm.expectRevert(AgentRoster.NotConsumer.selector);
+        vm.expectRevert(bytes(unicode"Not the consumer / 非消费者"));
         roster.lockUntil(ALICE, uint64(block.timestamp + 1 days));
     }
 
     function test_ConsumerFrozenAfterFirstSet() public {
         // As the deployer: the freeze is what must stop this, not the caller check in front of it.
-        vm.expectRevert(AgentRoster.ConsumerAlreadyFrozen.selector);
+        vm.expectRevert(bytes(unicode"Consumer is frozen / 消费者已冻结"));
         roster.setConsumer(address(0xdead));
     }
 
     function test_OnlyCuratorPostsTasks() public {
         vm.prank(ALICE);
-        vm.expectRevert(Tournament.NotCurator.selector);
+        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
         tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnd, revealEnd, POT);
     }
 }

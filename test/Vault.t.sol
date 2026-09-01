@@ -63,11 +63,11 @@ contract VaultTest is BaseTest {
     /// An address that was never wired in can do nothing at all.
     function test_NonControllerCanDoNothing() public {
         vm.startPrank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(AssayVault.NotController.selector, BOB));
+        vm.expectRevert(bytes(unicode"Not a controller / 非控制者"));
         vault.deposit("stake", bytes32(0), BOB, 1);
-        vm.expectRevert(abi.encodeWithSelector(AssayVault.NotController.selector, BOB));
+        vm.expectRevert(bytes(unicode"Not a controller / 非控制者"));
         vault.payOut("stake", bytes32(0), BOB, 1);
-        vm.expectRevert(abi.encodeWithSelector(AssayVault.NotController.selector, BOB));
+        vm.expectRevert(bytes(unicode"Not a controller / 非控制者"));
         vault.move("stake", bytes32(0), "stake", bytes32(uint256(1)), 1);
         vm.stopPrank();
     }
@@ -91,7 +91,7 @@ contract VaultTest is BaseTest {
 
         // Against the REAL vault it is not even a controller.
         vm.expectRevert(
-            abi.encodeWithSelector(AssayVault.NotController.selector, address(hostile))
+            bytes(unicode"Not a controller / 非控制者")
         );
         hostile.tryPayOut("stake", bytes32(uint256(uint160(ALICE))), address(hostile), MIN_STAKE);
 
@@ -126,12 +126,12 @@ contract VaultTest is BaseTest {
         assertEq(v.balanceOf(thiefAccount), 0, "same arguments, different account");
 
         vm.expectRevert(
-            abi.encodeWithSelector(AssayVault.InsufficientAccount.selector, thiefAccount, 0, 500e18)
+            bytes(unicode"Account is short / 账户余额不足")
         );
         thief.tryPayOut("stake", bytes32(uint256(uint160(ALICE))), address(thief), 500e18);
 
         vm.expectRevert(
-            abi.encodeWithSelector(AssayVault.InsufficientAccount.selector, thiefAccount, 0, 500e18)
+            bytes(unicode"Account is short / 账户余额不足")
         );
         thief.tryMove("stake", bytes32(uint256(uint160(ALICE))), 500e18);
 
@@ -158,7 +158,7 @@ contract VaultTest is BaseTest {
 
         bytes32 bAcct = v.accountId(address(b), "x", bytes32(0));
         vm.expectRevert(
-            abi.encodeWithSelector(AssayVault.InsufficientAccount.selector, bAcct, 100e18, 400e18)
+            bytes(unicode"Account is short / 账户余额不足")
         );
         b.tryOverdraw("x", bytes32(0), address(b), 400e18);
     }
@@ -212,7 +212,7 @@ contract VaultTest is BaseTest {
         assertEq(vault.balanceOf(roster.stakeAccount(ALICE)), MIN_STAKE, "stake untouched");
         assertTrue(vault.solvent(), "still solvent");
 
-        vm.expectRevert(AssayVault.NothingUnaccounted.selector);
+        vm.expectRevert(bytes(unicode"Nothing unaccounted / 无未入账余额"));
         vault.sweepUnaccounted();
     }
 
@@ -222,7 +222,7 @@ contract VaultTest is BaseTest {
 
     function test_ControllersCannotBeAddedAfterFreeze() public {
         assertTrue(vault.controllersFrozen(), "frozen at deploy");
-        vm.expectRevert(AssayVault.AlreadyFrozen.selector);
+        vm.expectRevert(bytes(unicode"Controllers are frozen / 控制者已冻结"));
         vault.addController(address(0xBAD));
         assertFalse(vault.isController(address(0xBAD)), "not a controller");
     }
@@ -230,10 +230,10 @@ contract VaultTest is BaseTest {
     function test_OnlyDeployerCouldEverHaveWired() public {
         AssayVault v = new AssayVault(IERC20(address(token)), SALVAGE);
         vm.prank(BOB);
-        vm.expectRevert(AssayVault.NotDeployer.selector);
+        vm.expectRevert(bytes(unicode"Not the deployer / 非部署者"));
         v.addController(BOB);
         vm.prank(BOB);
-        vm.expectRevert(AssayVault.NotDeployer.selector);
+        vm.expectRevert(bytes(unicode"Not the deployer / 非部署者"));
         v.freeze();
     }
 }

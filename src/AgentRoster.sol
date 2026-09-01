@@ -53,16 +53,6 @@ contract AgentRoster {
     event Withdrawn(address indexed miner, uint256 indexed agentId, uint256 amount);
     event ConsumerSet(address indexed consumer);
 
-    error NotDeployer();
-    error ConsumerAlreadyFrozen();
-    error NotConsumer();
-    error ZeroAgentId();
-    error NotAuthorizedForAgent(address miner, uint256 agentId);
-    error AgentAlreadyBound(uint256 agentId, address boundTo);
-    error AlreadyEnrolled(address miner);
-    error NotEnrolled(address miner);
-    error StakeBelowMinimum(uint256 provided, uint256 required);
-    error StakeLockedUntil(uint64 lockedUntil);
 
     constructor(IIdentityRegistry registry, AssayVault vault_, uint256 minStake_) {
         identityRegistry = registry;
@@ -78,8 +68,8 @@ contract AgentRoster {
 
     /// @notice Names the tournament allowed to lock stake, once.
     function setConsumer(address consumer_) external {
-        if (msg.sender != deployer) revert NotDeployer();
-        if (consumerFrozen) revert ConsumerAlreadyFrozen();
+        require(msg.sender == deployer, unicode"Not the deployer / 非部署者");
+        require(!consumerFrozen, unicode"Consumer is frozen / 消费者已冻结");
         consumer = consumer_;
         consumerFrozen = true;
         emit ConsumerSet(consumer_);
@@ -87,15 +77,16 @@ contract AgentRoster {
 
     /// @notice Binds `msg.sender` to `agentId` and takes the stake.
     function enroll(uint256 agentId, uint256 stake) external {
-        if (agentId == 0) revert ZeroAgentId();
-        if (_enrolments[msg.sender].agentId != 0) revert AlreadyEnrolled(msg.sender);
+        require(agentId != 0, unicode"Agent id is zero / agent 编号为零");
+        require(_enrolments[msg.sender].agentId == 0, unicode"Already enrolled / 已注册");
 
         address bound = minerOf[agentId];
-        if (bound != address(0)) revert AgentAlreadyBound(agentId, bound);
-        if (!identityRegistry.isAuthorizedOrOwner(msg.sender, agentId)) {
-            revert NotAuthorizedForAgent(msg.sender, agentId);
-        }
-        if (stake < minStake) revert StakeBelowMinimum(stake, minStake);
+        require(bound == address(0), unicode"Agent already bound / agent 已被绑定");
+        require(
+            identityRegistry.isAuthorizedOrOwner(msg.sender, agentId),
+            unicode"Not authorised for this agent / 无该 agent 的权限"
+        );
+        require(stake >= minStake, unicode"Stake below minimum / 质押低于下限");
 
         _enrolments[msg.sender] = Enrolment({agentId: agentId, stake: stake, lockedUntil: 0});
         minerOf[agentId] = msg.sender;
@@ -107,7 +98,7 @@ contract AgentRoster {
     /// @notice Tops up an existing stake.
     function addStake(uint256 amount) external {
         Enrolment storage e = _enrolments[msg.sender];
-        if (e.agentId == 0) revert NotEnrolled(msg.sender);
+        require(e.agentId != 0, unicode"Not enrolled / 未注册");
         e.stake += amount;
         vault.deposit(KIND_STAKE, bytes32(uint256(uint160(msg.sender))), msg.sender, amount);
         emit StakeIncreased(msg.sender, amount, e.stake);
@@ -116,9 +107,9 @@ contract AgentRoster {
     /// @notice Called by the tournament when a miner commits, so stake stays at risk for the
     ///         duration of the round it is backing.
     function lockUntil(address miner, uint64 until) external {
-        if (msg.sender != consumer) revert NotConsumer();
+        require(msg.sender == consumer, unicode"Not the consumer / 非消费者");
         Enrolment storage e = _enrolments[miner];
-        if (e.agentId == 0) revert NotEnrolled(miner);
+        require(e.agentId != 0, unicode"Not enrolled / 未注册");
         if (until > e.lockedUntil) {
             e.lockedUntil = until;
             emit StakeLocked(miner, until);
@@ -130,8 +121,8 @@ contract AgentRoster {
     ///      agentId on the submission itself, so a withdrawal cannot strand a pending claim.
     function withdraw() external {
         Enrolment memory e = _enrolments[msg.sender];
-        if (e.agentId == 0) revert NotEnrolled(msg.sender);
-        if (block.timestamp < e.lockedUntil) revert StakeLockedUntil(e.lockedUntil);
+        require(e.agentId != 0, unicode"Not enrolled / 未注册");
+        require(block.timestamp >= e.lockedUntil, unicode"Stake is locked / 质押锁定中");
 
         delete _enrolments[msg.sender];
         delete minerOf[e.agentId];
@@ -143,7 +134,7 @@ contract AgentRoster {
     /// @notice Reverts unless `miner` is enrolled; returns the bound agent id.
     function requireEnrolled(address miner) external view returns (uint256 agentId) {
         agentId = _enrolments[miner].agentId;
-        if (agentId == 0) revert NotEnrolled(miner);
+        require(agentId != 0, unicode"Not enrolled / 未注册");
     }
 
     function enrolmentOf(address miner) external view returns (Enrolment memory) {
