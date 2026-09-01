@@ -54,6 +54,6 @@ Shortening some labels was necessary rather than cosmetic: the factory embeds th
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x2be2d3EA801f963eCDb3333D03dd3F5536162482` | `0xAa3EC76ACf14efb15C75fb9F01cb16F8A61F9C94` |
-| `Tournament` | `0xb7c1A8ccfc95Cd0B7bEdd53228dC65d1a95Df44d` | `0x31A19fddE5ab164EA790ffcAc25CbeB65658c1d0` |
+| `AssayFlapFactory` | `0x31A19fddE5ab164EA790ffcAc25CbeB65658c1d0` | `0xFC554b1019A25Bb06472AcC29E0682B8fC337369` |
+| `Tournament` | `0x9835c808D621f892C512DA34B8F27009924044D3` | `0x20b12D32f64c2e60a25E6E6828fF0AC39ee42d25` |
 | Tax token | not launched | not launched |
