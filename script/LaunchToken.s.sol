@@ -63,8 +63,16 @@ contract LaunchToken is Script {
         require(flapVault.code.length > 0, "vault has no code");
         require(AssayFlapVault(payable(flapVault)).taxToken() == taxToken, "vault bound elsewhere");
 
+        // Chain the two new addresses back into the manifest. Without this the launch succeeds and
+        // every command after it still reads zero: post, exit and the frontend all take taxToken and
+        // flapVault from here, and a manifest that says 0x0 is not "no token yet", it is a launched
+        // token nothing can reach. Written per key so the rest of the manifest survives untouched.
+        vm.writeJson(vm.toString(taxToken), path, ".taxToken");
+        vm.writeJson(vm.toString(flapVault), path, ".flapVault");
+
         console2.log("taxToken   ", taxToken);
         console2.log("flapVault  ", flapVault);
         console2.log("factory    ", factory);
+        console2.log("manifest   ", path);
     }
 }
