@@ -348,4 +348,33 @@ contract TriggerEndowTest is BaseTest {
         assertGt(flap.rewardPool(), 0, "the conversion was undone by the failed arming");
         assertEq(flap.reserved(), 0, "a reservation survived an epoch that armed nothing");
     }
+
+    /// @notice A window too small to be worth its own fee is not converted at the vault's expense.
+    /// @dev The self-arming path pays the scheduler out of the vault's balance, which is tax. At
+    ///      one epoch every five minutes that is 288 fees a day, so a vault nobody is trading
+    ///      against would spend more converting than it converted. A thin window waits and rolls
+    ///      into the next one instead.
+    function test_AWindowWorthLessThanItsFeeIsNotArmed() public {
+        _tax(0.05 ether);
+        uint256 fee = flap.schedulerFee();
+        vm.deal(ALICE, fee);
+        vm.prank(ALICE);
+        uint256 id = flap.triggerConversion{value: fee}();
+
+        // A dust window arrives before the first conversion executes: below the cover multiple.
+        _tax(fee);
+
+        vm.recordLogs();
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 wanted = keccak256("ConversionScheduled(uint256,uint256,uint256)");
+        uint256 armed;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(flap) && logs[i].topics[0] == wanted) ++armed;
+        }
+        assertEq(armed, 0, "the vault paid a fee to convert less than the fee");
+        assertGt(flap.rewardPool(), 0, "the conversion itself did not land");
+    }
 }

@@ -11,7 +11,11 @@
 
 ## Executive Summary
 
-`AssayFlapVault` turns a Flap taxed-V3 token's trading tax into BTCB prize money for a gas-optimisation tournament. Tax arrives as native BNB through `receive()`; the curator converts it to BTCB and books it behind a specific task; a miner the tournament has scored collects their share.
+`AssayFlapVault` turns a Flap taxed-V3 token's trading tax into BTCB prize money for a gas-optimisation tournament. Tax arrives as native BNB through `receive()`. Anyone may schedule its conversion to BTCB — the
+vault sizes it, prices it and hands it to Flap's Trigger Service, and the callback arms the next
+epoch, so the cadence needs nobody to run it. The BTCB lands in a pool belonging to no task, and
+anyone may hand a task the whole pool. A miner the tournament has scored collects their share, and
+anything nobody claims goes back to the pool.
 
 No Critical or High findings remain open. Every mandatory rule in the checker's list is satisfied. The two Medium findings are both disclosures rather than defects: one is the Guardian authority Rule 009 itself requires, and one is the residual sandwich exposure on a privileged swap that no in-contract bound fully removes.
 
@@ -85,7 +89,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 #### M-02: The privileged swap was sandwichable by the party who priced it — resolved
 **Severity**: Medium
 **Status**: Resolved — the conversion is no longer submitted by the party that prices it
-**File**: `src/AssayFlapVault.sol` — `scheduleEndow`, `trigger`, `endow`
+**File**: `src/AssayFlapVault.sol` — `triggerConversion`, `trigger`, `endow`
 
 **What it was.** `endow` let the curator price a swap and broadcast it in the same transaction.
 The slippage floor was bounded to 3% below spot, which closed the case of a caller simply
@@ -98,9 +102,9 @@ conversion from assignment.
 than either. The problem was never really the arithmetic; it was that one party priced, submitted
 and could surround the swap. Splitting those apart removes it:
 
-- `scheduleEndow(taskId, bnbAmount, minRewardOut)` is the curator's only conversion path. It
-  registers the intent, bounds the floor against spot at that moment, and pays the scheduler's
-  fee. It does not touch the pool.
+- `triggerConversion()` takes nothing and is open to anybody. It sizes the conversion from the
+  window's accrual, bounds the floor against spot at that moment, and pays the scheduler's fee. It
+  does not touch the pool.
 - `trigger(requestId)` is the callback. The transaction that swaps is submitted by Flap's backend
   through an MEV-protected path, at a time the curator cannot predict. There is no ordering left
   for them to arrange around, and nothing in the public mempool for anyone else to race.
@@ -207,12 +211,11 @@ Published rather than documented on purpose. A chunk size written into a documen
 that goes stale the moment liquidity moves in either direction, and pre-audit review flagged
 exactly that objection against a hardcoded cap.
 
-**What remains.** Conversion still depends on the curator or the Guardian calling `scheduleEndow`.
-Nothing is at risk while they do not — unconverted tax is owed to nobody, and `withdrawUnconverted`
-returns it — but the vault's purpose stalls, and a balance above `maxConvertible()` now has to be
-converted in more than one call. A permissionless `pokeSchedule()` on a fixed interval would
-remove the discretion; it is not shipped, because the version suggested in review puts an external
-call inside `receive()`, and a `receive()` that can fail breaks tax collection permanently.
+**What remained, and no longer does.** Conversion used to depend on the curator or the Guardian
+calling it, which stalled the vault's purpose whenever they did not. It is open to anybody now, and
+the callback arms the next epoch itself, so it does not depend on anybody in particular either. A
+balance above `maxConvertible()` still converts across more than one epoch, by design — that bound
+is the price-impact ceiling and not a scheduling limit.
 
 ### Info
 
@@ -280,24 +283,27 @@ There is no owner, no admin role and no mutable parameter. Two addresses have ca
 
 | Actor | Can | Cannot |
 |---|---|---|
-| Curator (token creator, fixed at creation) | Schedule a conversion into a task; post a task of any legal length; reclaim a bounty nobody won, on the tournament's own terms | Withdraw unconverted tax as a permission — the epoch's state governs that, not the caller; name a recipient for anything; reach a scored miner's share; change any parameter |
+| Curator (token creator, fixed at creation) | Post tasks of any legal length | Convert anything, size a conversion, choose which task is funded, or receive an unclaimed bounty — none of those are permissions any more, they are readings of state that anybody may act on | Withdraw unconverted tax as a permission — the epoch's state governs that, not the caller; name a recipient for anything; reach a scored miner's share; change any parameter |
 | Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus post a task if the curator's key is lost, plus the Rule 009 emergency drain | Be replaced or revoked; withdraw a window that is still open |
 | Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller; **post the next task once the previous one has settled**, for a window of at most `OPEN_POST_MAX_SPAN` | Settle a window while its task is still open; post while a task is live; post a window longer than ten minutes |
 
-**Unclaimed rewards.** A bounty nobody holds is two different situations and they are told apart
-by whether anybody scored. A window that drew no winner at all is the empty-window case this
-protocol is built around, and it settles to the project. A bounty somebody won and never collected
-was earned by a miner; after review asked for it, it is neither the project's nor written off —
-it stays in the vault as `rolledOver` and the next task funded absorbs it, with nobody choosing
-that. `endowed` does not fall in that case, because the BTCB never leaves.
+**Unclaimed rewards go back to the pool, all of them.** This paid the curator once, then paid the
+curator only when nobody had scored, and now pays nobody at all. Review pushed twice and the second
+push was right: once the project no longer chooses which task is funded or how much, "the project's
+share" has nothing left to mean. `reclaimBounty` needs no permission either, because there is no
+destination left to protect — the BTCB does not leave the vault and `endowed` does not move. The
+project earns from the tournament the same way anybody does, by mining it.
 
-Three things are still the curator's to decide and are not yet automated: how much accrued tax a
-conversion takes, which task receives it, and when it happens. The same review asked for all three
-to follow on-chain rules instead. They are one question rather than three — a rule that funds a
-task automatically has to answer all of them at once — and they are being taken together in a
-following change rather than half-answered here. What has shipped in that direction so far is
-narrower and worth naming precisely: the withdrawal is a condition rather than a permission, open
-posting needs no permission at all, and the rollover above moves without anyone directing it.
+`withdrawUnconverted` still pays the curator, and that is the one place the old rule survives: tax
+that no task was ever opened against was never the tournament's to begin with. It is gated on the
+epoch having closed, and anybody may trigger it.
+
+Nothing about funding is the curator's to decide any longer. How much a conversion takes is the
+window's whole accrual bounded by the impact ceiling; which task receives it is not asked, because
+a conversion names none; when it happens is one epoch after the last, armed from inside the
+callback. The self-arming path pays the scheduler out of tax, so it refuses a window worth less
+than ten fees — otherwise a vault nobody trades against would spend more converting than it
+converted, 288 times a day.
 
 `TaskGenerator.generateAndPost()` is how an address with no tooling posts one: it takes no task
 parameters, seeds from the previous block's hash, and draws, evaluates and compiles the whole task

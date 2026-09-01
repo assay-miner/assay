@@ -114,11 +114,12 @@ contract NotStuckTest is BaseTest {
         assertEq(uint256(block.timestamp), uint256(commitEnds) + 60, "epoch is not two minutes");
 
         uint256 before = IERC20(BTCB).balanceOf(CURATOR);
-        vm.prank(CURATOR);
+        vm.prank(ALICE);
         uint256 got = flap.reclaimBounty(id);
 
         assertEq(got, pot, "the empty epoch did not settle in full");
-        assertEq(IERC20(BTCB).balanceOf(CURATOR), before + pot, "it did not arrive");
+        assertEq(flap.rewardPool(), pot, "it did not return to the pool");
+        assertEq(IERC20(BTCB).balanceOf(CURATOR), before, "it reached the curator");
         assertTrue(flap.solvent());
     }
 
@@ -245,20 +246,27 @@ contract NotStuckTest is BaseTest {
 
     // ------------------------------------------------ a task nobody entered
 
-    /// @notice A bounty on a task that drew no submissions returns once reveal closes.
-    function test_AnUnwonBountyComesBack() public {
+    /// @notice A bounty on a task that drew no submissions returns to the pool once reveal closes.
+    /// @dev It used to reach the curator. Review pushed back twice and the second push was right:
+    ///      once the project no longer chooses which task is funded or how much, "the project's
+    ///      share" has nothing left to mean. The money the tournament raised stays in the
+    ///      tournament, and the project earns it back the same way anybody does — by mining.
+    function test_AnUnwonBountyReturnsToThePool() public {
         _tax(0.05 ether);
         uint256 pot = _endow(_within(0.05 ether));
 
         vm.warp(revealEnd + 1);
-        uint256 before = IERC20(BTCB).balanceOf(CURATOR);
+        uint256 curatorBefore = IERC20(BTCB).balanceOf(CURATOR);
+        uint256 vaultBefore = IERC20(BTCB).balanceOf(address(flap));
 
-        vm.prank(CURATOR);
+        // No permission: there is no destination left to protect.
+        vm.prank(ALICE);
         uint256 got = flap.reclaimBounty(taskId);
 
-        assertEq(got, pot, "not all of it came back");
-        assertEq(IERC20(BTCB).balanceOf(CURATOR), before + pot, "it did not arrive");
-        assertEq(flap.endowed(), 0, "the ledger still claims it is funded");
+        assertEq(got, pot, "not all of it moved");
+        assertEq(flap.rewardPool(), pot, "it did not return to the pool");
+        assertEq(IERC20(BTCB).balanceOf(CURATOR), curatorBefore, "it reached the curator");
+        assertEq(IERC20(BTCB).balanceOf(address(flap)), vaultBefore, "it left the vault");
         assertTrue(flap.solvent());
     }
 
@@ -330,13 +338,14 @@ contract NotStuckTest is BaseTest {
         flap.reclaimBounty(taskId);
     }
 
-    function test_OnlyTheCuratorOrGuardianReclaims() public {
+    /// @notice Reclaiming needs no permission, because it moves nothing anybody could redirect.
+    function test_AnyoneMayReclaim() public {
         _tax(0.05 ether);
-        _endow(_within(0.05 ether));
+        uint256 pot = _endow(_within(0.05 ether));
         vm.warp(revealEnd + 1);
 
-        vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
-        flap.reclaimBounty(taskId);
+        vm.prank(address(0x571A));
+        assertEq(flap.reclaimBounty(taskId), pot, "a stranger could not settle a finished task");
+        assertEq(flap.rewardPool(), pot, "it went somewhere other than the pool");
     }
 }

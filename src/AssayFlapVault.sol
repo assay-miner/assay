@@ -109,6 +109,12 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      them well.
     uint256 public constant CONVERSION_INTERVAL = 5 minutes;
 
+    /// @notice How many scheduler fees a window must be worth before the vault pays to convert it.
+    /// @dev The cadence funds itself out of the tax it converts, so it has to be worth paying for.
+    ///      Ten leaves the fee under a tenth of what moves; below that the vault is buying its own
+    ///      activity. A window under this simply waits and rolls into the next one.
+    uint256 public constant FEE_COVER_MULTIPLE = 10;
+
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
 
@@ -303,7 +309,13 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         uint256 amount = freeTax() - incoming;
         uint256 cap = maxConvertible();
         if (amount > cap) amount = cap;
-        if (amount == 0 || amount > type(uint128).max) return 0;
+        // Worth doing, not merely possible. The self-arming path pays the scheduler out of this
+        // balance, which is tax — so a window that accrued less than the fee costs more to convert
+        // than it converts, and at one epoch every five minutes that is 288 fees a day quietly
+        // draining a vault nobody is trading against. The manual path pays its own fee and is not
+        // bound by this; only the arming that spends tax is.
+        if (amount <= fee * FEE_COVER_MULTIPLE) return 0;
+        if (amount > type(uint128).max) return 0;
         if (priceGuard.impactBps(amount) > MAX_ENDOW_SLIPPAGE_BPS) return 0;
 
         uint256 floorOut = (quote(amount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
@@ -538,22 +550,22 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         emit UnconvertedWithdrawn(curator, sent);
     }
 
-    /// @notice Returns a bounty nobody won to the curator, on the tournament's own terms.
+    /// @notice Returns a finished task's unclaimed remainder to the pool. Callable by anyone.
     ///
-    /// @dev The tournament already has this: `reclaim` gives an unwon pot back to whoever posted
-    ///      it, immediately if nothing scored and after the claim window if something did. The
-    ///      BTCB side had no such path, and the asymmetry was the dangerous half. A task that
-    ///      draws no submissions is the ordinary outcome for a hard baseline, and without this
-    ///      the tax behind it was locked forever with only Flap's Guardian able to move it —
-    ///      which turns a quiet miner turnout into a permanent loss.
+    /// @dev This paid the curator once, then paid the curator only when nobody had scored, and now
+    ///      pays nobody. Review pushed twice, and the second push was right: a bounty nobody
+    ///      claimed is money the tournament raised, and there is no reading of "the project's
+    ///      share" that survives the project no longer choosing which task got funded or how much.
+    ///      It goes back into `rewardPool` and funds a later task.
     ///
-    ///      The conditions are the tournament's, not a second set invented here: reveal must be
-    ///      closed, and if anything scored the claim window must also have passed, so a miner who
-    ///      earned a share can never be raced by the curator reclaiming it out from under them.
-    ///      What moves is the remainder — `bounty - paid` — and it can only go to the curator.
+    ///      Which also empties the function of decisions, so it needs no permission. There is no
+    ///      destination to protect: the BTCB does not leave the vault, `endowed` does not move, and
+    ///      a caller pays gas to settle a task that has already ended.
+    ///
+    ///      The conditions are still the tournament's own. Reveal must have closed, and if anybody
+    ///      scored, the claim window must have passed too — so this can never race a miner who is
+    ///      on their way to collect.
     function reclaimBounty(uint256 taskId) external nonReentrant returns (uint256 amount) {
-        require(msg.sender == curator || msg.sender == _getGuardian(),
-            unicode"Only the curator / 仅限策展方");
         _requireTask(taskId);
 
         (, , uint64 revealEnd, , , , , uint256 totalScore, ) = tournament.tasks(taskId);
@@ -566,24 +578,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         amount = bounty[taskId] - paid[taskId];
         require(amount > 0, unicode"Nothing left / 已无剩余");
 
-        // Booked as paid either way, so the ledger cannot hand the same BTCB out twice. Where it
-        // goes depends on why nobody holds it, and those are two different situations:
-        //
-        // Nobody scored. The window drew no winner at all, so this is the empty-window case the
-        // protocol is built around — it belongs to the project, and `endowed` falls by what left.
-        //
-        // Somebody scored and never collected. A miner earned this and walked away from it. It is
-        // not the project's, and after a review asked for it, it is not written off either: it
-        // stays here and funds a later task. `endowed` does not move, because the BTCB does not.
+        // Booked as paid so the ledger cannot hand the same BTCB out twice. `endowed` does not
+        // move, because the BTCB does not — it only stops belonging to this task.
         paid[taskId] += amount;
-        if (totalScore == 0) {
-            endowed -= amount;
-            reward.safeTransfer(curator, amount);
-            emit BountyReclaimed(taskId, curator, amount);
-        } else {
-            rewardPool += amount;
-            emit BountyRolledOver(taskId, amount);
-        }
+        rewardPool += amount;
+        emit BountyRolledOver(taskId, amount);
     }
 
     // -------------------------------------------------------------------------------------
@@ -749,7 +748,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      form that survives there. Neither reader is given a schema shaped only for the other.
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
-        schema.description = unicode"Trading tax becomes BTCB prizes for measured gas work / 交易税变成 BTCB 奖金";
+        schema.description = unicode"Trading tax becomes BTCB prizes / 交易税变成 BTCB 奖金";
         schema.methods = new VaultMethodSchema[](12);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
@@ -775,7 +774,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // put it where anyone can see it.
         m = schema.methods[1];
         m.name = "solvent";
-        m.description = unicode"Do holdings cover bounties / 持币是否覆盖赏金";
+        m.description = unicode"Holdings cover bounties / 持币覆盖赏金";
         m.inputs = new FieldDescriptor[](0);
         m.outputs = new FieldDescriptor[](1);
         m.outputs[0] = FieldDescriptor("covered", "bool", unicode"Covered / 已覆盖", 0);
@@ -805,7 +804,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 3 — the button on every card.
         m = schema.methods[3];
         m.name = "collect";
-        m.description = unicode"Collect your share of a bounty / 领取你的赏金份额";
+        m.description = unicode"Collect your share / 领取你的份额";
         m.inputs = new FieldDescriptor[](1);
         m.inputs[0] = FieldDescriptor("taskId", "uint256", unicode"Task", 0);
         m.outputs = new FieldDescriptor[](0);
@@ -858,7 +857,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 8 — an empty window's tax goes back to the project rather than nowhere.
         m = schema.methods[8];
         m.name = "withdrawUnconverted";
-        m.description = unicode"Take back tax not behind a task / 取回未投入的税";
+        m.description = unicode"Take back unassigned tax / 取回未投入的税";
         m.inputs = new FieldDescriptor[](1);
         m.inputs[0] = FieldDescriptor("amount", "uint256", unicode"BNB, 0 for all / BNB,0 表示全部", 18);
         m.outputs = new FieldDescriptor[](0);
