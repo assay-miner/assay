@@ -45,7 +45,10 @@ contract EpochRotationTest is BaseTest {
     /// The optimised form must agree with the literal one on every vector. An "optimisation" that
     /// changes the answer would post a baseline nothing can legally reach.
     function test_OptimiserPreservesSemantics() public {
-        for (uint256 k; k < 12; ++k) {
+        // Raised from twelve when the optimiser started rewriting shifts into masks: that is real
+        // algebra rather than deletion, and a rule that is wrong for one shape in fifty would have
+        // slipped through a dozen draws.
+        for (uint256 k; k < 200; ++k) {
             uint256 seed = uint256(keccak256(abi.encode("sem", k)));
             TaskGen.Op[] memory ops = TaskGen.draw(seed, OPS);
             Crucible.Vector[] memory v = _vectorsFor(seed, ops);
