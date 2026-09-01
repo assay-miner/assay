@@ -264,6 +264,12 @@ test fail.
 
 - Both `description()` banners bilingual; no custom errors or standalone reverts remain in `src/`.
 - Findings 4, 5 and 6 fixed in `AssayFlapVault`; finding 7 fixed in its documentation.
-- Both chains will be redeployed from this source before submission, so the deployed bytecode
-  matches the packaged source; the packaging step verifies that byte for byte.
+- Both chains redeployed from this source, so the deployed bytecode matches the packaged source;
+  the packaging step verifies that byte for byte.
 - No token has been launched on either chain.
+
+| | BSC testnet (97) | BSC mainnet (56) |
+|---|---|---|
+| `AssayFlapFactory` | `0x2be2d3EA801f963eCDb3333D03dd3F5536162482` | `0xAa3EC76ACf14efb15C75fb9F01cb16F8A61F9C94` |
+| `Tournament` | `0xb7c1A8ccfc95Cd0B7bEdd53228dC65d1a95Df44d` | `0x31A19fddE5ab164EA790ffcAc25CbeB65658c1d0` |
+| Tax token | not launched | not launched |
