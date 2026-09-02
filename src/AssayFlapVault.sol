@@ -130,7 +130,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice The tax token this vault belongs to, as told to us by the factory at creation.
     address public immutable taxToken;
 
-    /// @notice Who may endow a task with accumulated BNB. Set at creation to the token's creator.
+    /// @notice Where unconverted tax is returned to, and the only account besides the Guardian
+    ///         that may cancel a scheduled conversion. Set at creation to the token's creator.
+    /// @dev    It cannot endow. `endow` is the Guardian's alone — that is the point of it — and
+    ///         this line used to claim otherwise.
     address public immutable curator;
 
     /// @notice BTCB assigned to a task's bounty, by task id.
@@ -340,17 +343,24 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // at least a fee's worth of new tax. The manual path already had this netting via
         // `incoming`; the self-arming path is the second call site and never got it.
         if (incoming == 0) {
+            // The fee leaves this balance, and this balance is tax.
             if (amount <= fee) return 0;
             amount -= fee;
+
+            // Worth doing, not merely possible — and only here. A window that accrued barely more
+            // than the fee costs almost as much to convert as it converts, and at one epoch every
+            // five minutes that is 288 fees a day quietly draining a vault nobody is trading
+            // against. That reasoning is entirely about spending tax on the scheduler, so it has no
+            // claim on the manual path, where the caller supplies the fee themselves. The check sat
+            // outside this block for two rounds while the comment beside it said it did not.
+            //
+            // Putting it back where the comment always said it belonged also restores what
+            // `triggerConversion` is for: it is the restart when the self-arming chain has stopped,
+            // and it was refusing to run in exactly the low-tax case where a stall is most likely.
+            if (amount <= fee * FEE_COVER_MULTIPLE) return 0;
         }
         uint256 cap = maxConvertible();
         if (amount > cap) amount = cap;
-        // Worth doing, not merely possible. The self-arming path pays the scheduler out of this
-        // balance, which is tax — so a window that accrued less than the fee costs more to convert
-        // than it converts, and at one epoch every five minutes that is 288 fees a day quietly
-        // draining a vault nobody is trading against. The manual path pays its own fee and is not
-        // bound by this; only the arming that spends tax is.
-        if (amount <= fee * FEE_COVER_MULTIPLE) return 0;
         if (amount > type(uint128).max) return 0;
         if (priceGuard.impactBps(amount) > MAX_ENDOW_SLIPPAGE_BPS) return 0;
 

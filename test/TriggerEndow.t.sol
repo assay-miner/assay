@@ -125,6 +125,54 @@ contract TriggerEndowTest is BaseTest {
         );
     }
 
+    // ------------------------------------------------- the fee floor binds only the self-arm
+
+    /// @dev The economics floor exists because the self-arming path buys the scheduler out of tax.
+    ///      A caller who supplies the fee themselves spends none, so the floor has no claim on them
+    ///      — and `triggerConversion` is the restart for a stalled chain, so refusing it in exactly
+    ///      the low-tax case was refusing it when it is most needed. Move the check back outside
+    ///      `if (incoming == 0)` and this fails.
+    function test_ASmallWindowStillConvertsWhenTheCallerPaysTheFee() public {
+        uint256 fee = flap.schedulerFee();
+
+        // Under the floor: more than one fee, so there is something to convert, but well under the
+        // ten the self-arming path demands.
+        uint256 small = fee * 3;
+        _tax(small);
+        assertLt(flap.freeTax(), fee * flap.FEE_COVER_MULTIPLE(), "the window is under the floor");
+
+        vm.deal(TAXPAYER, fee);
+        vm.prank(TAXPAYER);
+        uint256 id = flap.triggerConversion{value: fee}();
+        assertGt(id, 0, "the manual caller paid the fee and was still refused");
+    }
+
+    /// @dev The other half: the same window must NOT arm itself, because that one does spend tax.
+    function test_ASmallWindowStillDoesNotArmItself() public {
+        uint256 fee = flap.schedulerFee();
+        uint256 amount = _within(0.05 ether);
+        _tax(amount);
+        uint256 id = _schedule(amount);
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() + 1);
+
+        // Leave only a sliver behind, under the floor.
+        _tax(fee * 3);
+
+        vm.recordLogs();
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool armed;
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(flap)
+                    && logs[i].topics[0] == keccak256("ConversionScheduled(uint256,uint256,uint256)")
+            ) armed = true;
+        }
+        assertFalse(armed, "a window worth less than ten fees armed itself out of tax");
+    }
+
     // ------------------------------------------------- the floor is re-priced at execution
 
     /// @dev The stored floor is minutes old when the service calls, and the service picks its own
