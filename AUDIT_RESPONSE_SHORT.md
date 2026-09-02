@@ -93,6 +93,6 @@ The first version of that test compared the two marks against each other and pas
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x09c4105bBB90C2EFf7E96dE1729344a1EfA4f48C` | `0x34e059F6f8f04D5E04682a4b41341555f9aa6116` |
-| `Tournament` | `0x5654DaA98418eF7A070f5f148ee9EB12f9a6aA5D` | `0x27F650FD6315Cfef22515402c3e9A5Ba7b667Cc5` |
+| `AssayFlapFactory` | `0x68c2656B23329d4Ceee87d39a1038EA5aAdAa222` | `0x3B0da8368e01b516703E65Ce9Ba9be9d1B327341` |
+| `Tournament` | `0xe432Ad772b2498631f7e1806BD0D33c35b184233` | `0x57e19122B5136E4808A6351B20286D07a67Fb522` |
 | Tax token | not launched | not launched |
