@@ -7,6 +7,7 @@ import {VaultDataSchema, FieldDescriptor} from "./flap/IVaultSchemasV1.sol";
 import {AssayFlapVault} from "./AssayFlapVault.sol";
 import {Tournament} from "./Tournament.sol";
 import {PriceGuard} from "./PriceGuard.sol";
+import {AssayVaultDeployer} from "./AssayVaultDeployer.sol";
 
 /// @title AssayFlapFactory
 /// @notice Creates an ASSAY vault when a token is launched through Flap's VaultPortal.
@@ -27,6 +28,13 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
     ///         pricing contract by whoever launched its token.
     PriceGuard public immutable priceGuard;
 
+    /// @notice Holds the vault's creation code, so this contract's runtime does not.
+    /// @dev Constructed here rather than passed in. Code reached by `new` from a constructor lands
+    ///      in this contract's creation code, which EIP-170 does not measure, instead of its runtime,
+    ///      which it does — that is the entire point. Building it here also means the deployer's
+    ///      `msg.sender` is this factory forever, so there is no address for a caller to supply.
+    AssayVaultDeployer public immutable deployer;
+
     event VaultCreated(address indexed vault, address indexed taxToken, address indexed creator);
 
     constructor(Tournament tournament_, PriceGuard priceGuard_) {
@@ -34,6 +42,7 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
         priceGuard = priceGuard_;
         require(address(tournament_) != address(0), unicode"Tournament address is zero / 锦标赛地址为零");
         tournament = tournament_;
+        deployer = new AssayVaultDeployer();
     }
 
     /// @inheritdoc IVaultFactory
@@ -51,7 +60,7 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
             unicode"Only the vault portal may create a vault / 只有金库门户可以创建金库"
         );
 
-        vault = address(new AssayFlapVault(tournament, taxToken, creator, priceGuard));
+        vault = deployer.deploy(tournament, taxToken, creator, priceGuard);
         emit VaultCreated(vault, taxToken, creator);
     }
 

@@ -26,9 +26,12 @@ import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 ///      any contract with immutables — which is all of these. Deploying is what the chain does
 ///      anyway, so it is the honest measurement.
 ///
-///      The factory is the one to watch, and not for its own logic: roughly 2,300 bytes of it is
-///      the factory and the rest is the vault's creation code, carried in full. The factory
-///      therefore grows whenever the vault grows, and the vault is where features get added.
+///      The contract to watch is whichever one carries the vault's creation code, because that is
+///      what grows when the vault does, and the vault is where features get added. That used to be
+///      the factory, which left it 345 bytes of headroom. `AssayVaultDeployer` holds it now — the
+///      factory builds one in its constructor, so the code lands in the factory's *creation* code,
+///      which EIP-170 does not measure, instead of its runtime, which it does. The factory dropped
+///      from 24,231 bytes to 2,637 and the binding constraint moved to the deployer.
 contract CodeSizeTest is Test {
     uint256 internal constant EIP170 = 24_576;
     /// @dev A build this close to the ceiling is one feature away from being undeployable, and
@@ -43,10 +46,13 @@ contract CodeSizeTest is Test {
     ///      reads saved 13, and tightening the schema's own labels saved 167. What remains is real
     ///      margin, not slack.
     ///
-    ///      512 still fails long before a broadcast does. The next feature genuinely does not fit:
-    ///      it needs the view bodies (`stats` alone is 324 bytes) moved to a reader contract the
-    ///      vault forwards to, which is a change to make between audit rounds and not during one.
-    uint256 internal constant HEADROOM = 512;
+    ///      That structural change has now happened, and it is why this is back to a kilobyte: the
+    ///      vault's creation code moved out of the factory into `AssayVaultDeployer`, taking the
+    ///      headroom on the binding contract from 345 bytes to 2,274. `vaultUISchema()` is still
+    ///      about seven kilobytes and still cannot leave the vault — `VaultBaseV2` declares it
+    ///      `public pure virtual` and a `pure` override cannot call out — so the deployer is the
+    ///      number to watch from here.
+    uint256 internal constant HEADROOM = 1024;
 
     Tournament internal tournament;
 
@@ -62,14 +68,27 @@ contract CodeSizeTest is Test {
     }
 
     function test_TheFactoryFitsWithRoomToSpare() public {
-        uint256 size = address(new AssayFlapFactory(tournament, new PriceGuard())).code.length;
+        AssayFlapFactory factory = new AssayFlapFactory(tournament, new PriceGuard());
+        uint256 size = address(factory).code.length;
         console2.log("factory runtime      ", size);
         console2.log("headroom to EIP-170  ", EIP170 - size);
         assertLt(size, EIP170, "factory exceeds EIP-170 and cannot be deployed at all");
+        assertLt(size, EIP170 - HEADROOM, "factory is within a kilobyte of the ceiling");
+    }
+
+    /// @dev The one that actually binds. It carries the vault's creation code, so it is the
+    ///      contract that grows when the vault does — and a vault too big to deploy through would
+    ///      make every launch fail at the portal rather than here, where it is free.
+    function test_TheDeployerFitsWithRoomToSpare() public {
+        AssayFlapFactory factory = new AssayFlapFactory(tournament, new PriceGuard());
+        uint256 size = address(factory.deployer()).code.length;
+        console2.log("deployer runtime     ", size);
+        console2.log("headroom to EIP-170  ", EIP170 - size);
+        assertLt(size, EIP170, "deployer exceeds EIP-170: no vault could be created at all");
         assertLt(
             size,
             EIP170 - HEADROOM,
-            "factory is within a kilobyte of the ceiling: the next feature will not deploy"
+            "deployer is within a kilobyte of the ceiling: the next vault feature will not deploy"
         );
     }
 

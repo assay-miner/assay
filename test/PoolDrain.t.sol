@@ -173,6 +173,40 @@ contract PoolDrainTest is BaseTest {
         assertEq(flap.bounty(taskId), funded + 1e15, "the sponsorship landed");
     }
 
+    /// @dev Only the newest task can be funded. Without this the caller picks which live task the
+    ///      whole pool lands on, so a miner who dominates some other open task points this epoch's
+    ///      converted tax at their own and takes it against a score nobody was competing with.
+    ///      Delete the taskCount check in fundTaskFromPool and this stops reverting.
+    function test_AnOlderLiveTaskCannotTakeThePool() public {
+        uint256 older = taskId;
+
+        // A second task, posted while the first is still taking commitments. Both are live.
+        vm.startPrank(CURATOR);
+        token.approve(address(vault), type(uint256).max);
+        uint256 newest = tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp + 1 hours), uint64(block.timestamp + 2 hours), POT
+        );
+        vm.stopPrank();
+        assertGt(newest, older, "the second task is the newer one");
+        assertEq(newest, tournament.taskCount(), "and it is what taskCount reports");
+
+        uint256 pool = _fillPool(0.05 ether);
+        assertGt(pool, 0, "the pool has to hold something for this to matter");
+
+        // The older task is still live — its commit window has not closed — and that is exactly the
+        // case the commitEnd gate alone would let through.
+        vm.prank(ATTACKER);
+        vm.expectRevert(bytes(unicode"Not the current task / 非当前任务"));
+        flap.fundTaskFromPool(older);
+
+        assertEq(flap.rewardPool(), pool, "the pool did not move");
+
+        // And the epoch's own task still funds, so the gate is the task's identity and not a lock.
+        uint256 funded = flap.fundTaskFromPool(newest);
+        assertEq(funded, pool, "the newest task takes the whole pool");
+    }
+
     /// @dev The one-shot rule still has to hold, or the pool could be moved onto one task twice.
     function test_PoolFundsATaskOnlyOnce() public {
         _fillPool(0.05 ether);

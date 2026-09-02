@@ -377,6 +377,12 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         _requireTask(taskId);
         require(!pooledInto[taskId], unicode"Already funded / 已注资");
 
+        // The newest task only. Without this the caller chooses which live task the whole pool
+        // lands on, so a miner who dominates some other open task can point this epoch's converted
+        // tax at their own and take it in proportion to a score nobody was competing against. The
+        // epoch's task is always the newest one, so naming it is not a decision either.
+        require(taskId == tournament.taskCount(), unicode"Not the current task / 非当前任务");
+
         // The money has to be in place while people can still join. The first version of this
         // guard used revealEnd, which is a phase too late: commitment closes at commitEnd, so
         // across the whole reveal window the field is already frozen and funding still worked.
@@ -873,7 +879,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 4 — converting revenue and putting it behind a task.
         m = schema.methods[4];
         m.name = "endow";
-        m.description = unicode"Fund a task / 注资任务";
+        m.description = unicode"Add to the pool / 向池中注资";
         m.inputs = new FieldDescriptor[](2);
         m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
         m.inputs[1] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
