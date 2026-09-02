@@ -66,7 +66,7 @@ The same gate was extended to cover labels, because both findings come from one 
 
 Shortening some labels was forced rather than stylistic. The factory embeds the vault's creation code, and the added Chinese put it 410 bytes under EIP-170, below the margin our CodeSize test requires. Tightening to "Bounty / 赏金", "Scorers / 得分者", "Amount / 数量" and "Paid / 已付" restored 537 bytes with both languages intact on every field. We want to flag that headroom directly: vaultUISchema() is about 7KB and cannot be moved out, because VaultBaseV2 declares it public pure virtual and a pure override cannot call an external contract.
 
-### Finding 3: Self-arming conversion under-funds the scheduled swap by the scheduler fee, causing the trigger callback to revert and corrupting reserved accounting (COM-EXTERNAL-CALL-FAILURE)
+### Finding 3: Self-arming conversion under-funds the scheduled swap by the scheduler fee, causing the trigger callback to revert and corrupting `reserved` accounting (COM-EXTERNAL-CALL-FAILURE)
 - **Severity:** Medium
 - **Confidence:** Medium
 - **Detected by:** rule_review
@@ -89,7 +89,7 @@ Shortening some labels was forced rather than stylistic. The factory embeds the 
 Two notes for accuracy. Your reading that the manual path is unaffected is right and is why the fix is conditional rather than unconditional. And our first test for this was worthless — it funded the vault with twenty fees of slack, so over-reserving by one fee could not break the invariant, and deleting the entire fix left all twenty tests in that file green. It has been rewritten with no slack, asserting on the newly armed request rather than on cumulative `reserved`.
 
 
-### Finding 4: curator documented as the party who may endow, but endow is Guardian-only
+### Finding 4: `curator` documented as the party who may endow, but `endow` is Guardian-only
 - **Severity:** Medium
 - **Confidence:** High
 - **Detected by:** doc_review
@@ -124,7 +124,7 @@ The epoch's task is always the newest, so there is no longer a choice to make an
 We rated this higher than Low. Diverting the pool does not merely favour one miner over another — it moves converted tax onto a task whose scoring is already decided, which is the same shape as the capture in the previous round's finding 4.
 
 
-### Finding 6: UI schema labels endow as "Fund a task" though it funds no task
+### Finding 6: UI schema labels `endow` as "Fund a task" though it funds no task
 - **Severity:** Low
 - **Confidence:** Medium
 - **Detected by:** doc_review
@@ -137,7 +137,7 @@ We rated this higher than Low. Diverting the pool does not merely favour one min
 > **Reason (if FP / By Design / Acknowledged):** Accepted. The label described the old design, where converting and assigning were one call — which is precisely the coupling an earlier round asked us to break, because naming a task and naming an amount in the same action was where the curator's discretion lived. Splitting them left this label behind. It now reads `Add to the pool / 向池中注资`, which is what the method does; assigning to a task is `fundTaskFromPool`, and that is a separate entry in the same schema.
 
 
-### Finding 7: Comment claims manual triggerConversion path is exempt from FEE_COVER_MULTIPLE, but code enforces it on both paths
+### Finding 7: Comment claims manual `triggerConversion` path is exempt from FEE_COVER_MULTIPLE, but code enforces it on both paths
 - **Severity:** Low
 - **Confidence:** Medium
 - **Detected by:** doc_review
