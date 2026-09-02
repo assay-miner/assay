@@ -166,3 +166,9 @@ A second one does. Every conversion moves BNB from the side that returns to the 
   in its constructor so it lands in creation code rather than runtime: the factory went from
   24,231 bytes to 2,637 and the binding headroom from 345 to 2,274.
 - No token has been launched on either chain.
+
+| | BSC testnet (97) | BSC mainnet (56) |
+|---|---|---|
+| `AssayFlapFactory` | `0x20b12D32f64c2e60a25E6E6828fF0AC39ee42d25` | `0x86EAE44Fd8e0c65C09D935521473d347f74EE7cc` |
+| `Tournament` | `0xFAc3CfD91791431A9274f9a315374d02c09bF9d5` | `0xEF9661759Dd7aa8C49C647E01e18D132493a452B` |
+| Tax token | not launched | not launched |
