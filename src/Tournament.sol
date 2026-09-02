@@ -452,10 +452,10 @@ contract Tournament {
     function taskGates(uint256 taskId)
         external
         view
-        returns (uint64 commitEnd, uint64 revealEnd, uint256 totalScore)
+        returns (uint64 commitEnd, uint64 revealEnd, uint256 totalScore, address poster)
     {
         Task storage t = tasks[taskId];
-        return (t.commitEnd, t.revealEnd, t.totalScore);
+        return (t.commitEnd, t.revealEnd, t.totalScore, t.poster);
     }
 
     function description() external view returns (string memory) {

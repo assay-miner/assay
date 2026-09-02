@@ -390,8 +390,24 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // entire pool onto it, and take their share of a pot no one else could still enter for —
         // a sole committer taking all of it. Gating on commitEnd means the pot is decided before
         // the set of people dividing it is.
-        (uint64 commitEnd,,) = tournament.taskGates(taskId);
+        (uint64 commitEnd,,, address poster) = tournament.taskGates(taskId);
         require(block.timestamp < commitEnd, unicode"Commitment closed / 承诺已截止");
+
+        // And the task has to be one this project or the Guardian published. Requiring the NEWEST
+        // task was not enough, which is the third time this function has been narrowed: posting is
+        // deliberately open to strangers between epochs so a lost curator key cannot end the
+        // tournament, and a stranger's task IS the newest one the moment they post it. So the
+        // sequence was: wait for the gap, post a task only you are ready to solve, point the pool at
+        // it because it is now the newest, and collect all of it as the sole scorer.
+        //
+        // Open posting exists so the tournament can continue without us. It was never a claim on
+        // the treasury, and this is the line that says so. A stranger's task still runs, still
+        // scores, and still pays out whatever its own poster escrowed — it just cannot be handed
+        // the converted tax.
+        require(
+            poster == curator || poster == _getGuardian(),
+            unicode"Task is not ours / 任务非本方发布"
+        );
 
         // The whole pool. An epoch converts what it accrued and its task takes what that bought,
         // so nothing accumulates across epochs and no number here decides how much a task is worth.
@@ -427,7 +443,20 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         delete scheduled[requestId];
         reserved -= s.bnbAmount;
 
-        _convertToPool(s.bnbAmount, s.minRewardOut);
+        // Take the stricter of the floor priced when this was armed and one priced now. The stored
+        // floor is minutes old by the time the service calls — the cadence is five minutes and the
+        // service picks its own moment — so if BTCB moved up in between, that floor tolerates far
+        // more than the 3% it was meant to and an MEV bot can take the difference.
+        //
+        // The fresh quote alone would be worse, not better: it reads the same pool the swap is
+        // about to hit, so anyone able to move that pool in the same block would be setting our
+        // floor for us. Neither number is trustworthy alone; the higher of the two is. A favourable
+        // move tightens the floor, and an unfavourable or manufactured one cannot loosen it below
+        // what we already committed to.
+        uint256 fresh = (quote(s.bnbAmount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
+        uint256 floorNow = fresh > s.minRewardOut ? fresh : s.minRewardOut;
+
+        _convertToPool(s.bnbAmount, floorNow);
 
         // Arm the next epoch from inside this one. The service has no recurrence of its own — its
         // documentation says a requester schedules the next trigger from the callback — so this is
@@ -475,7 +504,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // between two equal-scoring miners' collections pays the second one more than the first —
         // the same money, split by the order people happened to call in. This gate was written for
         // `fundTaskFromPool` and not for here, which is the same defect twice.
-        (, uint64 revealEnd,) = tournament.taskGates(taskId);
+        (, uint64 revealEnd,,) = tournament.taskGates(taskId);
         require(block.timestamp < revealEnd, unicode"Settled / 已结算");
         reward.safeTransferFrom(msg.sender, address(this), amount);
         bounty[taskId] += amount;
@@ -551,7 +580,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
         (, , , uint128 score, , ) = tournament.submissions(taskId, miner);
         if (score == 0) return 0;
-        (,, uint256 totalScore) = tournament.taskGates(taskId);
+        (,, uint256 totalScore,) = tournament.taskGates(taskId);
         if (totalScore == 0) return 0;
         uint256 share = (pot * score) / totalScore;
         return share > left ? left : share;
@@ -560,7 +589,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Pays a scoring miner their share of a task's BTCB bounty.
     /// @dev Shares use the tournament's own recorded score, so the split here is the split there.
     function collect(uint256 taskId) external nonReentrant returns (uint256 amount) {
-        (, uint64 revealEnd,) = tournament.taskGates(taskId);
+        (, uint64 revealEnd,,) = tournament.taskGates(taskId);
         require(block.timestamp >= revealEnd, unicode"Not settled yet / 尚未结算");
         require(!collected[taskId][msg.sender], unicode"Already collected / 已经领取过了");
 
@@ -629,7 +658,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     function reclaimBounty(uint256 taskId) external nonReentrant returns (uint256 amount) {
         _requireTask(taskId);
 
-        (, uint64 revealEnd, uint256 totalScore) = tournament.taskGates(taskId);
+        (, uint64 revealEnd, uint256 totalScore,) = tournament.taskGates(taskId);
         require(block.timestamp >= revealEnd, unicode"Not settled yet / 尚未结算");
         require(
             totalScore == 0 || block.timestamp >= uint256(revealEnd) + tournament.CLAIM_WINDOW(),
@@ -716,7 +745,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
         uint256 from = tasks > STATS_SCAN ? tasks - STATS_SCAN : 0;
         for (uint256 id = tasks; id > from; --id) {
-            (, uint64 revealEnd,) = tournament.taskGates(id);
+            (, uint64 revealEnd,,) = tournament.taskGates(id);
             if (block.timestamp < revealEnd) ++openTasks;
         }
 

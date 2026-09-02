@@ -207,6 +207,47 @@ contract PoolDrainTest is BaseTest {
         assertEq(funded, pool, "the newest task takes the whole pool");
     }
 
+    /// @dev The whole sequence the third round described, run end to end. Posting is open to
+    ///      strangers between epochs on purpose — a lost curator key must not end the tournament —
+    ///      and a stranger's task IS the newest one the moment they post it, so requiring the newest
+    ///      task did not stop this. Delete the poster check in fundTaskFromPool and this passes the
+    ///      revert and shows the attacker holding the pool.
+    function test_AStrangerCannotPostATaskAndTakeThePool() public {
+        // The gap between epochs, which open posting is allowed in.
+        vm.warp(revealEnd + 1);
+        assertGe(block.timestamp, tournament.latestRevealEnd(), "we are between epochs");
+
+        uint256 pool = _fillPool(0.05 ether);
+        assertGt(pool, 0, "the pool has to hold something for this to be a capture");
+
+        // Fund the stranger so they can escrow a pot of their own. Without this the test fails in
+        // setup with ERC20InsufficientBalance and never reaches the assertion — which it did, and
+        // it failed identically with the guard removed, so it was proving nothing at all.
+        deal(address(token), ATTACKER, uint256(POT) * 2);
+
+        // A stranger posts inside the open-post window, escrowing their own pot.
+        vm.startPrank(ATTACKER);
+        token.approve(address(vault), type(uint256).max);
+        uint256 theirs = tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), POT
+        );
+        vm.stopPrank();
+
+        assertEq(theirs, tournament.taskCount(), "their task is the newest one");
+
+        // Newest, and still taking commitments — both earlier gates are satisfied.
+        (uint64 commitEnd_,,,) = tournament.taskGates(theirs);
+        assertLt(block.timestamp, commitEnd_, "and its commit window is open");
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(bytes(unicode"Task is not ours / 任务非本方发布"));
+        flap.fundTaskFromPool(theirs);
+
+        assertEq(flap.rewardPool(), pool, "the pool did not move");
+        assertEq(flap.bounty(theirs), 0, "and their task got none of it");
+    }
+
     /// @dev The one-shot rule still has to hold, or the pool could be moved onto one task twice.
     function test_PoolFundsATaskOnlyOnce() public {
         _fillPool(0.05 ether);

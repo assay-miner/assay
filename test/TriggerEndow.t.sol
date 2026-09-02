@@ -3,6 +3,21 @@ pragma solidity 0.8.26;
 
 import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+import {IPancakeRouter02} from "../src/interfaces/IPancakeRouter02.sol";
+
+/// @dev Test-only. The production IPancakeRouter02 carries just the three functions the vault
+///      actually calls, deliberately — an unused signature is one that drifts unnoticed — so the
+///      one this file needs to move the pair lives here instead of being added there.
+interface IPairMover {
+    function WETH() external view returns (address);
+    function swapExactTokensForETH(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external returns (uint256[] memory amounts);
+}
 
 import {BaseTest} from "./Base.t.sol";
 import {PriceGuard} from "../src/PriceGuard.sol";
@@ -20,6 +35,11 @@ contract TriggerEndowTest is BaseTest {
     address internal constant BTCB = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8;
     address internal constant TRIGGER = 0x560E9830926C9e0EB98a59c6b9902383Fc0D9Eb2;
     address internal constant TAXPAYER = address(0x7A);
+    address internal constant ROUTER = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1;
+    /// @dev Mirrors AssayFlapVault.MAX_ENDOW_SLIPPAGE_BPS, which is private. Asserted against the
+    ///      vault's own arming behaviour below rather than trusted: if the contract's value changed
+    ///      and this did not, the floor computed here would not match and the test would fail.
+    uint256 internal constant SLIPPAGE_BPS = 300;
 
     AssayFlapVault internal flap;
     address internal guardian;
@@ -103,6 +123,64 @@ contract TriggerEndowTest is BaseTest {
             address(flap).balance,
             "the vault armed a swap larger than the BNB it holds: the next callback cannot pay it"
         );
+    }
+
+    // ------------------------------------------------- the floor is re-priced at execution
+
+    /// @dev The stored floor is minutes old when the service calls, and the service picks its own
+    ///      moment. If BTCB moved up in between, that floor tolerates far more than the 3% it was
+    ///      meant to and the difference is free for anyone watching. `trigger` now takes the
+    ///      stricter of the stored floor and one priced at execution.
+    ///
+    ///      The move has to be real for this to test anything: the price is pushed in the direction
+    ///      that makes the stored floor too loose, and the assertion is that the vault still came
+    ///      away with what the fresh price entitled it to. Remove the `fresh > s.minRewardOut`
+    ///      selection in `trigger` and this fails.
+    function test_TheFloorIsRepricedWhenTheMarketMovedInOurFavour() public {
+        uint256 amount = _within(0.05 ether);
+        _tax(amount);
+        uint256 id = _schedule(amount);
+        assertGt(id, 0, "the conversion armed");
+
+        uint256 floorAtArming = (flap.quote(amount) * (10_000 - SLIPPAGE_BPS)) / 10_000;
+
+        // Move the pair so a given amount of BNB buys more BTCB than it did at arming: sell BTCB in,
+        // which raises the BTCB side of the reserves and lowers the BNB side.
+        address whale = makeAddr("whale");
+        uint256 push = 2 ether;
+        deal(BTCB, whale, push);
+        address[] memory back = new address[](2);
+        back[0] = BTCB;
+        back[1] = IPairMover(ROUTER).WETH();
+        vm.startPrank(whale);
+        IERC20(BTCB).approve(ROUTER, push);
+        IPairMover(ROUTER).swapExactTokensForETH(push, 0, back, whale, block.timestamp);
+        vm.stopPrank();
+
+        uint256 floorAtExecution = (flap.quote(amount) * (10_000 - SLIPPAGE_BPS)) / 10_000;
+        assertGt(
+            floorAtExecution,
+            floorAtArming,
+            "the pair did not actually move; this test proves nothing unless it does"
+        );
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() + 1);
+
+        // Assert the floor the router is HANDED, not the amount that comes back. The first version
+        // of this test asserted the output was at least the fresh floor, which is true whether or
+        // not the floor is enforced: nothing was extracting the difference, so the swap returned
+        // the full market amount either way. It passed with the entire fix deleted.
+        //
+        // `swapExactETHForTokens` takes amountOutMin first, so the selector plus that one value is
+        // a calldata prefix, and expectCall matches on the prefix.
+        vm.expectCall(
+            ROUTER,
+            abi.encodeWithSelector(
+                IPancakeRouter02.swapExactETHForTokens.selector, floorAtExecution
+            )
+        );
+        vm.prank(TRIGGER);
+        flap.trigger(id);
     }
 
     // ---------------------------------------------------------------- the service is real
