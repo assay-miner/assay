@@ -81,8 +81,9 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice A conversion that has been scheduled and not yet executed.
     struct ScheduledEndow {
-        uint128 bnbAmount;
-        uint128 minRewardOut;
+        uint96 bnbAmount;
+        uint96 minRewardOut;
+        uint64 executeAfter;
     }
 
     /// @notice Scheduled conversions, by the scheduler's request id.
@@ -123,6 +124,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      Ten leaves the fee under a tenth of what moves; below that the vault is buying its own
     ///      activity. A window under this simply waits and rolls into the next one.
     uint256 public constant FEE_COVER_MULTIPLE = 10;
+
+    /// @notice How long past its due time a scheduled conversion must sit before anyone may clear it.
+    /// @dev Long enough that a scheduler running late is never mistaken for one that will not run at
+    ///      all, short enough that stuck BNB is not stuck for a day.
+    uint256 public constant CANCEL_GRACE = 1 hours;
 
     /// @notice The tournament whose verified scores this vault pays against.
     Tournament public immutable tournament;
@@ -361,17 +367,21 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         }
         uint256 cap = maxConvertible();
         if (amount > cap) amount = cap;
-        if (amount > type(uint128).max) return 0;
+        if (amount > type(uint96).max) return 0;
         if (priceGuard.impactBps(amount) > MAX_ENDOW_SLIPPAGE_BPS) return 0;
 
         uint256 floorOut = (quote(amount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
-        if (floorOut == 0 || floorOut > type(uint128).max) return 0;
+        if (floorOut == 0 || floorOut > type(uint96).max) return 0;
 
         try triggerService.requestTrigger{value: fee}(uint64(block.timestamp + CONVERSION_INTERVAL))
         returns (uint256 next) {
             reserved += amount;
             scheduled[next] =
-                ScheduledEndow({bnbAmount: uint128(amount), minRewardOut: uint128(floorOut)});
+                ScheduledEndow({
+                    bnbAmount: uint96(amount),
+                    minRewardOut: uint96(floorOut),
+                    executeAfter: uint64(block.timestamp + CONVERSION_INTERVAL)
+                });
             emit ConversionScheduled(next, amount, floorOut);
             return next;
         } catch {
@@ -485,12 +495,25 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      task that should not have been chosen — does not sit there waiting to fire at a time
     ///      nobody is watching. A later callback for a cancelled id finds nothing and reverts.
     function cancelConversion(uint256 requestId) external {
-        require(
-            msg.sender == curator || msg.sender == _getGuardian(),
-            unicode"Only the curator / 仅限策展方"
-        );
         ScheduledEndow memory s = scheduled[requestId];
         require(s.bnbAmount > 0, unicode"No such request / 无此请求");
+
+        // The curator used to be able to cancel anything, at any time, which is a lever it should
+        // never have had: cancelling frees the BNB back into freeTax(), and freeTax() is what
+        // withdrawUnconverted pays to the curator. Cancel every conversion as it is armed and no
+        // BTCB ever forms — the tournament advertises prizes, miners stake and optimise, and the
+        // whole tax settles to one address. That the vault is FOR turning tax into prizes is
+        // exactly why that path had to close.
+        //
+        // The reason cancellation exists at all is a request that can no longer succeed, and that
+        // is a condition, not a judgement: the scheduler's moment has come and gone. Once a request
+        // is that far past due anyone may clear it, so a genuinely dead one never traps `reserved`
+        // and nobody has to be trusted to notice. Before then only the Guardian may act.
+        require(
+            msg.sender == _getGuardian()
+                || block.timestamp > uint256(s.executeAfter) + CANCEL_GRACE,
+            unicode"Not cancellable yet / 尚不可取消"
+        );
         delete scheduled[requestId];
         reserved -= s.bnbAmount;
         emit ConversionCancelled(requestId, s.bnbAmount);
@@ -640,7 +663,15 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         //
         // With no task ever posted there is nothing to wait for, which is exactly the case the
         // rule is about: a window in which nothing was published belongs to the project.
-        require(block.timestamp >= tournament.latestRevealEnd(), unicode"Epoch open / 本期未结束");
+        // Our own open task is the only one that has a claim on this tax. Waiting on the
+        // all-tasks high-water mark let a stranger hold the gate shut forever: OPEN_POST_MAX_SPAN
+        // caps one open post at ten minutes, but nothing caps how often somebody posts, so taking
+        // the boundary block each cycle keeps the mark permanently ahead. A stranger's task cannot
+        // be funded from the pool, so unconverted tax is not holding anything up for it.
+        require(
+            block.timestamp >= tournament.latestCuratedRevealEnd(),
+            unicode"Epoch open / 本期未结束"
+        );
         uint256 free = freeTax();
         sent = amount == 0 || amount > free ? free : amount;
         require(sent > 0, unicode"No unconverted tax / 无未兑换的税");

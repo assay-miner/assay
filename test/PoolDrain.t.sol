@@ -257,4 +257,46 @@ contract PoolDrainTest is BaseTest {
         vm.expectRevert(bytes(unicode"Already funded / 已注资"));
         flap.fundTaskFromPool(taskId);
     }
+
+    /// @dev A stranger cannot hold the withdrawal gate shut forever. OPEN_POST_MAX_SPAN caps one
+    ///      open post at ten minutes, which is what makes a single post survivable — but nothing
+    ///      caps how often somebody posts, and taking the boundary block each cycle keeps the
+    ///      all-tasks high-water mark permanently ahead of the withdrawal. The gate reads the
+    ///      curated mark now, which only our own posts advance. Point it back at `latestRevealEnd`
+    ///      and this fails.
+    function test_AStrangerCannotHoldTheWithdrawalGateShut() public {
+        vm.warp(revealEnd + 1);
+        assertLe(
+            tournament.latestCuratedRevealEnd(), block.timestamp, "our own epoch is closed"
+        );
+
+        // Unconverted tax for the withdrawal to have something to move.
+        vm.deal(TAXPAYER, 0.02 ether);
+        vm.prank(TAXPAYER);
+        (bool ok,) = payable(address(flap)).call{value: 0.02 ether}("");
+        require(ok, "tax transfer failed");
+
+        deal(address(token), ATTACKER, uint256(POT) * 2);
+        vm.startPrank(ATTACKER);
+        token.approve(address(vault), type(uint256).max);
+        tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp + 300), uint64(block.timestamp + 600), POT
+        );
+        vm.stopPrank();
+
+        assertGt(
+            tournament.latestRevealEnd(),
+            block.timestamp,
+            "the stranger did push the all-tasks mark ahead"
+        );
+
+        // The assertion that matters is the withdrawal itself, not the two marks. An earlier
+        // version compared latestRevealEnd against latestCuratedRevealEnd and passed with the
+        // vault still reading the wrong one — it was testing Tournament, not the gate.
+        uint256 before = CURATOR.balance;
+        uint256 sent = flap.withdrawUnconverted(0);
+        assertGt(sent, 0, "a stranger's task held the withdrawal shut");
+        assertEq(CURATOR.balance - before, sent, "the tax did not reach the curator");
+    }
 }

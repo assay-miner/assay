@@ -117,7 +117,7 @@ contract TriggerEndowTest is BaseTest {
         }
         assertGt(armed, 0, "the callback armed the next window");
 
-        (uint128 bnbAmount,) = flap.scheduled(armed);
+        (uint96 bnbAmount,,) = flap.scheduled(armed);
         assertLe(
             uint256(bnbAmount),
             address(flap).balance,
@@ -253,7 +253,7 @@ contract TriggerEndowTest is BaseTest {
         // A scheduled conversion no longer carries a task. Naming a task and naming an amount in
         // the same call was where the curator's discretion lived, so the field is gone rather than
         // defaulted.
-        (uint128 bnbAmount,) = flap.scheduled(id);
+        (uint96 bnbAmount,,) = flap.scheduled(id);
         assertGt(bnbAmount, 0, "amount not stored");
         // Scheduling reserves the whole epoch's tax, so freeTax falls to zero and the raw balance
         // is untouched — the BNB has not moved, it is spoken for.
@@ -287,7 +287,7 @@ contract TriggerEndowTest is BaseTest {
         vm.prank(ALICE);
         uint256 id = flap.triggerConversion{value: fee}();
 
-        (uint128 amount, uint128 floorOut) = flap.scheduled(id);
+        (uint96 amount, uint96 floorOut,) = flap.scheduled(id);
         uint256 spot = flap.quote(amount);
         // Same arithmetic as the contract, including the truncation: multiplying the floor back
         // up instead compares against a number the division already rounded away from.
@@ -331,7 +331,7 @@ contract TriggerEndowTest is BaseTest {
         vm.deal(ALICE, fee);
         vm.prank(ALICE);
         uint256 id = flap.triggerConversion{value: fee}();
-        (uint128 amount, uint128 floorOut) = flap.scheduled(id);
+        (uint96 amount, uint96 floorOut,) = flap.scheduled(id);
 
         uint256 poolBefore = flap.rewardPool();
         vm.prank(TRIGGER);
@@ -387,7 +387,7 @@ contract TriggerEndowTest is BaseTest {
         flap.trigger(id);
 
         // The record survived, because the revert undid the deletion along with everything else.
-        (uint128 bnbAmount,) = flap.scheduled(id);
+        (uint96 bnbAmount,,) = flap.scheduled(id);
         assertGt(bnbAmount, 0, "the request was consumed by a failure");
     }
 
@@ -395,10 +395,10 @@ contract TriggerEndowTest is BaseTest {
         _tax(0.05 ether);
         uint256 id = _schedule(_within(0.05 ether));
 
-        vm.prank(CURATOR);
+        vm.prank(guardian);
         flap.cancelConversion(id);
 
-        (uint128 left,) = flap.scheduled(id);
+        (uint96 left,,) = flap.scheduled(id);
         assertEq(left, 0, "cancel left the record behind");
 
         vm.prank(TRIGGER);
@@ -408,16 +408,53 @@ contract TriggerEndowTest is BaseTest {
         assertEq(flap.freeTax(), 0.05 ether, "the tax moved on a cancelled request");
     }
 
-    function test_OnlyTheCuratorOrGuardianCancels() public {
+    /// @dev The curator must NOT be able to cancel. Cancelling frees the BNB back into freeTax(),
+    ///      and freeTax() is what withdrawUnconverted pays to the curator — so a curator who cancels
+    ///      every conversion as it is armed starves the prize pool and takes the whole tax, while
+    ///      miners stake and optimise for a bounty that never forms. Restore `msg.sender == curator`
+    ///      to the guard and this fails.
+    function test_TheCuratorCannotCancelAConversion() public {
         _tax(0.05 ether);
         uint256 id = _schedule(_within(0.05 ether));
 
-        vm.prank(ALICE);
-        vm.expectRevert(bytes(unicode"Only the curator / 仅限策展方"));
+        vm.prank(CURATOR);
+        vm.expectRevert(bytes(unicode"Not cancellable yet / 尚不可取消"));
         flap.cancelConversion(id);
 
+        vm.prank(ALICE);
+        vm.expectRevert(bytes(unicode"Not cancellable yet / 尚不可取消"));
+        flap.cancelConversion(id);
+
+        (uint96 still,,) = flap.scheduled(id);
+        assertGt(still, 0, "the request survived both attempts");
+
+        // The Guardian may, at any time.
         vm.prank(guardian);
         flap.cancelConversion(id);
+    }
+
+    /// @dev And a request the scheduler has plainly abandoned is anyone's to clear, so `reserved`
+    ///      cannot be trapped by nobody happening to hold the right key.
+    function test_AnyoneMayClearARequestThatIsLongPastDue() public {
+        _tax(0.05 ether);
+        uint256 id = _schedule(_within(0.05 ether));
+
+        (,, uint64 executeAfter) = flap.scheduled(id);
+        assertGt(executeAfter, block.timestamp, "it is not due yet");
+
+        // Due, but inside the grace: still nobody's but the Guardian's.
+        vm.warp(uint256(executeAfter) + 1);
+        vm.prank(ALICE);
+        vm.expectRevert(bytes(unicode"Not cancellable yet / 尚不可取消"));
+        flap.cancelConversion(id);
+
+        vm.warp(uint256(executeAfter) + flap.CANCEL_GRACE() + 1);
+        vm.prank(ALICE);
+        flap.cancelConversion(id);
+
+        (uint96 left,,) = flap.scheduled(id);
+        assertEq(left, 0, "a stranger could not clear an abandoned request");
+        assertEq(flap.reserved(), 0, "and reserved was not released");
     }
 
     // ---------------------------------------------------------------- the escape hatch
@@ -474,7 +511,7 @@ contract TriggerEndowTest is BaseTest {
         vm.prank(ALICE);
         uint256 id = flap.triggerConversion{value: fee}();
 
-        (uint128 amount,) = flap.scheduled(id);
+        (uint96 amount,,) = flap.scheduled(id);
         assertEq(uint256(amount), 0.05 ether, "the fee was converted along with the tax");
         assertEq(flap.reserved(), 0.05 ether, "the fee was reserved as tax");
     }

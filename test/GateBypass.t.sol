@@ -143,4 +143,5 @@ contract GateBypassTest is Test {
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
         assertEq(tournament.latestRevealEnd(), high, "a shorter task moved the pointer backwards");
     }
+
 }

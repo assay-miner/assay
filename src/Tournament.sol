@@ -103,6 +103,19 @@ contract Tournament {
     ///      reveals — the tax it was protecting could be withdrawn out from under a working miner.
     ///      Monotonic, so no ordering of posts can walk it backwards.
     uint64 public latestRevealEnd;
+
+    /// @notice The same high-water mark, but counting only tasks this project or the Guardian
+    ///         published.
+    /// @dev The vault's withdrawal used to wait on `latestRevealEnd`, which any stranger can push
+    ///      forward by posting. OPEN_POST_MAX_SPAN caps a single open post at ten minutes, and that
+    ///      is what makes one post survivable — but nothing caps how often somebody posts. An
+    ///      attacker who takes the boundary block each cycle keeps the mark permanently ahead and
+    ///      the project can never reclaim tax from windows nobody mined.
+    ///
+    ///      A stranger's task cannot be funded from the reward pool, so unconverted tax is not
+    ///      holding anything up for it. Only our own open task has a claim on waiting, and this is
+    ///      the mark that expresses that. Monotonic for the same reason as the one above.
+    uint64 public latestCuratedRevealEnd;
     mapping(uint256 taskId => Task) public tasks;
     mapping(uint256 taskId => Crucible.Vector[]) private _vectors;
     mapping(uint256 taskId => mapping(address miner => Submission)) public submissions;
@@ -223,6 +236,12 @@ contract Tournament {
         });
 
         if (revealEnd > latestRevealEnd) latestRevealEnd = revealEnd;
+        if (
+            (msg.sender == curator || msg.sender == _getGuardian())
+                && revealEnd > latestCuratedRevealEnd
+        ) {
+            latestCuratedRevealEnd = revealEnd;
+        }
 
         Crucible.Vector[] storage v = _vectors[taskId];
         for (uint256 i; i < n; ++i) {
