@@ -100,6 +100,6 @@ Your account is more precise than ours was on one point and we have adopted it: 
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x20b12D32f64c2e60a25E6E6828fF0AC39ee42d25` | `0x86EAE44Fd8e0c65C09D935521473d347f74EE7cc` |
-| `Tournament` | `0xFAc3CfD91791431A9274f9a315374d02c09bF9d5` | `0xEF9661759Dd7aa8C49C647E01e18D132493a452B` |
+| `AssayFlapFactory` | `0xEF9661759Dd7aa8C49C647E01e18D132493a452B` | `0x5389c9b7B05854C1e0b7b0b689706706D3b74f17` |
+| `Tournament` | `0xcd0399c096C28C4aDc765b424b0DCb2aFE5257BC` | `0x09c4105bBB90C2EFf7E96dE1729344a1EfA4f48C` |
 | Tax token | not launched | not launched |
