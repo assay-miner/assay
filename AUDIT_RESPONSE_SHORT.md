@@ -121,6 +121,6 @@ conditions that cause the failure — makes the direction obvious.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0xEF9661759Dd7aa8C49C647E01e18D132493a452B` | `0x5389c9b7B05854C1e0b7b0b689706706D3b74f17` |
-| `Tournament` | `0xcd0399c096C28C4aDc765b424b0DCb2aFE5257BC` | `0x09c4105bBB90C2EFf7E96dE1729344a1EfA4f48C` |
+| `AssayFlapFactory` | `0x09c4105bBB90C2EFf7E96dE1729344a1EfA4f48C` | `0x34e059F6f8f04D5E04682a4b41341555f9aa6116` |
+| `Tournament` | `0x5654DaA98418eF7A070f5f148ee9EB12f9a6aA5D` | `0x27F650FD6315Cfef22515402c3e9A5Ba7b667Cc5` |
 | Tax token | not launched | not launched |
