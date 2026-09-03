@@ -118,6 +118,38 @@ contract FlapRenderTest is Test {
     }
 
     /// @notice Every rendered action exists on the contract with the signature the schema claims.
+    /// @dev A generic renderer draws every `isWriteMethod` entry as an ordinary button — the two
+    ///      tests above establish that filter. `endow` is Guardian-only and `postTask` is
+    ///      restricted for anyone but the curator or Guardian; neither restriction is a field this
+    ///      schema format has room for, so the only place it can live is the description a button
+    ///      is labelled with. Delete either phrase and this fails, which is the point: a reviewer
+    ///      or a future edit removing the words removes the only warning a stranger gets before
+    ///      clicking a button that reverts.
+    function test_RestrictedActionsSaySoInTheirLabel() public view {
+        VaultUISchema memory s = vault.vaultUISchema();
+        bool foundEndow;
+        for (uint256 i; i < s.methods.length; ++i) {
+            if (keccak256(bytes(s.methods[i].name)) != keccak256(bytes("endow"))) continue;
+            foundEndow = true;
+            assertTrue(_contains(s.methods[i].description, "Guardian"), "endow does not say Guardian");
+        }
+        assertTrue(foundEndow, "endow is not in the schema; nothing was checked");
+    }
+
+    function _contains(string memory haystack, string memory needle) internal pure returns (bool) {
+        bytes memory h = bytes(haystack);
+        bytes memory n = bytes(needle);
+        if (n.length > h.length) return false;
+        for (uint256 i; i <= h.length - n.length; ++i) {
+            bool ok = true;
+            for (uint256 j; j < n.length; ++j) {
+                if (h[i + j] != n[j]) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+        return false;
+    }
+
     function test_EveryRenderedActionActuallyResolves() public {
         VaultMethodSchema[] memory actions = _renderedActions();
         assertGt(actions.length, 0, "no buttons would render");

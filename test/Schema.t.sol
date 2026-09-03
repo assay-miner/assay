@@ -56,6 +56,33 @@ contract SchemaTest is BaseTest {
         assertGe(writes, 1, "at least one button to put on the cards");
     }
 
+    /// @dev `postTask` is open to anyone, but not evenly: the curator and Guardian may post at any
+    ///      time, and a stranger only in the gap between epochs and only for a short window. That
+    ///      asymmetry is not a field this schema format has room for, so the description is the
+    ///      only place it can be said. Delete the note and this fails, which is the point — the
+    ///      words are the only warning a stranger gets before a click that reverts outside the
+    ///      window.
+    function test_PostTaskWarnsNonCuratorsOfTheOpenWindow() public view {
+        VaultUISchema memory s = tournament.vaultUISchema();
+        VaultMethodSchema memory post = s.methods[6];
+        assertEq(post.name, "postTask");
+        assertTrue(_contains(post.description, "non-curator"), "postTask does not warn a stranger");
+    }
+
+    function _contains(string memory haystack, string memory needle) internal pure returns (bool) {
+        bytes memory h = bytes(haystack);
+        bytes memory n = bytes(needle);
+        if (n.length > h.length) return false;
+        for (uint256 i; i <= h.length - n.length; ++i) {
+            bool ok = true;
+            for (uint256 j; j < n.length; ++j) {
+                if (h[i + j] != n[j]) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+        return false;
+    }
+
     /// @dev Without this the UI would ask a user to approve by hand before escrowing a pot.
     function test_PostTaskDeclaresItsApproval() public view {
         VaultUISchema memory s = tournament.vaultUISchema();

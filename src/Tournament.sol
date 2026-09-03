@@ -638,7 +638,7 @@ contract Tournament {
         // 6 — posting a task, with the approve the UI must send first.
         m = schema.methods[6];
         m.name = "postTask";
-        m.description = unicode"Publish a task / 发布一个任务";
+        m.description = unicode"Publish a task (open window only for non-curators) / 发布一个任务(非策展方仅限开放窗口期)";
         m.inputs = new FieldDescriptor[](7);
         m.inputs[0] = FieldDescriptor("inputs", "bytes[]", unicode"Calldata per vector / 每个向量的调用数据", 0);
         m.inputs[1] = FieldDescriptor("expected", "bytes32[]", unicode"keccak256 of each expected output / 每个期望输出的 keccak256", 0);

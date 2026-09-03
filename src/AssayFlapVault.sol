@@ -1035,7 +1035,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // 4 — converting revenue and putting it behind a task.
         m = schema.methods[4];
         m.name = "endow";
-        m.description = unicode"Add to the pool / 向池中注资";
+        m.description = unicode"Add to the pool (Guardian only) / 向池中注资(仅限守护者)";
         m.inputs = new FieldDescriptor[](2);
         m.inputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"BNB to convert / 兑换的 BNB", 18);
         m.inputs[1] = FieldDescriptor("minRewardOut", "uint256", unicode"Min BTCB out / 最少换得", 18);
