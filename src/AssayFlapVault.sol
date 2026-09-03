@@ -331,6 +331,21 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         uint256 fee = triggerService.getFee();
         require(msg.value >= fee, unicode"Send the fee / 需附带费用");
 
+        // One conversion per epoch, which is what the cadence has always claimed and never checked.
+        // `lastConversionAt` was declared and then never written or read, so the rate limit existed
+        // only in the documentation: this entry point is permissionless, and without a floor on the
+        // spacing it could be called repeatedly in a single block, each call reserving another slice
+        // of freeTax() behind its own scheduled request.
+        //
+        // The self-arming path spaces itself by asking the scheduler for a time one interval out.
+        // This is the same spacing, applied where nothing was applying it. It does not stand in the
+        // way of the restart this function exists for: a chain that has stalled has by definition
+        // not armed anything for longer than an interval.
+        require(
+            block.timestamp >= lastConversionAt + CONVERSION_INTERVAL,
+            unicode"Too soon / 距上次过近"
+        );
+
         requestId = _arm(fee, msg.value);
         require(requestId != 0, unicode"Nothing to convert / 无可兑换");
 
@@ -391,6 +406,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         try triggerService.requestTrigger{value: fee}(uint64(block.timestamp + CONVERSION_INTERVAL))
         returns (uint256 next) {
             reserved += amount;
+            lastConversionAt = block.timestamp;
             scheduled[next] =
                 ScheduledEndow({
                     bnbAmount: uint96(amount),

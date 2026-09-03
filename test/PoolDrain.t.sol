@@ -299,4 +299,46 @@ contract PoolDrainTest is BaseTest {
         assertGt(sent, 0, "a stranger's task held the withdrawal shut");
         assertEq(CURATOR.balance - before, sent, "the tax did not reach the curator");
     }
+
+    /// @dev The rounding finding, quantified rather than argued. Floor division in
+    ///      `(pot * score) / totalScore` loses under one wei per scoring miner, so the whole
+    ///      undistributed remainder is bounded by the number of miners — a handful of wei of a
+    ///      token with eighteen decimals. This measures it instead of asserting it, so the claim in
+    ///      our audit response is checkable and stays true if the split ever changes.
+    ///
+    ///      It is deliberately NOT fixed. Paying the remainder to whoever collects last would make
+    ///      an equal-score payout depend on collection order, which is exactly what an earlier round
+    ///      of this audit asked us to remove from `collect`, and the dust is worth far less than
+    ///      that property.
+    function test_TheRoundingDustIsBoundedByTheNumberOfScorers() public {
+        uint256 pool = _fillPool(0.05 ether);
+        flap.fundTaskFromPool(taskId);
+        assertEq(flap.bounty(taskId), pool, "the task holds the pool");
+
+        address[3] memory miners = [ALICE, BOB, CAROL];
+        uint256[3] memory agents = [AGENT_ALICE, AGENT_BOB, AGENT_CAROL];
+        for (uint256 i; i < miners.length; ++i) {
+            _enroll(miners[i], agents[i]);
+            _commit(miners[i], agents[i], Bytecode.padded(), bytes32(agents[i]));
+        }
+        vm.warp(commitEnd + 1);
+        for (uint256 i; i < miners.length; ++i) {
+            _reveal(miners[i], Bytecode.padded(), bytes32(agents[i]));
+        }
+        vm.warp(revealEnd + 1);
+
+        uint256 paidOut;
+        uint256 scorers;
+        for (uint256 i; i < miners.length; ++i) {
+            uint256 due = flap.collectable(taskId, miners[i]);
+            if (due == 0) continue;
+            scorers++;
+            vm.prank(miners[i]);
+            paidOut += flap.collect(taskId);
+        }
+        assertGt(scorers, 0, "nobody scored; this measures nothing");
+
+        uint256 dust = flap.bounty(taskId) - paidOut;
+        assertLe(dust, scorers, "the remainder exceeded one wei per scoring miner");
+    }
 }

@@ -1,64 +1,72 @@
 # Flap Vault Interaction Risk Report
 
-Generated: 2026-09-03 09:50:33 UTC
+Generated: 2026-09-03 10:32:57 UTC
 
 ## Vault Security Rating
 **Low**
 
 Project: ASSAY (`AssayFlapVault`)
 
-Accepted. This was fixed two rounds ago, so the snapshot reviewed here is behind the tree; the
-response gives the current code and a command that checks it in the archive.
+Finding 2 is accepted and fixed. Finding 1 is acknowledged and deliberately not fixed — the
+response gives the measured bound and the property we would have to give up to close it.
 
 ---
 
 ## Risk Findings
 
-### Finding 1: Manual triggerConversion is bound by FEE_COVER_MULTIPLE contrary to its documented intent
+### Finding 1: Integer truncation in per-miner bounty split leaves undistributed dust (COM-ROUNDING)
+- **Severity:** Low
+- **Confidence:** Low
+- **Detected by:** rule_review
+- **Description:** In AssayFlapVault.collectable/collect, each scoring miner's share is computed as (bounty[taskId] * score) / totalScore with floor division against a fixed pot. The sum of all floored shares is strictly less than the full bounty whenever totalScore does not evenly divide the products, so a small remainder is never paid to any miner. The leftover is not lost to the protocol (reclaimBounty later rolls bounty[taskId] - paid[taskId] back into rewardPool for a future task), but the dust is not distributed to the scoring miners of the current task. (rule COM-ROUNDING)
+- **Vulnerable Code:**
+  - `src/AssayFlapVault.sol:collectable`
+  - `src/AssayFlapVault.sol:collect`
+
+> **Status:** `[ ]` TP　`[ ]` FP　`[ ]` By Design　`[x]` Acknowledged
+> **Reason (if FP / By Design / Acknowledged):** The mechanism is exactly as described and we are not fixing it. Two reasons, the second of which is the decisive one.
+
+**The size is bounded and we measured it rather than asserting it.** Each miner's share loses less than one wei to the floor, so the entire undistributed remainder is bounded by the number of scoring miners — single-digit wei of a token with eighteen decimals. `test_TheRoundingDustIsBoundedByTheNumberOfScorers` runs a real task to settlement and asserts `bounty - paidOut <= scorers`. It is a measurement, and it will go red if the split ever changes in a way that makes this answer wrong.
+
+**The only fix reintroduces a defect this audit already made us remove.** Paying the remainder out means giving it to whoever collects last, which makes an equal-score payout depend on collection order. That is precisely the property an earlier round of this audit identified in `collect` — a sponsorship landing between two equal-scoring miners paid the second one more than the first — and closing it was the point of freezing the bounty before the first possible collection. Trading that property back for single-digit wei is a bad exchange, and we would rather say so than make the change and hope nobody notices the return trip.
+
+Your own note that the dust is not lost is what makes this comfortable: `reclaimBounty` rolls `bounty - paid` into `rewardPool`, and `rewardPool` funds the next task. The remainder stays prize money for miners; it simply belongs to a later cohort rather than this one.
+
+
+### Finding 2: Documented "one conversion per epoch" cadence is never enforced (dead `lastConversionAt`, unused `CONVERSION_INTERVAL` rate limit)
 - **Severity:** Low
 - **Confidence:** Low
 - **Detected by:** attacker_review
-- **Description:** In AssayFlapVault._arm the guard `if (amount <= fee * FEE_COVER_MULTIPLE) return 0;` is placed outside the `if (incoming == 0)` block, so it applies to BOTH the self-arming path (incoming == 0) and the manual path invoked through triggerConversion (incoming == msg.value > 0). The in-code comment states the manual path 'pays its own fee and is not bound by this; only the arming that spends tax is.' The actual behavior is that a manual caller who pays their own scheduler fee is still refused whenever the accrued convertible tax is not strictly greater than 10 * fee, causing triggerConversion to revert with 'Nothing to convert'. Consequently a user cannot manually convert (or manually restart a stalled conversion cadence for) any tax amount at or below ten scheduler fees, even though they are paying the fee themselves, so such tax remains unconverted longer than the design intends.
+- **Description:** AssayFlapVault declares `uint256 public lastConversionAt` ("When the last conversion was scheduled") and `CONVERSION_INTERVAL = 5 minutes` with extensive NatSpec asserting that only one conversion may be armed per epoch and that "the earliest next call is a constant away from the last one." However `lastConversionAt` is never written or read anywhere, and `triggerConversion`/`_arm` contain no minimum-interval check. As a result the intended rate limit does not exist: the permissionless `triggerConversion` can be called any number of times per block, each call arming a fresh conversion that reserves a chunk of `freeTax()` up to `maxConvertible()`. The only self-imposed spacing is on the self-arming callback path (which schedules the next request at `block.timestamp + CONVERSION_INTERVAL`); the manual entry point has none.
 - **Vulnerable Code:**
-  - `src/AssayFlapVault.sol:_arm (the `if (amount <= fee * FEE_COVER_MULTIPLE) return 0;` line, applied to the manual triggerConversion path)`
+  - `src/AssayFlapVault.sol: state var `lastConversionAt` (declared, never assigned)`
+  - `src/AssayFlapVault.sol: triggerConversion()`
+  - `src/AssayFlapVault.sol: _arm()`
 
 > **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
-> **Reason (if FP / By Design / Acknowledged):** Accepted, and already fixed — this was closed two rounds ago, so the snapshot reviewed here is behind the tree. The guard now sits inside the block, which is where the comment beside it always said it belonged:
+> **Reason (if FP / By Design / Acknowledged):** Accepted, and precisely stated — `lastConversionAt` was declared and then neither written nor read, so the cadence the NatSpec asserts existed only in the NatSpec. `_arm` records the moment it reserves, and the manual entry point checks it:
 
-    if (incoming == 0) {
-        // The fee leaves this balance, and this balance is tax.
-        if (amount <= fee) return 0;
-        amount -= fee;
+    require(
+        block.timestamp >= lastConversionAt + CONVERSION_INTERVAL,
+        unicode"Too soon / 距上次过近"
+    );
 
-        // Worth doing, not merely possible — and only here.
-        if (amount <= fee * FEE_COVER_MULTIPLE) return 0;
-    }
+It does not stand in the way of what `triggerConversion` is for. A chain that has stalled has by definition not armed anything for longer than an interval, so the restart is always available; what is refused is a second arming inside an epoch that already has one.
 
-Verifiable in the archive accompanying this response:
+**This finding is partly a consequence of our own previous fix, and it is worth saying so.** Two rounds ago you showed that `FEE_COVER_MULTIPLE` should not bind the manual path, and we moved it inside the self-arming branch. That was right for the reason you gave — the floor is about spending tax on the scheduler, and a manual caller spends none — but it also removed the only thing that had been limiting how often the manual entry point could be used. The size floor was doing the work of a rate limit by accident. Replacing it with an actual rate limit is what this finding is asking for, and it is the right shape: spacing is a spacing rule, not a size rule.
 
-    awk '/if \(incoming == 0\)/,/^        }/' src/AssayFlapVault.sol | grep -c FEE_COVER_MULTIPLE   # 1
-    grep -c 'FEE_COVER_MULTIPLE' src/AssayFlapVault.sol                                              # 2, the constant and that one use
-
-Your reading of why is the one we came round to, and it is worth recording that we first answered this the wrong way. An earlier round of yours raised the same contradiction and we resolved it by rewriting the comment to match the code, arguing that every conversion moves BNB from the side that returns to the curator into the side only a scoring miner can take out, and that `triggerConversion` is permissionless. That argument is true and it is not this guard's argument. The floor exists because the self-arming path buys the scheduler out of tax; a caller who supplies the fee spends none of the vault's, so the premise never reached them.
-
-What decided it was the consequence you name here: `triggerConversion` is the restart for a stalled cadence, and a floor that refuses it whenever free tax is under ten fees refuses it in exactly the low-activity state a stall comes from. A guard that disables the recovery path under the conditions that produce the failure is not a conservative guard.
-
-Residual, stated rather than buried: anyone may now force a small conversion at their own expense, moving that BNB from the withdrawable side to the side that must be won back. The caller pays the fee every time, the impact and slippage guards still refuse sizes the pair cannot take, and the resulting BTCB still funds this project's own tasks. We prefer that to a recovery path that does not work when it is needed.
-
-Both directions are covered by tests — a window under the floor converts when the caller pays the fee, and the same window still does not arm itself out of tax — and both were confirmed by moving the guard back outside the block, where the manual test fails with "Nothing to convert / 无可兑换" and the self-arming one still passes.
+Tested for the three cases that matter: a second call in the same block is refused, a call one second short of the interval is refused, and a call a full interval later succeeds. Confirmed by deleting the check, where the same second call gets as far as "Nothing to convert / 无可兑换" instead — which is the shape of the finding, the guard being the only thing that had stopped it.
 
 ---
 
 ## Status
 
-- 228 tests across 32 suites.
 - Every guard added across these rounds was confirmed by breaking it and watching only its own
   test fail.
 - No token has been launched on either chain.
 - **BSC mainnet carries the current code; BSC testnet is behind.** The testnet deploy failed for
   gas — the public BNB testnet faucet is out of funds — so that address still runs an earlier
-  revision. The bytecode check in our packaging step is against mainnet and it passes. Flagged
-  rather than left for a reviewer to find.
+  revision. The bytecode check in our packaging step is against mainnet and it passes.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|

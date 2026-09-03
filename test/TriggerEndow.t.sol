@@ -190,6 +190,48 @@ contract TriggerEndowTest is BaseTest {
         }
     }
 
+    // ------------------------------------------------- the cadence is enforced, not just documented
+
+    /// @dev `lastConversionAt` was declared and then never written or read, so the "one conversion
+    ///      per epoch" the NatSpec asserts existed only in the NatSpec. `triggerConversion` is
+    ///      permissionless, so without a floor on the spacing it could be called again and again in
+    ///      one block, each call reserving another slice of freeTax() behind its own request.
+    ///      Delete the `lastConversionAt + CONVERSION_INTERVAL` check and this fails.
+    function test_TheManualPathCannotBeCalledTwiceInAnEpoch() public {
+        uint256 fee = flap.schedulerFee();
+        _tax(_within(0.05 ether) * 2);
+
+        vm.deal(TAXPAYER, fee * 4);
+        vm.prank(TAXPAYER);
+        uint256 first = flap.triggerConversion{value: fee}();
+        assertGt(first, 0, "the first conversion armed");
+        assertEq(flap.lastConversionAt(), block.timestamp, "the arming was not recorded");
+
+        // Same block, more tax still free: refused.
+        vm.prank(TAXPAYER);
+        vm.expectRevert(bytes(unicode"Too soon / 距上次过近"));
+        flap.triggerConversion{value: fee}();
+
+        // One second short of the interval: still refused.
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() - 1);
+        vm.prank(TAXPAYER);
+        vm.expectRevert(bytes(unicode"Too soon / 距上次过近"));
+        flap.triggerConversion{value: fee}();
+
+        // An interval later it is a restart again, which is what this entry point is for. Fresh tax
+        // first: the first arming reserved what was there, so a refusal here without it would be
+        // "nothing to convert" rather than anything to do with the spacing.
+        vm.warp(block.timestamp + 1);
+        _tax(_within(0.05 ether));
+
+        // `_tax` deals TAXPAYER exactly what it sends, so it leaves them at zero. Without this the
+        // call fails on OutOfFunds and says nothing about the spacing.
+        vm.deal(TAXPAYER, fee);
+        vm.prank(TAXPAYER);
+        uint256 second = flap.triggerConversion{value: fee}();
+        assertGt(second, 0, "the restart was refused after a full interval");
+    }
+
     // ------------------------------------------------- the fee floor binds only the self-arm
 
     /// @dev The economics floor exists because the self-arming path buys the scheduler out of tax.
