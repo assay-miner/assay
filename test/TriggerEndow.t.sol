@@ -125,6 +125,71 @@ contract TriggerEndowTest is BaseTest {
         );
     }
 
+    // ------------------------------------------------- a failed swap does not trap the ledger
+
+    /// @dev A request the market will not take at its floor used to take the whole callback down
+    ///      with it. `trigger` deletes the request and releases `reserved` before swapping, so a
+    ///      revert undid both: the request sat there and `reserved` stayed inflated, understating
+    ///      freeTax() and shrinking every later endow, arming and withdrawal until a human cleared
+    ///      it. The failure is caught now — the BNB ends up exactly where it was before the request
+    ///      existed.
+    ///
+    ///      The move has to be real. The pair is pushed the wrong way hard enough that the stored
+    ///      floor cannot be met, and the test asserts that it cannot before relying on it.
+    function test_AFailedSwapReleasesItsReservationInsteadOfTrappingIt() public {
+        uint256 amount = _within(0.05 ether);
+        _tax(amount);
+        uint256 id = _schedule(amount);
+        assertEq(flap.reserved(), amount, "the request reserved its BNB");
+
+        // Buy BTCB out of the pair so a given amount of BNB now buys far less of it, leaving the
+        // floor stored at arming unreachable.
+        address whale = makeAddr("whale");
+        vm.deal(whale, 400 ether);
+        address[] memory fwd = new address[](2);
+        fwd[0] = IPairMover(ROUTER).WETH();
+        fwd[1] = BTCB;
+        vm.prank(whale);
+        IPancakeRouter02(ROUTER).swapExactETHForTokens{value: 400 ether}(0, fwd, whale, block.timestamp);
+
+        (, uint96 storedFloor,) = flap.scheduled(id);
+        assertLt(
+            flap.quote(amount),
+            uint256(storedFloor),
+            "the pair did not move far enough; this test proves nothing unless the floor is unreachable"
+        );
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() + 1);
+        uint256 poolBefore = flap.rewardPool();
+
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        (uint96 left,,) = flap.scheduled(id);
+        assertEq(left, 0, "the failed request was left behind");
+        assertEq(flap.rewardPool(), poolBefore, "a failed swap must not credit the pool");
+
+        // `reserved` is not zero, and should not be: the callback re-arms before it returns, so the
+        // BNB is immediately promised to a fresh request priced at the market that just moved. What
+        // must hold is that nothing is reserved which the vault could not actually pay — that is
+        // exactly the invariant the old behaviour broke.
+        assertLe(
+            flap.reserved(),
+            address(flap).balance,
+            "reserved more BNB than the vault holds after a failed swap"
+        );
+
+        // And the re-arm is at a floor priced now, not the one the market left behind.
+        uint256 armedAgain = flap.reserved();
+        if (armedAgain > 0) {
+            assertLe(
+                armedAgain,
+                address(flap).balance,
+                "the replacement request cannot be paid either"
+            );
+        }
+    }
+
     // ------------------------------------------------- the fee floor binds only the self-arm
 
     /// @dev The economics floor exists because the self-arming path buys the scheduler out of tax.
@@ -363,32 +428,57 @@ contract TriggerEndowTest is BaseTest {
 
     // ---------------------------------------------------------------- failure and re-arming
 
-    /// @notice A conversion the market has moved past must fail loudly and stay retryable.
+    /// @notice A conversion the market has moved past is consumed and re-armed, not left to rot.
     ///
-    /// @dev This is the deadlock the integration guide warns about. If the callback swallowed the
-    ///      failure, the service would record EXECUTED, `retryTrigger` would refuse the request
-    ///      forever, and the stored conversion would be consumed with nothing booked. It reverts
-    ///      instead — and because the revert also undoes the deletion, the request is still there
-    ///      to be tried again.
-    function test_AFailedConversionRevertsAndStaysRetryable() public {
+    /// @dev This test used to assert the opposite, and the reason is worth keeping. The Trigger
+    ///      Service records EXECUTED once a callback returns, so a callback that swallowed a failed
+    ///      swap would leave `retryTrigger` refusing the request for ever and the conversion
+    ///      consumed with nothing booked. Reverting kept the request alive to be retried.
+    ///
+    ///      The cost of that was the finding: the revert also undid the delete and the `reserved`
+    ///      release, so a request the market had moved past sat there for ever with its BNB
+    ///      reserved, understating freeTax() and shrinking every later arming and withdrawal until
+    ///      somebody cleared it by hand.
+    ///
+    ///      We no longer need `retryTrigger` for this. The failure is caught, the BNB goes back to
+    ///      free tax, and the same callback arms a fresh request at a floor priced now — which is
+    ///      the thing that was wrong with the old one. Nothing is consumed with nothing booked,
+    ///      because nothing is consumed at all.
+    function test_AFailedConversionIsReleasedAndRearmedRatherThanStranded() public {
         _tax(0.05 ether);
+        uint256 amount = _within(0.05 ether);
+        uint256 id = _schedule(amount);
+        assertEq(flap.reserved(), amount, "the request reserved its BNB");
 
-        // A floor the pool cannot meet: schedule at a real one, then move the market against it.
-        uint256 id = _schedule(_within(0.05 ether));
-        deal(BTCB, address(this), 0);
+        // Move the pair so the stored floor cannot be met, and check that it cannot before relying
+        // on it — a version of this that did not actually move the market would prove nothing.
+        address whale = makeAddr("whale");
+        vm.deal(whale, 400 ether);
+        address[] memory fwd = new address[](2);
+        fwd[0] = IPairMover(ROUTER).WETH();
+        fwd[1] = BTCB;
+        vm.prank(whale);
+        IPancakeRouter02(ROUTER).swapExactETHForTokens{value: 400 ether}(0, fwd, whale, block.timestamp);
 
-        // Force the swap to fail by asking the router for an impossible output at execution time.
-        // The stored floor is fine; the pool is what changed. Simulated by draining the vault's
-        // native balance so the swap cannot be funded.
-        vm.deal(address(flap), 0);
+        (, uint96 storedFloor,) = flap.scheduled(id);
+        assertLt(flap.quote(amount), uint256(storedFloor), "the floor is still reachable");
 
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() + 1);
+        uint256 poolBefore = flap.rewardPool();
+
+        // The callback returns. It does not revert, so the service is not left holding a request
+        // nobody can clear.
         vm.prank(TRIGGER);
-        vm.expectRevert();
         flap.trigger(id);
 
-        // The record survived, because the revert undid the deletion along with everything else.
-        (uint96 bnbAmount,,) = flap.scheduled(id);
-        assertGt(bnbAmount, 0, "the request was consumed by a failure");
+        (uint96 left,,) = flap.scheduled(id);
+        assertEq(left, 0, "the failed request was left behind");
+        assertEq(flap.rewardPool(), poolBefore, "a failed swap credited the pool");
+        assertLe(
+            flap.reserved(),
+            address(flap).balance,
+            "reserved more than the vault holds after a failed swap"
+        );
     }
 
     function test_ACancelledRequestCannotFireLater() public {

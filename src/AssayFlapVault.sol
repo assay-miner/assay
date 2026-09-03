@@ -178,6 +178,9 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     event ConversionScheduled(uint256 indexed requestId, uint256 bnbAmount, uint256 minRewardOut);
     event TaskFunded(uint256 indexed taskId, uint256 amount);
     event ConversionCancelled(uint256 indexed requestId, uint256 bnbAmount);
+    /// @notice A scheduled conversion the market would not take at its floor.
+    /// @dev Emitted instead of reverting the callback. The BNB is released, not lost.
+    event ConversionFailed(uint256 indexed requestId, uint256 bnbAmount, uint256 floor);
     event BountyReclaimed(uint256 indexed taskId, address indexed to, uint256 amount);
     event BountyRolledOver(uint256 indexed fromTaskId, uint256 amount);
     event Converted(uint256 bnbAmount, uint256 rewardOut, uint256 unassignedLeft);
@@ -279,6 +282,18 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @dev Credits the pool, not a task. What comes out is owed to whichever tasks the pool ends
     ///      up funding, so `endowed` rises here and falls only when a miner collects or an empty
     ///      window settles — the BTCB is spoken for from the moment it exists.
+    /// @notice The swap, reachable only by this contract, so `trigger` can survive it failing.
+    /// @dev `try` needs an external call, and this is the whole reason this wrapper exists. Not
+    ///      `nonReentrant`: `trigger` already holds that lock and this is called from inside it.
+    ///      `msg.sender == address(this)` is the only caller it will accept.
+    function convertForSelf(uint256 bnbAmount, uint256 minRewardOut)
+        external
+        returns (uint256 rewardOut)
+    {
+        require(msg.sender == address(this), unicode"Only self / 仅限自身");
+        return _convertToPool(bnbAmount, minRewardOut);
+    }
+
     function _convertToPool(uint256 bnbAmount, uint256 minRewardOut) private returns (uint256 rewardOut) {
         uint256 free = address(this).balance;
         address[] memory path = new address[](2);
@@ -476,7 +491,20 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         uint256 fresh = (quote(s.bnbAmount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
         uint256 floorNow = fresh > s.minRewardOut ? fresh : s.minRewardOut;
 
-        _convertToPool(s.bnbAmount, floorNow);
+        // A swap the market will not take at this floor must not take the callback down with it.
+        // The delete and the `reserved` release above happen first, so reverting here undid both:
+        // the request sat there for ever and `reserved` stayed inflated, understating freeTax() and
+        // shrinking every later endow, arming and withdrawal until somebody cleared it by hand.
+        //
+        // Letting the failure through instead leaves the BNB exactly where it was before the
+        // request existed — free, and armed again below at a floor priced now rather than at a
+        // price the market has left behind. Emitted, never swallowed: a conversion that did not
+        // happen is visible on chain as one that did not happen.
+        try this.convertForSelf(s.bnbAmount, floorNow) {
+            // Converted. `_convertToPool` did the accounting.
+        } catch {
+            emit ConversionFailed(requestId, s.bnbAmount, floorNow);
+        }
 
         // Arm the next epoch from inside this one. The service has no recurrence of its own — its
         // documentation says a requester schedules the next trigger from the callback — so this is
