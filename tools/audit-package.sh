@@ -106,7 +106,7 @@ Chain ${CHAIN} (BNB Smart Chain). Prepared $(date -u +%Y-%m-%d).
 
 \`AssayFlapFactory\` and the \`AssayFlapVault\` it creates. The vault turns a Flap taxed-V3
 token's trading tax into BTCB prize money for a gas-optimisation tournament: tax arrives as
-native BNB through \`receive()\`, the curator converts it to BTCB and books it behind a task,
+native BNB through \`receive()\`, anyone may schedule its conversion to BTCB and book it behind a task,
 and a miner the tournament has scored collects their share.
 
 \`Tournament.sol\` is included because every payout the vault makes is a function of a score it

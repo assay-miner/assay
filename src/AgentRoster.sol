@@ -33,8 +33,9 @@ contract AgentRoster {
     /// @dev This used to be `curator`, which put a live permission behind the same hot key a
     ///      reviewer flagged on Tournament. The permission is one-shot and is spent during the
     ///      deploy, so it belongs to whoever is doing the deploying, not to whoever will be
-    ///      running the protocol afterwards. After `setConsumer` the roster has no privileged
-    ///      caller at all.
+    ///      running the protocol afterwards. After `setConsumer` the deployer has nothing left to
+    ///      call; the one privileged caller that remains is the consumer itself, which is the
+    ///      tournament, and it holds only `lockUntil`.
     address public immutable deployer;
 
     struct Enrolment {

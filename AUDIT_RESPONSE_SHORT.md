@@ -1,68 +1,91 @@
 # Flap Vault Interaction Risk Report
 
-Generated: 2026-09-03 10:32:57 UTC
+Generated: 2026-09-03 12:35:09 UTC
 
 ## Vault Security Rating
-**Low**
+**Medium**
 
 Project: ASSAY (`AssayFlapVault`)
 
-Finding 2 is accepted and fixed. Finding 1 is acknowledged and deliberately not fixed — the
-response gives the measured bound and the property we would have to give up to close it.
+Both accepted. Both are documentation that lagged the code, one of the sentences written by us
+one round earlier. We swept the repository for the same class rather than fixing only these two:
+21 claims about who may do what were wrong, and all 21 are corrected.
 
 ---
 
 ## Risk Findings
 
-### Finding 1: Integer truncation in per-miner bounty split leaves undistributed dust (COM-ROUNDING)
-- **Severity:** Low
-- **Confidence:** Low
-- **Detected by:** rule_review
-- **Description:** In AssayFlapVault.collectable/collect, each scoring miner's share is computed as (bounty[taskId] * score) / totalScore with floor division against a fixed pot. The sum of all floored shares is strictly less than the full bounty whenever totalScore does not evenly divide the products, so a small remainder is never paid to any miner. The leftover is not lost to the protocol (reclaimBounty later rolls bounty[taskId] - paid[taskId] back into rewardPool for a future task), but the dust is not distributed to the scoring miners of the current task. (rule COM-ROUNDING)
+### Finding 1: Curator cannot cancel scheduled conversions despite documentation saying it can
+- **Severity:** Medium
+- **Confidence:** High
+- **Detected by:** doc_review
+- **Description:** The `curator` state variable's NatSpec in `AssayFlapVault` states it is "the only account besides the Guardian that may cancel a scheduled conversion." However, `cancelConversion` only permits `msg.sender == _getGuardian()` OR anyone after the `CANCEL_GRACE` period has elapsed (`block.timestamp > s.executeAfter + CANCEL_GRACE`). There is no branch granting the curator any special cancellation right. The inline comment inside `cancelConversion` even confirms this: "The curator used to be able to cancel anything... That path had to close... Before then only the Guardian may act."
 - **Vulnerable Code:**
-  - `src/AssayFlapVault.sol:collectable`
-  - `src/AssayFlapVault.sol:collect`
-
-> **Status:** `[ ]` TP　`[ ]` FP　`[ ]` By Design　`[x]` Acknowledged
-> **Reason (if FP / By Design / Acknowledged):** The mechanism is exactly as described and we are not fixing it. Two reasons, the second of which is the decisive one.
-
-**The size is bounded and we measured it rather than asserting it.** Each miner's share loses less than one wei to the floor, so the entire undistributed remainder is bounded by the number of scoring miners — single-digit wei of a token with eighteen decimals. `test_TheRoundingDustIsBoundedByTheNumberOfScorers` runs a real task to settlement and asserts `bounty - paidOut <= scorers`. It is a measurement, and it will go red if the split ever changes in a way that makes this answer wrong.
-
-**The only fix reintroduces a defect this audit already made us remove.** Paying the remainder out means giving it to whoever collects last, which makes an equal-score payout depend on collection order. That is precisely the property an earlier round of this audit identified in `collect` — a sponsorship landing between two equal-scoring miners paid the second one more than the first — and closing it was the point of freezing the bounty before the first possible collection. Trading that property back for single-digit wei is a bad exchange, and we would rather say so than make the change and hope nobody notices the return trip.
-
-Your own note that the dust is not lost is what makes this comfortable: `reclaimBounty` rolls `bounty - paid` into `rewardPool`, and `rewardPool` funds the next task. The remainder stays prize money for miners; it simply belongs to a later cohort rather than this one.
-
-
-### Finding 2: Documented "one conversion per epoch" cadence is never enforced (dead `lastConversionAt`, unused `CONVERSION_INTERVAL` rate limit)
-- **Severity:** Low
-- **Confidence:** Low
-- **Detected by:** attacker_review
-- **Description:** AssayFlapVault declares `uint256 public lastConversionAt` ("When the last conversion was scheduled") and `CONVERSION_INTERVAL = 5 minutes` with extensive NatSpec asserting that only one conversion may be armed per epoch and that "the earliest next call is a constant away from the last one." However `lastConversionAt` is never written or read anywhere, and `triggerConversion`/`_arm` contain no minimum-interval check. As a result the intended rate limit does not exist: the permissionless `triggerConversion` can be called any number of times per block, each call arming a fresh conversion that reserves a chunk of `freeTax()` up to `maxConvertible()`. The only self-imposed spacing is on the self-arming callback path (which schedules the next request at `block.timestamp + CONVERSION_INTERVAL`); the manual entry point has none.
-- **Vulnerable Code:**
-  - `src/AssayFlapVault.sol: state var `lastConversionAt` (declared, never assigned)`
-  - `src/AssayFlapVault.sol: triggerConversion()`
-  - `src/AssayFlapVault.sol: _arm()`
+  - `src/AssayFlapVault.sol - curator NatSpec declaration`
+  - `src/AssayFlapVault.sol - cancelConversion()`
 
 > **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
-> **Reason (if FP / By Design / Acknowledged):** Accepted, and precisely stated — `lastConversionAt` was declared and then neither written nor read, so the cadence the NatSpec asserts existed only in the NatSpec. `_arm` records the moment it reserves, and the manual entry point checks it:
+> **Reason (if FP / By Design / Acknowledged):** Accepted. The sentence was ours and it was stale by exactly one round: we wrote it while fixing an earlier finding about this same variable, and then removed the curator's cancel right in the round after, without going back to the line we had just written.
 
-    require(
-        block.timestamp >= lastConversionAt + CONVERSION_INTERVAL,
-        unicode"Too soon / 距上次过近"
-    );
+It now reads:
 
-It does not stand in the way of what `triggerConversion` is for. A chain that has stalled has by definition not armed anything for longer than an interval, so the restart is always available; what is refused is a second arming inside an epoch that already has one.
+    /// @notice The fixed address `withdrawUnconverted` pays. Set at creation to the token's
+    ///         creator, and immutable.
+    /// @dev    It holds no privilege at all beyond being that destination. It cannot `endow` —
+    ///         that is the Guardian's alone — and it holds no special right over a scheduled
+    ///         conversion: until `executeAfter + CANCEL_GRACE` only the Guardian may cancel, and
+    ///         after that the curator may do exactly what any address may and nothing more.
 
-**This finding is partly a consequence of our own previous fix, and it is worth saying so.** Two rounds ago you showed that `FEE_COVER_MULTIPLE` should not bind the manual path, and we moved it inside the self-arming branch. That was right for the reason you gave — the floor is about spending tax on the scheduler, and a manual caller spends none — but it also removed the only thing that had been limiting how often the manual entry point could be used. The size floor was doing the work of a rate limit by accident. Replacing it with an actual rate limit is what this finding is asking for, and it is the right shape: spacing is a spacing rule, not a size rule.
+The reason the right was removed is worth restating, since the NatSpec now has to carry it: cancelling frees BNB back into `freeTax()`, and `freeTax()` is what `withdrawUnconverted` pays the curator. An account that profits from a conversion never happening must not be able to stop a live one.
 
-Tested for the three cases that matter: a second call in the same block is refused, a call one second short of the interval is refused, and a call a full interval later succeeds. Confirmed by deleting the check, where the same second call gets as far as "Nothing to convert / 无可兑换" instead — which is the shape of the finding, the guard being the only thing that had stopped it.
+**We treated these two as a symptom and swept for the rest.** This is the third round in which prose about who may do what has been contradicted by the `require` that decides it, and the pattern is always the same: a permission moved in one round and a sentence written in an earlier one stayed behind. So rather than fix the two you named, we went through every NatSpec, inline comment, UI-schema label and document in the repository looking for claims of the same kind, and checked each against the code. **21 were wrong. You named 2.** All 21 are fixed. Among the ones you did not name:
+
+- `MAX_ENDOW_SLIPPAGE_BPS`'s NatSpec warned that without a floor "the curator could sandwich the vault's own conversion" — but `endow` is the only caller-supplied floor and it is Guardian-only, so the sentence named an account that cannot reach it.
+- `fundTaskFromPool`'s NatSpec described "its fixed reward" and "the same amount for every task". The amount is `rewardPool` at the moment of the call, and the inline comment two lines below it said so.
+- `SELF_CHECK.md` documented the recovery as `cancelScheduledEndow(requestId)`, a function that does not exist, with permissions that were also wrong.
+- `Tournament`'s `postTask` NatSpec said permissionless posting was a future path. It has been in this version for several rounds.
+- Three UI-schema labels read "Collectable now / 现在可领" for values that cannot be collected until settlement.
+
+**And one of them was a sentence we wrote in this round's own fix.** Correcting the `curator` NatSpec, we wrote that it "cannot cancel a scheduled conversion" — absolute, and false, because after `CANCEL_GRACE` anyone may cancel and the curator is among them. It now says the Guardian alone may cancel a live request, and that past the grace the curator may do exactly what any address may.
+
+**What we added so this stops recurring.** `test/Permissions.t.sol` states the whole matrix as eight executable assertions — what the curator cannot do, what only the Guardian may, what is open to anyone, and that `withdrawUnconverted` always pays the curator address and never the caller. Comments cannot be executed, which is why they rot silently. When a permission next moves, that file fails, and whoever moved it has to come and read the sentence they are contradicting.
+
+
+### Finding 2: README attributes conversion/booking to the curator, but curator has no such privilege
+- **Severity:** Low
+- **Confidence:** Medium
+- **Detected by:** doc_review
+- **Description:** The README overview states "the curator converts it to BTCB and books it behind a task." In the implementation, direct conversion via `endow` is `onlyGuardian` (guarded by `require(msg.sender == _getGuardian())`), while `triggerConversion` and `fundTaskFromPool` are permissionless (callable by anyone). The vault's own NatSpec explicitly contradicts the README: "It cannot endow. `endow` is the Guardian's alone... this line used to claim otherwise." The curator therefore has no special conversion or booking authority.
+- **Vulnerable Code:**
+  - `README.md - What is being audited`
+  - `src/AssayFlapVault.sol - endow()`
+  - `src/AssayFlapVault.sol - triggerConversion()`
+  - `src/AssayFlapVault.sol - fundTaskFromPool()`
+
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+> **Reason (if FP / By Design / Acknowledged):** Accepted. That sentence now reads "anyone may schedule its conversion to BTCB and book it behind a task", which is what the code does.
+
+One note on where the fix lives, since it matters for re-checking: the archive's README is generated by a heredoc inside `tools/audit-package.sh`, not committed as a file. The correction is at that heredoc, so a diff of `README.md` alone will not show it — the generated copy in the archive will.
+
+The repository's own `README.md` carried a related claim in its "Notes on what this is not" section, saying tasks "are posted by a curator" as the centralised part of this version. That was also out of date: open posting has shipped. It now describes the actual asymmetry — curator and Guardian may post at any time and for any legal window, anyone else only after the previous task has settled and only for at most `OPEN_POST_MAX_SPAN` — and says why the open path is not a claim on the treasury, since `fundTaskFromPool` refuses to move the pool onto a task the project did not publish.
+
+**We treated these two as a symptom and swept for the rest.** This is the third round in which prose about who may do what has been contradicted by the `require` that decides it, and the pattern is always the same: a permission moved in one round and a sentence written in an earlier one stayed behind. So rather than fix the two you named, we went through every NatSpec, inline comment, UI-schema label and document in the repository looking for claims of the same kind, and checked each against the code. **21 were wrong. You named 2.** All 21 are fixed. Among the ones you did not name:
+
+- `MAX_ENDOW_SLIPPAGE_BPS`'s NatSpec warned that without a floor "the curator could sandwich the vault's own conversion" — but `endow` is the only caller-supplied floor and it is Guardian-only, so the sentence named an account that cannot reach it.
+- `fundTaskFromPool`'s NatSpec described "its fixed reward" and "the same amount for every task". The amount is `rewardPool` at the moment of the call, and the inline comment two lines below it said so.
+- `SELF_CHECK.md` documented the recovery as `cancelScheduledEndow(requestId)`, a function that does not exist, with permissions that were also wrong.
+- `Tournament`'s `postTask` NatSpec said permissionless posting was a future path. It has been in this version for several rounds.
+- Three UI-schema labels read "Collectable now / 现在可领" for values that cannot be collected until settlement.
+
+**And one of them was a sentence we wrote in this round's own fix.** Correcting the `curator` NatSpec, we wrote that it "cannot cancel a scheduled conversion" — absolute, and false, because after `CANCEL_GRACE` anyone may cancel and the curator is among them. It now says the Guardian alone may cancel a live request, and that past the grace the curator may do exactly what any address may.
+
+**What we added so this stops recurring.** `test/Permissions.t.sol` states the whole matrix as eight executable assertions — what the curator cannot do, what only the Guardian may, what is open to anyone, and that `withdrawUnconverted` always pays the curator address and never the caller. Comments cannot be executed, which is why they rot silently. When a permission next moves, that file fails, and whoever moved it has to come and read the sentence they are contradicting.
 
 ---
 
 ## Status
 
-- Every guard added across these rounds was confirmed by breaking it and watching only its own
-  test fail.
+- 238 tests across 33 suites, including the new `test/Permissions.t.sol`.
 - No token has been launched on either chain.
 - **BSC mainnet carries the current code; BSC testnet is behind.** The testnet deploy failed for
   gas — the public BNB testnet faucet is out of funds — so that address still runs an earlier

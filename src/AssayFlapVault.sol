@@ -58,7 +58,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice The worst conversion `endow` will accept, measured against the pool's spot price.
     /// @dev A floor the caller picks freely is a floor the caller can set to zero, and the caller
-    ///      here is privileged. With no lower bound the curator could sandwich the vault's own
+    ///      here is the Guardian, because `endow` is the only path that takes a caller-supplied
+    ///      floor and it is Guardian-only. With no lower bound that caller could sandwich the
     ///      conversion and keep the difference — the money is the token's tax, so that is value
     ///      taken from the bounty rather than from them. This bounds it to 3%.
     uint256 private constant MAX_ENDOW_SLIPPAGE_BPS = 300;
@@ -136,10 +137,19 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice The tax token this vault belongs to, as told to us by the factory at creation.
     address public immutable taxToken;
 
-    /// @notice Where unconverted tax is returned to, and the only account besides the Guardian
-    ///         that may cancel a scheduled conversion. Set at creation to the token's creator.
-    /// @dev    It cannot endow. `endow` is the Guardian's alone — that is the point of it — and
-    ///         this line used to claim otherwise.
+    /// @notice The fixed address `withdrawUnconverted` pays. Set at creation to the token's
+    ///         creator, and immutable.
+    /// @dev    It holds no privilege at all beyond being that destination. It cannot `endow` —
+    ///         that is the Guardian's alone — and it holds no special right over a scheduled
+    ///         conversion: until `executeAfter + CANCEL_GRACE` only the Guardian may cancel, and
+    ///         after that the curator may do exactly what any address may and nothing more.
+    ///         Cancelling frees BNB back into `freeTax()`, which is what `withdrawUnconverted`
+    ///         pays it, so an account that profits from a conversion never happening must not be
+    ///         able to stop a live one.
+    ///
+    ///         This line has been wrong twice, in opposite directions, and both times because the
+    ///         permission moved and the sentence did not. `test/Permissions.t.sol` pins what is
+    ///         actually true so the next move has somewhere to fail.
     address public immutable curator;
 
     /// @notice BTCB assigned to a task's bounty, by task id.
@@ -420,9 +430,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         }
     }
 
-    /// @notice Pays one task its fixed reward out of the pool. Callable by anyone.
-    /// @dev One-shot per task and the same amount for every task, so this is a transfer and not a
-    ///      decision. A short pool pays what it has rather than reverting, so a task is never left
+    /// @notice Moves the whole reward pool onto one task's bounty. Callable by anyone.
+    /// @dev One-shot per task, and the amount is whatever the pool holds when it is called: an
+    ///      epoch converts what it accrued and its task takes what that bought, plus anything an
+    ///      earlier task rolled back through `reclaimBounty`. Nobody picks a number, so this is a
+    ///      transfer and not a decision. A short pool pays what it has rather than reverting, so a task is never left
     ///      unfunded waiting for somebody to judge it worth funding.
     function fundTaskFromPool(uint256 taskId) external nonReentrant returns (uint256 amount) {
         _requireTask(taskId);
@@ -939,7 +951,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.outputs[0] = FieldDescriptor("tasks", "uint256", unicode"Tasks posted / 已发布任务", 0);
         m.outputs[1] = FieldDescriptor("openTasks", "uint256", unicode"Still open / 进行中", 0);
         m.outputs[2] = FieldDescriptor("unassignedBnb", "uint256", unicode"BNB awaiting conversion / 待兑换的 BNB", 18);
-        m.outputs[3] = FieldDescriptor("committedBtcb", "uint256", unicode"BTCB in bounties / 赏金中的 BTCB", 18);
+        m.outputs[3] = FieldDescriptor("committedBtcb", "uint256", unicode"BTCB committed to prizes / 已锁定的奖金 BTCB", 18);
         m.outputs[4] = FieldDescriptor("paidBtcb", "uint256", unicode"BTCB paid to miners / 已付矿工的 BTCB", 18);
         m.outputs[5] = FieldDescriptor("minersPaid", "uint256", unicode"Payouts made / 支付笔数", 0);
         m.approvals = new ApproveAction[](0);
@@ -976,7 +988,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.outputs[5] = FieldDescriptor("phase", "uint256", unicode"0/1/2 commit reveal settled / 承诺 揭示 结算", 0);
         m.outputs[6] = FieldDescriptor("endsAt", "time", unicode"Phase ends / 本阶段结束", 0);
         m.outputs[7] = FieldDescriptor("yourScore", "uint256", unicode"Your score / 你的得分", 18);
-        m.outputs[8] = FieldDescriptor("yourBtcb", "uint256", unicode"Collectable now / 现在可领", 18);
+        m.outputs[8] = FieldDescriptor("yourBtcb", "uint256", unicode"Your share, after settlement / 你的份额,结算后可领", 18);
         m.approvals = new ApproveAction[](0);
         m.isOutputArray = true;
 
@@ -1024,7 +1036,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.outputs[0] = FieldDescriptor("amount", "uint256", unicode"Amount / 数量", 18);
         m.approvals = new ApproveAction[](0);
 
-        // 7 — funding the open task. No inputs: the vault derives all of them.
+        // 7 — scheduling a conversion. No arguments: the vault derives the size and the floor.
+        // It is payable, though — the caller sends the scheduler's fee and any excess is returned.
         m = schema.methods[7];
         m.name = "triggerConversion";
         m.description = unicode"Convert tax / 兑换本期税";
@@ -1062,7 +1075,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.outputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"Amount / 数量", 18);
         m.approvals = new ApproveAction[](0);
 
-        // 11 — the conversion the curator is about to accept.
+        // 11 — the price beside the Guardian-only `endow` control.
         m = schema.methods[11];
         m.name = "quote";
         m.description = unicode"Converts to / 能换到多少";

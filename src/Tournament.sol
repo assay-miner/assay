@@ -61,11 +61,12 @@ contract Tournament {
 
     /// @notice The longest window a task posted by nobody in particular may run for.
     /// @dev Anyone may post once the previous task has settled, which is what keeps the protocol
-    ///      running if the curator goes quiet. But the vault's withdrawal waits on
-    ///      `latestRevealEnd`, and that is a high-water mark no later post can walk back — so an
-    ///      open post carrying MAX_TASK_SPAN would freeze the project's own tax for thirty days
-    ///      for the price of gas, and nothing could undo it. A stranger gets ten minutes; the
-    ///      curator and the Guardian keep the full range.
+    ///      running if the curator goes quiet. The project's tax is no longer what this protects:
+    ///      the vault's withdrawal waits on `latestCuratedRevealEnd`, which only a curator or
+    ///      Guardian post advances. What the cap still bounds is how long one open post can keep
+    ///      the next poster out, since `latestRevealEnd` is a high-water mark no later post can
+    ///      walk back. A stranger gets ten minutes; the curator and the Guardian keep the full
+    ///      range.
     uint64 public constant OPEN_POST_MAX_SPAN = 10 minutes;
 
     AssayVault public immutable vault;
@@ -162,7 +163,13 @@ contract Tournament {
     // ---------------------------------------------------------------------------------------
 
     /// @notice Publishes a task and escrows its pot.
-    /// @dev Curated in this version. Permissionless posting is the ERC-8183 escrow path: a task
+    /// @dev The curator and the Guardian may post at any time, across the full MAX_TASK_SPAN. A
+    ///      stranger may post too, but only in the gap between epochs and only inside
+    ///      OPEN_POST_MAX_SPAN, so a lost or compromised curator key cannot end task creation.
+    ///      Only a curated post advances `latestCuratedRevealEnd`, so an open post cannot hold the
+    ///      vault's withdrawal shut.
+    ///
+    ///      What is still ahead is the ERC-8183 escrow path: a task
     ///      becomes a job, the pot becomes the bounty, and this contract becomes the evaluator
     ///      that signs off delivery. The verification core below does not change to get there.
     /// @param inputs Calldata handed to each submission.
@@ -561,7 +568,7 @@ contract Tournament {
         m.outputs[6] = FieldDescriptor("phase", "uint256", unicode"0 commit, 1 reveal, 2 settled / 0 承诺 1 揭示 2 已结算", 0);
         m.outputs[7] = FieldDescriptor("endsAt", "time", unicode"Current phase ends / 本阶段结束", 0);
         m.outputs[8] = FieldDescriptor("yourScore", "uint256", unicode"Your score / 你的得分", 18);
-        m.outputs[9] = FieldDescriptor("yourClaimable", "uint256", unicode"Claimable now / 现在可领", 18);
+        m.outputs[9] = FieldDescriptor("yourClaimable", "uint256", unicode"Your share, once reveal closes / 你的份额,揭示结束后可领", 18);
         m.approvals = new ApproveAction[](0);
         m.isOutputArray = true;
 

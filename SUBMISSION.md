@@ -21,7 +21,7 @@ on and both are cheaper to change now than after:
 - **The factory takes no commission.** The token launches at 200 bps each way, so Rule 002 puts it in the `msg.value * 6 / taxRateBps` tier — a recommended 3%.
   We take zero and put all of it into bounties. Rule 002 asks for a justification when the
   recommendation is not followed; ours is in `SELF_CHECK.md` (L-02).
-- **`endow` is curator-gated and performs a swap.** See M-02 in the same report. There is a
+- **`endow` is Guardian-only and performs a swap.** See M-02 in the same report. There is a
   permissionless alternative; it trades one risk for another and an outside opinion is worth
   having before committing.
 

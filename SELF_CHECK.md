@@ -36,7 +36,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 |---|---|---|
 | 001 | Vault inherits `VaultBaseV2` | ✅ |
 | 001 | `vaultUISchema()` implemented, `vaultType`/`description` non-empty | ✅ |
-| 001 | Guardian reaches every privileged function | ✅ `endow` accepts curator or Guardian; emergency functions are Guardian-only |
+| 001 | Guardian reaches every privileged function | ✅ `endow` is Guardian-only; emergency functions are Guardian-only |
 | 001 | Guardian not revocable | ✅ address is fixed in `VaultBase._getGuardian()`; no setter exists |
 | 001 | `revokeRole()` override | N/A — custom modifiers, not OZ `AccessControl` |
 | 001 | No DOS via parameter manipulation | ✅ no mutable parameters exist; see L-03 for the liveness note |
@@ -66,7 +66,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | Critical | 0     | — |
 | High     | 0     | — |
 | Medium   | 1     | Guardian authority over bounty funds (Rule 009 requires it) |
-| Low      | 3     | Post-drain ledger drift; no commission; conversion liveness depends on curator |
+| Low      | 3     | Post-drain ledger drift; no commission; rounding dust bounded by one wei per scorer |
 | Info     | 6     | Bounded stats scan; base-contract errors; tournament dependency; two custody gaps found and fixed during this pass; one stated asset assumption |
 
 ## Detailed Findings
@@ -124,7 +124,7 @@ the floor in the meantime the swap reverts, the request is marked FAILED, and an
 | Callback driven by anyone | `msg.sender == triggerService`, an immutable resolved from `block.chainid`, plus `nonReentrant` |
 | A swallowed failure marking the request EXECUTED | No `try`/`catch` anywhere on the path. A failed conversion reverts, the service records FAILED, and `retryTrigger` stays available |
 | A request consumed by a failure | The record is deleted **before** the swap; a revert undoes the deletion with everything else, so a failed conversion leaves the request intact and retryable |
-| A stuck request nobody can clear | `cancelScheduledEndow(requestId)`, curator or Guardian. A later callback for a cancelled id finds nothing and reverts |
+| A stuck request nobody can clear | `cancelConversion(requestId)`: the Guardian at any time, and anyone once the request is `CANCEL_GRACE` (1 hour) past its `executeAfter`. The curator has no cancel right — cancelling frees BNB into `freeTax()`, which is what `withdrawUnconverted` pays it. A later callback for a cancelled id finds nothing and reverts |
 | The fee eating bounty money | Paid by the caller through `msg.value`, never taken from tax. Change is refunded rather than quietly becoming bounty |
 | A hardcoded fee going stale | `getFee()` is read at call time, as the service's own guidance requires |
 
@@ -342,7 +342,9 @@ None. The vault is deployed directly by the factory, not behind a proxy. All ven
 As specified by Rule 009 and discussed in M-01.
 
 ### Decentralization recommendations
-The curator's discretion over *when* to convert and *which task* receives it is the main centralization surface after the Guardian. Splitting conversion from assignment (M-02, option 2) would reduce it to "which task", which is the part that arguably should stay with the party posting the work.
+After the Guardian, the curator holds no discretion left to centralize. *When* a conversion happens is not its call: `triggerConversion()` checks no caller, only that one `CONVERSION_INTERVAL` has passed, and the scheduler's callback re-arms the next epoch itself. *Which task* receives it is not its call either: `fundTaskFromPool` is permissionless and takes the newest task, while its commit window is open, and only if a curator or Guardian published it — the last clause keeps a stranger from pointing the pool at a task only they can win, not the curator from choosing among ours.
+
+What the curator still is: the fixed address `withdrawUnconverted` pays, for tax that no conversion has taken. It cannot cancel a live conversion, precisely because cancelling would move BNB into the side it gets paid from. `test/Permissions.t.sol` is the executable version of this paragraph.
 
 ## Gas Optimization Recommendations
 

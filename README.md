@@ -99,8 +99,12 @@ test red rather than quietly turning the task into something a person can win.
 
 ## Notes on what this is not
 
-The tournament's tasks are posted by a curator. That is the centralised part of this version and
-it is not hidden: the verification core trusts nobody, but *what gets mined* currently does. The
+Posting is open, but not evenly. The curator and the Guardian may post at any time and for any
+legal window; anyone else may post only after the previous task has settled, and only for at most
+ten minutes (`OPEN_POST_MAX_SPAN`). That open path exists so a lost curator key cannot end the
+tournament — it is not a claim on the treasury, and `fundTaskFromPool` refuses to move the reward
+pool onto a task the project did not publish. So *what gets mined* is still mostly ours to choose,
+and that is the centralised part of this version; it is not hidden. The
 next step is the ERC-8183 escrow path, where anyone posts a task with a bounty and this contract
 acts as the delivery evaluator — the verification core does not change to get there.
 
