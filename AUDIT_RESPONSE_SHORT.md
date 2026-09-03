@@ -46,6 +46,6 @@ The schema format has no field for this — `VaultMethodSchema` carries a name, 
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xa8877425AA38b4fD59ebdF445265a24E2d08d32E` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x4b5682d350b7975FDD8e16a30933bddF8AcBD7D6` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xF062f9B72778294819486c68CbceAcbea8F9078a` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x5c9e36e588859516007e06de145Bde6f92bF883A` |
 | Tax token | not launched | not launched |
