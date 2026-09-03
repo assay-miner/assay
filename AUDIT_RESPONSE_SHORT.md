@@ -79,6 +79,6 @@ One correction to our own first attempt at that test, since it bears on reading 
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x68c2656B23329d4Ceee87d39a1038EA5aAdAa222` | `0x3B0da8368e01b516703E65Ce9Ba9be9d1B327341` |
-| `Tournament` | `0xe432Ad772b2498631f7e1806BD0D33c35b184233` | `0x57e19122B5136E4808A6351B20286D07a67Fb522` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xCB30071bfF091859Ca9f4e4f3fBe68F8bA40e18F` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x44A97Dc7E55DA073fCD091542Edff9A43263557A` |
 | Tax token | not launched | not launched |
