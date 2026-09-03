@@ -516,8 +516,19 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // floor for us. Neither number is trustworthy alone; the higher of the two is. A favourable
         // move tightens the floor, and an unfavourable or manufactured one cannot loosen it below
         // what we already committed to.
-        uint256 fresh = (quote(s.bnbAmount) * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
-        uint256 floorNow = fresh > s.minRewardOut ? fresh : s.minRewardOut;
+        // `quote` calls the router, and a router call can revert on its own — an emptied pair, for
+        // one. That must not be allowed to explode this function: the delete and the release above
+        // would unwind along with it, right back to the bug this pass already fixed once. `this.`
+        // makes it a real external call, which is what `try` needs; on failure the stored floor
+        // stands, which is never worse than what this vault already committed to at arming time.
+        uint256 floorNow = s.minRewardOut;
+        try this.quote(s.bnbAmount) returns (uint256 out) {
+            uint256 fresh = (out * (10_000 - MAX_ENDOW_SLIPPAGE_BPS)) / 10_000;
+            if (fresh > floorNow) floorNow = fresh;
+        } catch {
+            // The stored floor stands. If the pair is in a state this reverts on, the swap below is
+            // about to fail for the same reason, and that failure is already caught.
+        }
 
         // A swap the market will not take at this floor must not take the callback down with it.
         // The delete and the `reserved` release above happen first, so reverting here undid both:
@@ -543,6 +554,25 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // longer covered, the impact bound refusing a size the pool has moved under. When it does
         // fail the chain simply stops arming itself and `triggerConversion` restarts it, which is
         // visible as tax sitting unconverted rather than as anything silently wrong.
+        // Same reasoning as the swap above, one call later: `_arm` reads the router through
+        // `maxConvertible`, `impactBps` and `quote`, none of which this function controls, and any
+        // one of them can revert. Direct-calling `_arm` here would let that revert take this whole
+        // callback down with it — including a conversion that had just succeeded — which is exactly
+        // what "best-effort" a few lines up promised would not happen. The comment was correct
+        // about the intent and wrong about the code: nothing had actually caught it.
+        try this.rearmSelf() {
+            // Armed, or correctly declined to arm. Either way `_arm` already did its own accounting.
+        } catch {
+            // Re-arming is not available right now — a broken quote, an exhausted balance for the
+            // fee, whatever it was. The chain simply stops arming itself, which `triggerConversion`
+            // restarts, same as any other reason `_arm` can decline.
+        }
+    }
+
+    /// @notice The re-arm, reachable only by this contract, so `trigger` can survive it failing.
+    /// @dev Same shape as `convertForSelf` and for the same reason: `try` needs an external call.
+    function rearmSelf() external {
+        require(msg.sender == address(this), unicode"Only self / 仅限自身");
         _arm(triggerService.getFee(), 0);
     }
 

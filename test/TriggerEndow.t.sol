@@ -24,6 +24,34 @@ import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IFlapTriggerService} from "../src/flap/IFlapTriggerService.sol";
 
+/// @dev Test-only. Forwards the one call the swap needs to a working router underneath, and always
+///      reverts on the one call pricing needs — so a single instance can sit at the real router's
+///      address and let a conversion complete while every quote it would compute along the way
+///      fails, which is exactly the shape Finding 1 describes.
+contract QuoteRevertingRouter {
+    address public immutable real;
+
+    constructor(address real_) {
+        real = real_;
+    }
+
+    function WETH() external view returns (address) {
+        return IPancakeRouter02(real).WETH();
+    }
+
+    function getAmountsOut(uint256, address[] calldata) external pure returns (uint256[] memory) {
+        revert("mock: quoting is broken");
+    }
+
+    function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline)
+        external
+        payable
+        returns (uint256[] memory amounts)
+    {
+        return IPancakeRouter02(real).swapExactETHForTokens{value: msg.value}(amountOutMin, path, to, deadline);
+    }
+}
+
 /// @notice The scheduled conversion path, against Flap's real trigger service on a fork.
 ///
 /// @dev The point of scheduling is not that it is a nicer API. It is that the party who prices a
@@ -230,6 +258,67 @@ contract TriggerEndowTest is BaseTest {
         vm.prank(TAXPAYER);
         uint256 second = flap.triggerConversion{value: fee}();
         assertGt(second, 0, "the restart was refused after a full interval");
+    }
+
+    // ------------------------------------------------- a broken quote cannot unwind a good swap
+
+    /// @dev Both guards Finding 1 asked for, proven in the one scenario that reaches them: a
+    ///      conversion whose swap has already succeeded, at the moment pricing starts failing.
+    ///      Before this round, either the `fresh` floor at the top of `trigger()` or the pricing
+    ///      calls inside the re-arm at the bottom could revert on a router that stops answering
+    ///      `getAmountsOut` — an emptied pair, in practice — and either one would take the whole
+    ///      call down with it, undoing the delete, the `reserved` release, and the swap that had
+    ///      just landed. Point the router at one that answers swaps but not quotes and both paths
+    ///      are exercised at once. Restore either direct call — `quote(s.bnbAmount)` in place of
+    ///      the try, or `_arm(...)` in place of `this.rearmSelf()` — and this reverts.
+    function test_ABrokenQuoteDoesNotUnwindACompletedConversion() public {
+        uint256 amount = _within(0.05 ether);
+        _tax(amount);
+        uint256 id = _schedule(amount);
+
+        // Sized before the router is broken below, since `_within` itself calls `maxConvertible()`.
+        uint256 topUp = _within(0.05 ether);
+
+        // The mock forwards swaps to a working router underneath. That router cannot be ROUTER
+        // itself — etching the mock's code onto ROUTER a moment later would leave `real` pointing
+        // back at the mock, and every forwarded swap would call straight back into itself. So the
+        // real router's original bytecode is copied to a second address first, and the mock is
+        // built pointing there before ROUTER is overwritten.
+        address realCopy = makeAddr("realRouterCopy");
+        vm.etch(realCopy, ROUTER.code);
+        vm.etch(ROUTER, address(new QuoteRevertingRouter(realCopy)).code);
+
+        // Confirm that quoting really is broken before relying on it — otherwise this proves
+        // nothing.
+        vm.expectRevert();
+        flap.quote(amount);
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL() + 1);
+
+        // The re-arm at the bottom of trigger() only reaches the broken pricing calls if it has
+        // enough free tax to bother with — otherwise `_arm` returns early on the balance check,
+        // before ever calling `maxConvertible()`. Fresh tax, sent after scheduling and before
+        // trigger() runs, is what has it get there and actually exercise the guard this test is
+        // for.
+        vm.deal(TAXPAYER, topUp);
+        vm.prank(TAXPAYER);
+        (bool sent,) = payable(address(flap)).call{value: topUp}("");
+        require(sent, "top-up failed");
+
+        uint256 poolBefore = flap.rewardPool();
+
+        vm.prank(TRIGGER);
+        flap.trigger(id); // must not revert
+
+        assertGt(flap.rewardPool(), poolBefore, "the completed conversion was unwound");
+        (uint96 left,,) = flap.scheduled(id);
+        assertEq(left, 0, "the executed request was not cleared");
+
+        // The re-arm could not price a new request either, so nothing new is reserved — the
+        // failure was swallowed, not silently retried with stale numbers. Confirms the guard was
+        // actually exercised: with no top-up, _arm returns early on the balance check and this
+        // assertion would pass for the wrong reason.
+        assertEq(flap.reserved(), 0, "a re-arm succeeded despite the broken router");
     }
 
     // ------------------------------------------------- the fee floor binds only the self-arm
