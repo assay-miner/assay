@@ -82,6 +82,6 @@ Falling back to the stored floor is never worse than what the vault already comm
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xaF10FEE536397243171cee88f4f3273162dC546c` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0xF9A446c1c69d56FAD9d422d00a71DA2d91A50306` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xa8877425AA38b4fD59ebdF445265a24E2d08d32E` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x4b5682d350b7975FDD8e16a30933bddF8AcBD7D6` |
 | Tax token | not launched | not launched |
