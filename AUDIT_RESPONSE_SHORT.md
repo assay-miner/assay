@@ -70,6 +70,6 @@ Tested for the three cases that matter: a second call in the same block is refus
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xCB30071bfF091859Ca9f4e4f3fBe68F8bA40e18F` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x44A97Dc7E55DA073fCD091542Edff9A43263557A` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0x0958724EfA99CDf7f0b5b706E880C291201EB9e6` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x4559d8839EfC6932D833F93f3de59d5830b20E99` |
 | Tax token | not launched | not launched |
