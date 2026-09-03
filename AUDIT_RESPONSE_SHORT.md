@@ -76,6 +76,11 @@ One correction to our own first attempt at that test, since it bears on reading 
 
 - Every new guard was confirmed by breaking it and watching only its own test fail.
 - No token has been launched on either chain.
+- **BSC mainnet carries this round's code; BSC testnet is one round behind.** The testnet deploy
+  failed for gas — the public BNB testnet faucet is currently out of funds — so the testnet address
+  below still runs the previous revision. The bytecode check in our packaging step is against
+  mainnet, and it passes. Testnet will be brought level as soon as the faucet refills; we are
+  flagging it rather than letting a reviewer find the mismatch.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
