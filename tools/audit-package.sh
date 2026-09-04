@@ -61,7 +61,12 @@ mkdir -p "$OUT/tasks"
 cp tasks/*.json "$OUT/tasks/"
 
 # remappings live inside foundry.toml, not a separate file
-cp SELF_CHECK.md SUBMISSION.md AUDIT_RESPONSE.md AUDIT_RESPONSE_SHORT.md foundry.toml "$OUT/"
+# AUDIT_RESPONSE.md is deliberately NOT shipped. It answers round 1's seven findings and nothing
+# keeps it current: sync-submission.mjs rewrites SUBMISSION.md only, so every redeploy re-sent a
+# document whose address table had stopped moving, alongside a present-tense claim that the
+# `pooledInto` flag IS the one-shot rule — the flag this submission's headline argument is about
+# having deleted. Two response documents in one archive contradicting each other is worse than one.
+cp SELF_CHECK.md SUBMISSION.md AUDIT_RESPONSE_SHORT.md foundry.toml "$OUT/"
 cp "$MANIFEST" "$OUT/deployments/"
 [ -s deployments/97-latest.json ] && cp deployments/97-latest.json "$OUT/deployments/"
 
@@ -96,6 +101,12 @@ FAILED=$(echo "$TEST_OUT" | grep -oE '[0-9]+ failed' | grep -oE '^[0-9]+' | head
 FACTORY=$(jq -r .flapFactory "$MANIFEST")
 TOURNAMENT=$(jq -r .tournament "$MANIFEST")
 SOLC=$(python3 -c "import json;print(json.load(open('out/AssayFlapFactory.sol/AssayFlapFactory.json'))['metadata']['compiler']['version'])")
+# Read from foundry.toml rather than restated. This line said "200 runs" for the several rounds
+# after optimizer_runs became 1, and a reviewer recompiling at 200 gets different bytecode — the
+# sentence directly under it promises the opposite.
+OPT_RUNS=$(grep -E '^optimizer_runs' foundry.toml | head -1 | tr -dc '0-9')
+[ -n "$OPT_RUNS" ] || { echo "cannot read optimizer_runs from foundry.toml"; exit 1; }
+[ "$OPT_RUNS" = "1" ] && OPT_PLURAL="run" || OPT_PLURAL="runs"
 
 cat > "$OUT/README.md" <<EOF
 # ASSAY vault — audit package
@@ -123,7 +134,7 @@ cannot be reasoned about without it.
 
 ## Compiler
 
-\`${SOLC}\`, optimizer on at 200 runs, \`via_ir\` on, \`evm_version = cancun\` — pinned in
+\`${SOLC}\`, optimizer on at ${OPT_RUNS} ${OPT_PLURAL}, \`via_ir\` on, \`evm_version = cancun\` — pinned in
 \`foundry.toml\` rather than left to the toolchain default, which drifts.
 
 \`standard-json/\` holds the exact solc input for each contract. Recompiling it reproduces the
@@ -202,7 +213,17 @@ cannot act on it, because they do not submit the execution and cannot predict it
 that residue is worth a TWAP reference is the question worth your opinion.
 EOF
 
+# `zip` UPDATES an existing archive rather than replacing it, so every file ever dropped from this
+# package stayed in the shipped zip for ever. Four had accumulated: a superseded round-1 response
+# whose address table was two deployments stale, a src/ contract that is no longer part of the
+# project, a removed script and a removed task spec — 92 entries against a staging directory of 88.
+# Deleting a file from the package looked like it worked and never did.
+rm -f dist/assay-vault-audit.zip
 ( cd "$OUT" && zip -qr ../assay-vault-audit.zip . )
+# The zip must contain exactly the staging directory: no ghosts, nothing missing.
+diff <(unzip -Z1 dist/assay-vault-audit.zip | grep -v '/$' | sort) \
+     <(cd "$OUT" && find . -type f | sed 's|^\./||' | sort) >/dev/null \
+  || { echo "zip contents differ from the staging directory"; exit 1; }
 echo "  $(ls -lh dist/assay-vault-audit.zip | awk '{print $5}')  dist/assay-vault-audit.zip"
 echo "  $(find "$OUT" -type f | wc -l | tr -d ' ') files"
 # The README is written through an unquoted heredoc, so it interpolates — which means a backtick

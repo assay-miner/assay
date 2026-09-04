@@ -177,7 +177,7 @@ nothing here changes the cost or the reach of the griefing this finding describe
 
 ## Status
 
-- 252 tests pass. The two new gates were confirmed by breaking what they guard and watching only
+- 253 tests pass. The two new gates were confirmed by breaking what they guard and watching only
   their own tests fail.
 - No token has been launched on either chain.
 - **BSC mainnet was redeployed for this submission and carries exactly this source.**
@@ -188,8 +188,13 @@ nothing here changes the cost or the reach of the griefing this finding describe
   by call and not only from a manifest.
 - **BSC testnet is still behind.** That deploy failed for gas and the public BNB testnet faucet is
   out of funds, so that address runs an earlier revision.
-- **No token is launched on either chain.** `SKIP_TOKEN=true`; `taxToken` is the zero address in
-  both manifests.
+- **No token is launched on mainnet.** This deploy ran `SKIP_TOKEN=true`, and `taxToken` is the
+  zero address in `deployments/56-latest.json`. A rehearsal token from an earlier round does exist
+  on testnet at `0x769EfAbeFc18317A846A1E2BdeB831Ba659f7777`, and `test/DepositParity.t.sol` forks
+  chain 97 to assert against it every run — that a plain `transfer` and `transferFrom` of the taxed
+  token deliver the full amount, since this vault credits deposits at face value and requires a
+  standard-transfer asset. An earlier draft of this section said no token existed on either chain,
+  which was true of the manifests and not of the chain.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|

@@ -17,6 +17,7 @@ if [ -n "$ZIP" ]; then
   case "$ZIP" in /*) ;; *) ZIP="$PWD/$ZIP" ;; esac
 fi
 cd "$(dirname "$0")/.."
+REPO_ROOT="$PWD"
 ZIP="${ZIP:-$PWD/dist/assay-vault-audit.zip}"
 [ -s "$ZIP" ] || { echo "no archive at $ZIP" >&2; exit 1; }
 
@@ -64,5 +65,14 @@ else
 fi
 
 node verify-onchain.mjs >/dev/null 2>&1 && ok "deployed bytecode matches the packaged source" || bad "on-chain verification failed"
+
+# Every address in the archive's prose must be current, third-party, or marked historical. A grep
+# for the addresses you remember can only find those; this enumerates all of them.
+if ADDR_OUT=$(node "$REPO_ROOT/tools/check-package-addresses.mjs" . 2>&1); then
+  ok "every address in the prose is current or marked historical"
+else
+  bad "stale addresses presented as current"
+  printf '%s\n' "$ADDR_OUT" | sed 's/^/    /'
+fi
 
 [ "$FAILED" = "0" ] && printf '\n\033[32marchive verified — safe to send\033[0m\n' || { printf '\n\033[31marchive is not sendable\033[0m\n'; exit 1; }
