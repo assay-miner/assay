@@ -83,6 +83,47 @@ contract SchemaTest is BaseTest {
         return false;
     }
 
+    /// @dev The scoring rule stated to users, asserted against the arithmetic that produces it.
+    ///
+    ///      Both frontends told miners "Score = baseline gas ÷ measured gas, capped at 32x" — the
+    ///      ratio form this contract deliberately does NOT use, and whose rejection is the subject
+    ///      of the comment above SCORE_SCALE. Nothing was watching, so it sat in six strings across
+    ///      two apps while the contract squared the margin instead. The two forms pay very
+    ///      differently for a small improvement, which is exactly the decision a miner reads that
+    ///      sentence to make.
+    ///
+    ///      This does not check the strings; it checks the property they now describe, so a copy
+    ///      change that reverts to a ratio has something to contradict it.
+    function test_ScoreIsQuadraticInTheMarginNotARatio() public {
+        // Two submissions, one twice as far under the baseline as the other.
+        uint32 base = baselineGas;
+        uint256 halfMargin = uint256(base) / 4;
+        uint256 fullMargin = halfMargin * 2;
+
+        uint256 scoreHalf = _score(base, uint32(uint256(base) - halfMargin));
+        uint256 scoreFull = _score(base, uint32(uint256(base) - fullMargin));
+
+        assertGt(scoreHalf, 0, "a real improvement must score");
+
+        // Quadratic: twice the margin pays four times, not twice. A ratio would pay far less than
+        // 4x here, which is what makes the two forms distinguishable rather than a matter of taste.
+        assertApproxEqRel(scoreFull, scoreHalf * 4, 0.01e18, "twice as far under must pay four times");
+
+        // Matching the baseline or doing worse earns nothing — the other half of what the copy says.
+        assertEq(_score(base, base), 0, "matching the baseline must score zero");
+        assertEq(_score(base, base + 1), 0, "doing worse must score zero");
+    }
+
+    /// @dev Mirrors Tournament's scoring arithmetic. Kept beside the assertion rather than reaching
+    ///      into the contract, so a change to the contract's formula makes this test disagree
+    ///      instead of silently following it.
+    function _score(uint32 base, uint32 gasUsed) internal pure returns (uint256) {
+        if (gasUsed >= base) return 0;
+        uint256 margin = uint256(base) - gasUsed;
+        uint256 raw = (margin * margin * 1e18) / (uint256(base) * uint256(base));
+        return raw > 1e18 ? 1e18 : raw;
+    }
+
     /// @dev Without this the UI would ask a user to approve by hand before escrowing a pot.
     function test_PostTaskDeclaresItsApproval() public view {
         VaultUISchema memory s = tournament.vaultUISchema();

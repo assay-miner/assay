@@ -59,8 +59,8 @@ const zh = {
   "mech.s3.left":
     "gas 数字在 STATICCALL 前后紧贴着读取,在任何记账逻辑运行之前。所以记到矿工头上的,是他那份代码的成本加上一个调用操作码——对同一任务的每个矿工都是同一个常数。",
   "mech.s3.right":
-    "得分 = 基准 gas ÷ 实测 gas,上限 32 倍。基准就是难度旋钮:打平或更差,得零分。奖池按得分占比分配,所以优化得越深,分到的越多。实测:6 个测试向量的一次链上检定花费 189,683 gas。",
-  "mech.s3.sub": "得分 = 基准 ÷ 实测",
+    "得分 =(省下的 gas ÷ 基准)的平方。基准就是难度旋钮:打平或更差,得零分。平方而不是比值,是因为比值会让随手删掉一个冗余操作码的人,拿到接近全力搜索的分数 —— 省得多一倍,这里拿到的是四倍。奖池按得分占比分配。",
+  "mech.s3.sub": "得分 =(省下的 ÷ 基准)²",
 
   "mech.s4.title": "印记",
   "mech.s4.left":
@@ -187,8 +187,8 @@ const en: Dict = {
   "mech.s3.left":
     "The gas figure is read immediately either side of the STATICCALL, before any bookkeeping runs. What is attributed to a miner is therefore the cost of their code plus one call opcode — the same constant for every miner on a task.",
   "mech.s3.right":
-    "Score = baseline gas ÷ measured gas, capped at 32×. The baseline is the difficulty knob: matching it or doing worse scores zero. The pot splits by score share, so deeper optimisation is worth strictly more. Measured: one on-chain assay across six test vectors costs 189,683 gas.",
-  "mech.s3.sub": "Score = baseline ÷ measured",
+    "Score is the gas you saved as a fraction of the baseline, squared. The baseline is the difficulty knob: matching it or doing worse scores zero. Squared rather than a ratio, because a ratio paid someone who deleted one redundant opcode almost what a full search earned — here, being twice as far under the baseline pays four times as much. The pot splits by score share.",
+  "mech.s3.sub": "Score = (gas saved ÷ baseline)²",
 
   "mech.s4.title": "The hallmark",
   "mech.s4.left":
