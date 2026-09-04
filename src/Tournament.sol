@@ -83,6 +83,18 @@ contract Tournament {
     ///         this decision that survives its own tooling.
     uint64 public constant MIN_COMMIT_SPAN = 5 minutes;
 
+    /// @notice The shortest reveal window a task the reward pool can pay may have.
+    /// @dev    Only the drawn lane needs this. A poster who both chooses the window and holds the
+    ///         answer can set a reveal window long enough for themselves and short enough for
+    ///         everybody else; on the drawn lane nobody chooses the instance, so the window is the
+    ///         only remaining lever and it is taken away here rather than left to the caller.
+    uint64 public constant MIN_REVEAL_SPAN = 5 minutes;
+
+    /// @notice The longest a drawn task may run.
+    /// @dev    Bounds how long one drawn task holds the funding lane, the same job
+    ///         `OPEN_POST_MAX_SPAN` does for the stranger lane.
+    uint64 public constant DRAWN_MAX_SPAN = 1 hours;
+
     /// @notice The longest window a task posted by nobody in particular may run for.
     /// @dev Anyone may post once the previous task has settled, which is what keeps the protocol
     ///      running if the curator goes quiet. The project's tax is no longer what this protects:
@@ -171,10 +183,35 @@ contract Tournament {
     event Reclaimed(uint256 indexed taskId, address indexed poster, uint256 amount);
 
 
-    constructor(AssayVault vault_, AgentRoster roster_, address curator_) {
+    /// @notice The only address whose tasks the reward pool may fund.
+    /// @dev    Immutable, and the whole point of the redesign. The pool used to be routed to tasks
+    ///         posted by the curator, who also authors the instance — so the one account able to
+    ///         optimise a task over unbounded time before publishing it was also the only account
+    ///         whose tasks the tax could pay. An audit measured the result: against the shipped
+    ///         epoch the curator's answer scores 98.63% of the bounty, and a variant needs no search
+    ///         advantage at all — post a newer task and `fundTaskFromPool`'s newest-task rule moves
+    ///         the pool off the one miners are working in.
+    ///
+    ///         `TaskGenerator` draws from `blockhash(block.number - 1)`, which nobody can choose:
+    ///         a caller cannot pin which block includes their transaction. Routing the pool there
+    ///         removes the information advantage instead of pricing it.
+    ///
+    ///         Immutable rather than a one-shot setter because the whole set must be redeployed
+    ///         anyway — `Deploy.s.sol` calls `vault.freeze()`, and `AssayVault.addController` is
+    ///         deployer-only and refuses once frozen, so a new Tournament cannot attach to an
+    ///         existing vault. A setter would be a lever that exists and has to be proven spent;
+    ///         an immutable never exists.
+    address public immutable generator;
+
+    /// @notice The newest task the generator drew. The only task `fundTaskFromPool` will pay.
+    uint256 public latestGeneratedTaskId;
+
+    constructor(AssayVault vault_, AgentRoster roster_, address curator_, address generator_) {
+        require(generator_ != address(0), unicode"Zero generator / 生成器为零地址");
         vault = vault_;
         roster = roster_;
         curator = curator_;
+        generator = generator_;
     }
 
     /// @notice The vault account escrowing a task's pot. Anyone can read its balance directly.
@@ -213,14 +250,34 @@ contract Tournament {
         // The Guardian may post too. curator is immutable and this was its only gate, so a lost or
         // compromised key ended task creation permanently — the vault side already had this
         // fallback on every privileged function and the tournament had none at all.
-        if (msg.sender != curator && msg.sender != _getGuardian()) {
-        // Open posting, but only in the gap between tasks and only for a short window.
-        require(block.timestamp >= latestRevealEnd, unicode"Not the curator / 非策展方");
-        require(
+        // Three lanes, and which one a post is in decides both its window rules and whether the
+        // reward pool can ever reach it.
+        //
+        //   drawn    — posted by `generator`. Nobody chose the instance, so this is the only lane
+        //              the converted tax pays. Its windows are floored so the poster cannot buy
+        //              themselves a head start with a short one, and capped so one drawn task
+        //              cannot sit on the funding lane.
+        //   curated  — the curator or the Guardian. May post at any time, is exempt from the
+        //              open-post gap, and no longer receives the pool.
+        //   stranger — anybody, in the gap between tasks and only briefly.
+        bool drawn = msg.sender == generator;
+        bool curated = msg.sender == curator || msg.sender == _getGuardian();
+
+        if (drawn) {
+            require(
+                commitEnd >= block.timestamp + MIN_COMMIT_SPAN
+                    && revealEnd >= commitEnd + MIN_REVEAL_SPAN
+                    && uint256(revealEnd) <= block.timestamp + DRAWN_MAX_SPAN,
+                unicode"Bad drawn window / 抽取任务时间窗口不合法"
+            );
+        } else if (!curated) {
+            // Open posting, but only in the gap between tasks and only for a short window.
+            require(block.timestamp >= latestRevealEnd, unicode"Not the curator / 非策展方");
+            require(
                 uint256(revealEnd) <= block.timestamp + OPEN_POST_MAX_SPAN,
                 unicode"Bad window / 时间窗口不合法"
             );
-    }
+        }
         uint256 n = inputs.length;
         require(n != 0 && n == expected.length, unicode"No vectors / 无测试向量");
         require(n <= MAX_VECTORS, unicode"Too many vectors / 测试向量过多");
@@ -231,13 +288,11 @@ contract Tournament {
             unicode"Bad window / 时间窗口不合法"
         );
 
-        // The commit floor binds curated tasks only, because they are the only tasks the floor can
-        // do anything for. `fundTaskFromPool` pays a task whose poster is the curator or the
-        // Guardian and no other, so a stranger's task cannot receive the converted tax however long
-        // its window is open. Imposing the floor on open posts would spend their span — which
-        // `OPEN_POST_MAX_SPAN` already caps at ten minutes so one stranger cannot sit on the
-        // fallback path — buying them a guarantee they are not eligible for.
-        if (msg.sender == curator || msg.sender == _getGuardian()) {
+        // The commit floor also binds curated tasks. They no longer receive the pool, but they
+        // still carry an escrowed ASSAY pot that miners compete for, and a window shorter than the
+        // conversion cadence was the original finding here. Strangers are exempt: `OPEN_POST_MAX_SPAN`
+        // already caps their whole span at ten minutes, so a floor would leave them no legal window.
+        if (curated) {
             require(
                 commitEnd >= block.timestamp + MIN_COMMIT_SPAN,
                 unicode"Commit window too short / 承诺窗口过短"
@@ -280,12 +335,18 @@ contract Tournament {
         });
 
         if (revealEnd > latestRevealEnd) latestRevealEnd = revealEnd;
-        if (
-            (msg.sender == curator || msg.sender == _getGuardian())
-                && revealEnd > latestCuratedRevealEnd
-        ) {
+
+        // A drawn task advances the curated mark, so `withdrawUnconverted` keeps waiting on our own
+        // epochs and a stranger still cannot hold it shut. It deliberately does NOT gate on
+        // `latestRevealEnd` above when posting: the funding lane must not be blockable by whoever
+        // wins a race to occupy the open slot, which is the mechanism finding 023 is about.
+        if ((drawn || curated) && revealEnd > latestCuratedRevealEnd) {
             latestCuratedRevealEnd = revealEnd;
         }
+
+        // The single task the reward pool may be moved onto. Written only here, only on the drawn
+        // lane, so no other poster can make their task the funding target by posting after it.
+        if (drawn) latestGeneratedTaskId = taskId;
 
         Crucible.Vector[] storage v = _vectors[taskId];
         for (uint256 i; i < n; ++i) {

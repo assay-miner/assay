@@ -27,6 +27,10 @@ import {ClonesUpgradeable} from "@openzeppelin-contracts-upgradeable/proxy/Clone
 ///      `error VaultFactoryNotRegistered(address)` and gates `registerVaultFactory` behind
 ///      VAULT_ADMIN_ROLE. Both cannot be true. This forks mainnet and finds out which is.
 contract FlapGateTest is Test {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     address payable internal constant VAULT_PORTAL =
         payable(0x90497450f2a706f1951b5bdda52B4E5d16f34C06);
     /// A factory Flap has registered, for the control arm.
@@ -143,7 +147,7 @@ contract FlapGateTest is Test {
         AssayVault custody = new AssayVault(IERC20(address(token)), launcher);
         AgentRoster roster = new AgentRoster(
             IIdentityRegistry(0x8004A169FB4a3325136EB29fA0ceB6D2e539a432), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, launcher);
+        Tournament tournament = new Tournament(custody, roster, launcher, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();

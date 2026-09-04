@@ -70,19 +70,19 @@ contract PoolDrainTest is BaseTest {
 
         uint256 pool = _fillPool(0.05 ether);
         assertGt(pool, 0, "the pool has to hold something for this to be a drain");
-        assertEq(flap.bounty(taskId), 0, "the task under attack was never funded");
+        assertEq(flap.bounty(drawnTaskId), 0, "the task under attack was never funded");
 
         // Scores are already final here, so funding now would divide a pot among people who are
         // done competing for it — and this miner is the only one of them.
         vm.prank(ATTACKER);
-        // The gate names commitment, not settlement: a settled task is past commitEnd too.
+        // The gate names commitment, not settlement: a settled task is past drawnCommitEnd too.
         vm.expectRevert(bytes(unicode"Commitment closed / 承诺已截止"));
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
 
         // And with the money still in the pool there is nothing to collect.
         vm.prank(ATTACKER);
         vm.expectRevert(bytes(unicode"Nothing to collect / 无可领取"));
-        flap.collect(taskId);
+        flap.collect(drawnTaskId);
 
         assertEq(flap.rewardPool(), pool, "the pool did not move");
         assertEq(IERC20(BTCB).balanceOf(ATTACKER), 0, "the attacker took nothing");
@@ -93,9 +93,9 @@ contract PoolDrainTest is BaseTest {
     function test_ALiveTaskStillFunds() public {
         uint256 pool = _fillPool(0.05 ether);
         vm.prank(ATTACKER);
-        uint256 funded = flap.fundTaskFromPool(taskId);
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
         assertEq(funded, pool, "a live task takes the whole pool");
-        assertEq(flap.bounty(taskId), pool, "and it lands on the bounty");
+        assertEq(flap.bounty(drawnTaskId), pool, "and it lands on the bounty");
     }
 
     // ------------------------------------------------------------ blocking a task with dust
@@ -109,35 +109,35 @@ contract PoolDrainTest is BaseTest {
         deal(BTCB, ATTACKER, 1);
         vm.startPrank(ATTACKER);
         IERC20(BTCB).approve(address(flap), 1);
-        flap.sponsor(taskId, 1);
+        flap.sponsor(drawnTaskId, 1);
         vm.stopPrank();
 
-        assertEq(flap.bounty(taskId), 1, "the dust is on the bounty");
+        assertEq(flap.bounty(drawnTaskId), 1, "the dust is on the bounty");
 
-        uint256 funded = flap.fundTaskFromPool(taskId);
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
         assertEq(funded, pool, "the pool still moves");
-        assertEq(flap.bounty(taskId), pool + 1, "and it sits alongside the sponsorship");
+        assertEq(flap.bounty(drawnTaskId), pool + 1, "and it sits alongside the sponsorship");
     }
 
     // ------------------------------------------------ the reveal window: the field is frozen
 
-    /// @dev The half the first fix missed. Commitment closes at commitEnd, so across the whole
+    /// @dev The half the first fix missed. Commitment closes at drawnCommitEnd, so across the whole
     ///      reveal window nobody new can enter while the pool could still be moved onto the task.
     ///      Anyone already committed could wait for that window and take a pot no one else could
-    ///      still compete for. Point the gate back at revealEnd and this passes by not reverting.
+    ///      still compete for. Point the gate back at drawnRevealEnd and this passes by not reverting.
     function test_ATaskInItsRevealWindowCannotStillBeFunded() public {
         _enroll(ATTACKER, ATTACKER_AGENT);
-        _commit(ATTACKER, ATTACKER_AGENT, Bytecode.padded(), bytes32(ATTACKER_AGENT));
+        _commitDrawn(ATTACKER, ATTACKER_AGENT, drawnTight, bytes32(ATTACKER_AGENT));
 
         // Past commitment, before settlement: the field is closed, the task is not.
-        vm.warp(commitEnd + 1);
+        vm.warp(drawnCommitEnd + 1);
         uint256 pool = _fillPool(0.05 ether);
         assertGt(pool, 0, "the pool has to hold something for this to be worth taking");
-        assertLt(block.timestamp, revealEnd, "still inside the reveal window");
+        assertLt(block.timestamp, drawnRevealEnd, "still inside the reveal window");
 
         vm.prank(ATTACKER);
         vm.expectRevert(bytes(unicode"Commitment closed / 承诺已截止"));
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
 
         assertEq(flap.rewardPool(), pool, "the pool did not move");
     }
@@ -150,14 +150,14 @@ contract PoolDrainTest is BaseTest {
     ///      passes by not reverting.
     function test_ASettledTaskCannotBeSponsored() public {
         _fillPool(0.05 ether);
-        flap.fundTaskFromPool(taskId);
-        vm.warp(revealEnd + 1);
+        flap.fundTaskFromPool(drawnTaskId);
+        vm.warp(drawnRevealEnd + 1);
 
         deal(BTCB, ATTACKER, 1e15);
         vm.startPrank(ATTACKER);
         IERC20(BTCB).approve(address(flap), 1e15);
         vm.expectRevert(bytes(unicode"Settled / 已结算"));
-        flap.sponsor(taskId, 1e15);
+        flap.sponsor(drawnTaskId, 1e15);
         vm.stopPrank();
     }
 
@@ -165,25 +165,33 @@ contract PoolDrainTest is BaseTest {
     ///      task's state and not a permission.
     function test_ALiveTaskCanStillBeSponsored() public {
         _fillPool(0.05 ether);
-        uint256 funded = flap.fundTaskFromPool(taskId);
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
 
         deal(BTCB, ATTACKER, 1e15);
         vm.startPrank(ATTACKER);
         IERC20(BTCB).approve(address(flap), 1e15);
-        flap.sponsor(taskId, 1e15);
+        flap.sponsor(drawnTaskId, 1e15);
         vm.stopPrank();
 
-        assertEq(flap.bounty(taskId), funded + 1e15, "the sponsorship landed");
+        assertEq(flap.bounty(drawnTaskId), funded + 1e15, "the sponsorship landed");
     }
 
     /// @dev Only the newest task can be funded. Without this the caller picks which live task the
     ///      whole pool lands on, so a miner who dominates some other open task points this epoch's
     ///      converted tax at their own and takes it against a score nobody was competing with.
     ///      Delete the taskCount check in fundTaskFromPool and this stops reverting.
-    function test_AnOlderLiveTaskCannotTakeThePool() public {
-        uint256 older = taskId;
+    /// @dev The diversion variant, closed. The audit found that the curator needed no search
+    ///      advantage at all: `fundTaskFromPool` used to require the NEWEST task, so posting a fresh
+    ///      one while miners were committing to another moved the pool onto it — measured, the
+    ///      miners in the task they were working in collected zero.
+    ///
+    ///      The target is `latestGeneratedTaskId` now, written only when the generator posts. A
+    ///      curated task posted after the drawn one is newer and still cannot take the pool, and
+    ///      the drawn task keeps its funding regardless of what is posted around it.
+    function test_ANewerCuratedTaskCannotDivertThePoolFromTheDrawnOne() public {
+        uint256 pool = _fillPool(0.05 ether);
+        assertGt(pool, 0, "the pool has to hold something for this to matter");
 
-        // A second task, posted while the first is still taking commitments. Both are live.
         vm.startPrank(CURATOR);
         token.approve(address(vault), type(uint256).max);
         uint256 newest = tournament.postTask(
@@ -191,23 +199,18 @@ contract PoolDrainTest is BaseTest {
             uint64(block.timestamp + 1 hours), uint64(block.timestamp + 2 hours), POT
         );
         vm.stopPrank();
-        assertGt(newest, older, "the second task is the newer one");
-        assertEq(newest, tournament.taskCount(), "and it is what taskCount reports");
+        assertEq(newest, tournament.taskCount(), "the curated task is the newest by taskCount");
+        assertGt(newest, drawnTaskId, "and it was posted after the drawn one");
 
-        uint256 pool = _fillPool(0.05 ether);
-        assertGt(pool, 0, "the pool has to hold something for this to matter");
-
-        // The older task is still live — its commit window has not closed — and that is exactly the
-        // case the commitEnd gate alone would let through.
-        vm.prank(ATTACKER);
-        vm.expectRevert(bytes(unicode"Not the current task / 非当前任务"));
-        flap.fundTaskFromPool(older);
-
+        // Newest, live, curator-posted — and it cannot have the pool.
+        vm.prank(CURATOR);
+        vm.expectRevert(bytes(unicode"Not the drawn task / 非抽取任务"));
+        flap.fundTaskFromPool(newest);
         assertEq(flap.rewardPool(), pool, "the pool did not move");
 
-        // And the epoch's own task still funds, so the gate is the task's identity and not a lock.
-        uint256 funded = flap.fundTaskFromPool(newest);
-        assertEq(funded, pool, "the newest task takes the whole pool");
+        // The drawn task still takes it, so this is the target's identity and not a freeze.
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
+        assertEq(funded, pool, "the drawn task takes the whole pool");
     }
 
     /// @dev The whole sequence the third round described, run end to end. Posting is open to
@@ -244,7 +247,7 @@ contract PoolDrainTest is BaseTest {
         assertLt(block.timestamp, commitEnd_, "and its commit window is open");
 
         vm.prank(ATTACKER);
-        vm.expectRevert(bytes(unicode"Task is not ours / 任务非本方发布"));
+        vm.expectRevert(bytes(unicode"Not the drawn task / 非抽取任务"));
         flap.fundTaskFromPool(theirs);
 
         assertEq(flap.rewardPool(), pool, "the pool did not move");
@@ -257,25 +260,25 @@ contract PoolDrainTest is BaseTest {
     ///      fillings, both while the task is still open, both add to the same bounty.
     function test_ATaskCanBeFundedMoreThanOnceWhileItIsStillOpen() public {
         uint256 first = _fillPool(0.05 ether);
-        uint256 funded1 = flap.fundTaskFromPool(taskId);
+        uint256 funded1 = flap.fundTaskFromPool(drawnTaskId);
         assertEq(funded1, first, "the first filling landed");
-        assertEq(flap.bounty(taskId), first, "and is on the bounty");
+        assertEq(flap.bounty(drawnTaskId), first, "and is on the bounty");
 
         uint256 second = _fillPool(0.05 ether);
-        uint256 funded2 = flap.fundTaskFromPool(taskId);
+        uint256 funded2 = flap.fundTaskFromPool(drawnTaskId);
         assertEq(funded2, second, "the second filling landed too");
-        assertEq(flap.bounty(taskId), first + second, "both are on the bounty now");
+        assertEq(flap.bounty(drawnTaskId), first + second, "both are on the bounty now");
     }
 
     /// @dev A call against an empty pool costs gas and nothing else — it must not consume anything
     ///      that would block a real filling from landing later in the same window.
     function test_CallingAgainOnAnEmptyPoolChangesNothing() public {
         uint256 pool = _fillPool(0.05 ether);
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
 
         vm.expectRevert(bytes(unicode"Pool is empty / 池中无资金"));
-        flap.fundTaskFromPool(taskId);
-        assertEq(flap.bounty(taskId), pool, "an empty-pool attempt moved something");
+        flap.fundTaskFromPool(drawnTaskId);
+        assertEq(flap.bounty(drawnTaskId), pool, "an empty-pool attempt moved something");
     }
 
     /// @dev The scenario the finding described directly: whoever calls first, for however little
@@ -283,13 +286,13 @@ contract PoolDrainTest is BaseTest {
     ///      much larger conversion landing later in the same still-open window still reaches it.
     function test_AnEarlySmallCallDoesNotCapWhatTheTaskCanStillReceive() public {
         uint256 early = _fillPool(0.001 ether);
-        flap.fundTaskFromPool(taskId);
-        assertEq(flap.bounty(taskId), early, "the early sliver landed alone");
+        flap.fundTaskFromPool(drawnTaskId);
+        assertEq(flap.bounty(drawnTaskId), early, "the early sliver landed alone");
 
         uint256 later = _fillPool(0.05 ether);
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
         assertEq(
-            flap.bounty(taskId),
+            flap.bounty(drawnTaskId),
             early + later,
             "the later, larger conversion did not roll forward to a future task"
         );
@@ -351,29 +354,30 @@ contract PoolDrainTest is BaseTest {
     ///      strangers out, and this is not a stranger. What a fallback task can still be paid is a
     ///      pot escrowed at posting and `sponsor`, which is open to anyone; what it cannot be paid
     ///      is the tax this vault exists to convert.
-    function test_AGeneratorPostedTaskCannotBeFundedFromThePool() public {
-        UpgradeableBeacon beacon = new UpgradeableBeacon(address(new TaskGenerator()), guardian);
-        TaskGenerator generator = TaskGenerator(address(new BeaconProxy(
-            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
-        )));
-
-        // Nothing of ours is live, so the open-post window is available to the fallback path.
-        vm.warp(uint256(tournament.latestRevealEnd()) + 1);
-
+    /// @dev The inversion, asserted from both sides. This test used to say the opposite — that a
+    ///      generator-posted task could NEVER be funded — and that was the defect, not the design:
+    ///      it meant the only task whose instance nobody chose was the only task the tax could not
+    ///      pay, while the only task the tax could pay was authored by the account collecting it.
+    ///
+    ///      Now the drawn task is the fundable one and a curated task is not, so the account that
+    ///      chooses an instance and the account that can be paid for solving it are different by
+    ///      construction rather than by anybody's restraint.
+    function test_OnlyTheDrawnTaskCanBeFundedFromThePool() public {
         uint256 pool = _fillPool(0.05 ether);
         assertGt(pool, 0, "the pool must hold something for this to mean anything");
 
-        uint256 genTaskId = generator.generateAndPost(300, 300);
-        assertEq(genTaskId, tournament.taskCount(), "the generator's task is the newest");
+        // The curated fixture task is live and its commit window is open — and it cannot be funded.
+        (uint64 curatedCommitEnd,,,) = tournament.taskGates(taskId);
+        assertGt(uint256(curatedCommitEnd), block.timestamp, "the curated task is still open");
+        vm.expectRevert(bytes(unicode"Not the drawn task / 非抽取任务"));
+        flap.fundTaskFromPool(taskId);
 
-        (uint64 commitEnd,,, address poster) = tournament.taskGates(genTaskId);
-        assertGt(uint256(commitEnd), block.timestamp, "its commit window is open");
-        assertEq(poster, address(generator), "posted by the generator itself, not by a person");
-
-        // Newest task, commit window open, money sitting in the pool — and there is no caller who
-        // can bring the two together.
-        vm.expectRevert(bytes(unicode"Task is not ours / 任务非本方发布"));
-        flap.fundTaskFromPool(genTaskId);
+        // The drawn one takes it.
+        (,,, address poster) = tournament.taskGates(drawnTaskId);
+        assertEq(poster, address(generator), "the drawn task was posted by the generator itself");
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
+        assertEq(funded, pool, "the drawn task takes the whole pool");
+        assertEq(flap.bounty(drawnTaskId), pool, "and it lands on its bounty");
     }
 
     /// @dev The rounding finding, quantified rather than argued. Floor division in
@@ -394,33 +398,33 @@ contract PoolDrainTest is BaseTest {
     ///      that property.
     function test_TheRoundingDustIsBoundedByTheNumberOfScorers() public {
         uint256 pool = _fillPool(0.05 ether);
-        flap.fundTaskFromPool(taskId);
-        assertEq(flap.bounty(taskId), pool, "the task holds the pool");
+        flap.fundTaskFromPool(drawnTaskId);
+        assertEq(flap.bounty(drawnTaskId), pool, "the task holds the pool");
 
         address[3] memory miners = [ALICE, BOB, CAROL];
         uint256[3] memory agents = [AGENT_ALICE, AGENT_BOB, AGENT_CAROL];
         for (uint256 i; i < miners.length; ++i) {
             _enroll(miners[i], agents[i]);
-            _commit(miners[i], agents[i], Bytecode.padded(), bytes32(agents[i]));
+            _commitDrawn(miners[i], agents[i], drawnTight, bytes32(agents[i]));
         }
-        vm.warp(commitEnd + 1);
+        vm.warp(drawnCommitEnd + 1);
         for (uint256 i; i < miners.length; ++i) {
-            _reveal(miners[i], Bytecode.padded(), bytes32(agents[i]));
+            _revealDrawn(miners[i], drawnTight, bytes32(agents[i]));
         }
-        vm.warp(revealEnd + 1);
+        vm.warp(drawnRevealEnd + 1);
 
         uint256 paidOut;
         uint256 scorers;
         for (uint256 i; i < miners.length; ++i) {
-            uint256 due = flap.collectable(taskId, miners[i]);
+            uint256 due = flap.collectable(drawnTaskId, miners[i]);
             if (due == 0) continue;
             scorers++;
             vm.prank(miners[i]);
-            paidOut += flap.collect(taskId);
+            paidOut += flap.collect(drawnTaskId);
         }
         assertGt(scorers, 0, "nobody scored; this measures nothing");
 
-        uint256 dust = flap.bounty(taskId) - paidOut;
+        uint256 dust = flap.bounty(drawnTaskId) - paidOut;
         assertLe(dust, scorers, "the remainder exceeded one wei per scoring miner");
     }
 }

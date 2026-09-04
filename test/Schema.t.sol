@@ -164,18 +164,25 @@ contract SchemaTest is BaseTest {
         _reveal(ALICE, Bytecode.tight(), bytes32("a"));
 
         Tournament.TaskCard[] memory page = tournament.getTasks(ALICE, 0, 10);
-        assertEq(page.length, 1, "one task");
-        assertEq(page[0].taskId, taskId);
-        assertEq(page[0].baselineGas, baselineGas);
-        assertEq(page[0].vectors, inputs.length, "vector count is on the card");
-        assertEq(page[0].entrants, 1, "one scoring miner");
-        assertEq(page[0].phase, 1, "revealing");
-        assertGt(page[0].yourScore, 0, "the card knows your score");
+        // Two now: the curated fixture task and the drawn one the reward pool funds.
+        assertEq(page.length, 2, "the curated task and the drawn task");
+        // The drawn task is posted after the curated one in setUp, so the page lists it first.
+        assertEq(page[0].taskId, drawnTaskId, "the drawn task is newest and listed first");
+        assertEq(page[1].taskId, taskId, "the curated fixture task is the older one");
+        assertEq(page[1].baselineGas, baselineGas);
+        assertEq(page[1].vectors, inputs.length, "vector count is on the card");
+        assertEq(page[1].entrants, 1, "one scoring miner");
+        assertEq(page[1].phase, 1, "revealing");
+        assertGt(page[1].yourScore, 0, "the card knows your score");
 
         vm.warp(revealEnd);
         page = tournament.getTasks(ALICE, 0, 10);
-        assertEq(page[0].phase, 2, "settled");
-        assertGt(page[0].yourClaimable, 0, "and what the button will pay");
+        assertEq(page[1].phase, 2, "settled");
+        // A curated task still pays — just its own escrowed ASSAY pot rather than converted tax,
+        // which now goes to the drawn lane. The card reports what this task will actually pay.
+        assertEq(
+            page[1].yourClaimable, uint256(POT), "a curated task pays the pot its poster escrowed"
+        );
     }
 
     function test_LeaderboardIsSortedBestFirst() public {

@@ -53,34 +53,37 @@ contract DoubleSpendTest is BaseTest {
     function test_AReclaimedBountyCannotBePaidFromAnotherTask() public {
         // Task 1: funded, and ALICE scores on it but never collects.
         _tax(0.05 ether);
-        uint256 bounty1 = _endowTask(taskId, _within(0.025 ether));
+        uint256 bounty1 = _endowTask(drawnTaskId, _within(0.025 ether));
 
         _enroll(ALICE, AGENT_ALICE);
-        _commit(ALICE, AGENT_ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
-        vm.warp(commitEnd);
-        _reveal(ALICE, Bytecode.tight(), bytes32(AGENT_ALICE));
+        _commitDrawn(ALICE, AGENT_ALICE, drawnTight, bytes32(AGENT_ALICE));
+        vm.warp(drawnCommitEnd);
+        _revealDrawn(ALICE, drawnTight, bytes32(AGENT_ALICE));
 
-        // Task 2: a second, separately funded task whose money must stay its own.
-        vm.prank(CURATOR);
-        uint256 second = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
-            uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
-        );
+        // Task 2: a second, separately funded task whose money must stay its own. It has to be a
+        // drawn task too — the pool pays that lane and no other, so a curated second task would
+        // simply have no bounty and the test would prove nothing about keeping two apart.
+        uint256 firstDrawn = drawnTaskId;
+        vm.warp(uint256(tournament.latestRevealEnd()) + 1);
+        _postDrawnFixture();
+        uint256 second = drawnTaskId;
+        assertGt(second, firstDrawn, "the second draw did not produce a newer task");
         uint256 bounty2 = _endowTask(second, _within(0.025 ether));
         assertGt(bounty2, 0, "the second task was never funded");
 
         // ALICE sat on her share until the claim window closed, so the project reclaimed task 1.
-        (,, uint64 revealEnds,,,,,,) = tournament.tasks(taskId);
+        (,, uint64 revealEnds,,,,,,) = tournament.tasks(firstDrawn);
         vm.warp(uint256(revealEnds) + tournament.CLAIM_WINDOW());
         vm.prank(CURATOR);
-        uint256 reclaimed = flap.reclaimBounty(taskId);
+        uint256 reclaimed = flap.reclaimBounty(firstDrawn);
         assertEq(reclaimed, bounty1, "the reclaim did not take the whole bounty");
 
         // Task 1 is settled to the last wei. There is nothing left in it for anybody.
-        assertEq(flap.collectable(taskId, ALICE), 0, "a reclaimed task still shows a collectable share");
+        assertEq(flap.collectable(firstDrawn, ALICE), 0, "a reclaimed task still shows a collectable share");
 
         vm.prank(ALICE);
         vm.expectRevert(bytes(unicode"Nothing to collect / 无可领取"));
-        flap.collect(taskId);
+        flap.collect(firstDrawn);
 
         // And the second task's money is untouched.
         assertEq(flap.bounty(second) - flap.paid(second), bounty2, "task 2 was drained");

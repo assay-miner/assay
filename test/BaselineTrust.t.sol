@@ -14,6 +14,10 @@ import {CrucibleHarness} from "./CrucibleHarness.sol";
 
 /// @notice A task's difficulty arrives as a number in calldata. Nothing on chain derives it.
 contract BaselineTrustTest is Test {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     address constant CURATOR = address(0xC0);
     address constant SALVAGE = address(0x5A);
     address constant STRANGER = address(0x571A);
@@ -27,7 +31,7 @@ contract BaselineTrustTest is Test {
         TaxTokenMock token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), SALVAGE);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1_000e18);
-        tournament = new Tournament(custody, roster, CURATOR);
+        tournament = new Tournament(custody, roster, CURATOR, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();

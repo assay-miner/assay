@@ -439,11 +439,16 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     function fundTaskFromPool(uint256 taskId) external nonReentrant returns (uint256 amount) {
         _requireTask(taskId);
 
-        // The newest task only. Without this the caller chooses which live task the whole pool
-        // lands on, so a miner who dominates some other open task can point this epoch's converted
-        // tax at their own and take it in proportion to a score nobody was competing against. The
-        // epoch's task is always the newest one, so naming it is not a decision either.
-        require(taskId == tournament.taskCount(), unicode"Not the current task / 非当前任务");
+        // The newest DRAWN task, not the newest task. Naming it is still not a decision — there is
+        // exactly one — but the two differ in who may move the target. Under the newest-task rule
+        // the curator could post a fresh task one block after the one miners were working in and
+        // the pool followed them; an audit measured that variant needing no search advantage at
+        // all, only a second `postTask`. `latestGeneratedTaskId` is written on the drawn lane and
+        // nowhere else, so no poster can make their own task the funding target by posting after it.
+        require(
+            taskId == tournament.latestGeneratedTaskId(),
+            unicode"Not the drawn task / 非抽取任务"
+        );
 
         // The money has to be in place while people can still join. The first version of this
         // guard used revealEnd, which is a phase too late: commitment closes at commitEnd, so
@@ -452,24 +457,21 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // entire pool onto it, and take their share of a pot no one else could still enter for —
         // a sole committer taking all of it. Gating on commitEnd means the pot is decided before
         // the set of people dividing it is.
-        (uint64 commitEnd,,, address poster) = tournament.taskGates(taskId);
+        (uint64 commitEnd,,,) = tournament.taskGates(taskId);
         require(block.timestamp < commitEnd, unicode"Commitment closed / 承诺已截止");
 
-        // And the task has to be one this project or the Guardian published. Requiring the NEWEST
-        // task was not enough, which is the third time this function has been narrowed: posting is
-        // deliberately open to strangers between epochs so a lost curator key cannot end the
-        // tournament, and a stranger's task IS the newest one the moment they post it. So the
-        // sequence was: wait for the gap, post a task only you are ready to solve, point the pool at
-        // it because it is now the newest, and collect all of it as the sole scorer.
+        // The poster whitelist that used to stand here is gone, and its removal is the fix. It read
+        // `poster == curator || poster == _getGuardian()`, which routed every converted BTCB to a
+        // task authored by the one account that also chooses the instance, the vectors and the
+        // reference the baseline is measured from. That account can search for a month, post at the
+        // window floor, and reveal an answer nobody had time to approach: measured against the
+        // shipped epoch, 98.63% of the bounty.
         //
-        // Open posting exists so the tournament can continue without us. It was never a claim on
-        // the treasury, and this is the line that says so. A stranger's task still runs, still
-        // scores, and still pays out whatever its own poster escrowed — it just cannot be handed
-        // the converted tax.
-        require(
-            poster == curator || poster == _getGuardian(),
-            unicode"Task is not ours / 任务非本方发布"
-        );
+        // Requiring a drawn task instead is the same guarantee the whitelist was reaching for —
+        // that the pool cannot be aimed by whoever wants it — obtained the other way round.
+        // `TaskGenerator` derives the program from `blockhash(block.number - 1)`; a caller cannot
+        // choose which block includes their transaction, so no poster knows the instance before
+        // everyone else does. The advantage is removed rather than priced.
 
         // The whole pool. An epoch converts what it accrued and its task takes what that bought,
         // so nothing accumulates across epochs and no number here decides how much a task is worth.

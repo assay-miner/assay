@@ -14,6 +14,10 @@ import {TaxTokenMock} from "./TaxTokenMock.sol";
 
 /// @notice A user with no tooling posts a task, and Flap owns the recipe.
 contract TaskGeneratorSatelliteTest is Test {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     address constant CURATOR = address(0xC0);
     address constant SALVAGE = address(0x5A);
     address constant STRANGER = address(0x571A);
@@ -31,24 +35,30 @@ contract TaskGeneratorSatelliteTest is Test {
         TaxTokenMock token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), SALVAGE);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1_000e18);
-        tournament = new Tournament(custody, roster, CURATOR);
+        // Flap's Guardian owns the beacon: the same address the tournament and the vault already
+        // treat as the trusted operator, so this adds no party that was not already trusted.
+        // Same shape as Deploy.s.sol: the implementation and beacon first, so the proxy is the very
+        // next deploy after the tournament and the prediction offset is one rather than a count of
+        // whatever happens to sit between them. The custody wiring has to follow, not precede — it
+        // names the tournament, and naming it before it exists passed address(0) into addController.
+        beacon = new UpgradeableBeacon(address(new TaskGenerator()), GUARDIAN_56);
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        tournament = new Tournament(custody, roster, CURATOR, predicted);
+        generator = TaskGenerator(address(new BeaconProxy(
+            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
+        )));
+        require(address(generator) == predicted, "generator prediction missed in the fixture");
+
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
-
-        // Flap's Guardian owns the beacon: the same address the tournament and the vault already
-        // treat as the trusted operator, so this adds no party that was not already trusted.
-        beacon = new UpgradeableBeacon(address(new TaskGenerator()), GUARDIAN_56);
-        generator = TaskGenerator(address(new BeaconProxy(
-            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
-        )));
     }
 
     /// The whole point: no tooling, no arguments, no permission.
     function test_AStrangerPostsATaskWithNoToolingAndNoArguments() public {
         vm.prank(STRANGER);
-        uint256 id = generator.generateAndPost(60, 60);
+        uint256 id = generator.generateAndPost();
         assertGt(id, 0, "a stranger could not generate and post");
 
         (address poster,,,, uint32 baseline,,,,) = tournament.tasks(id);
@@ -58,23 +68,45 @@ contract TaskGeneratorSatelliteTest is Test {
     }
 
     /// The tournament's own rules still apply to it — it posts as a stranger, not as an insider.
-    function test_TheGeneratorIsBoundByTheOpenPostRules() public {
+    /// @dev The drawn lane is deliberately NOT gated on `latestRevealEnd`. It used to be — the
+    ///      generator posted as a stranger and waited its turn like one. That cannot stand now that
+    ///      the reward pool follows this lane: whoever wins the race to occupy the open slot would
+    ///      be able to hold the treasury's only route to miners shut indefinitely, which is exactly
+    ///      the griefing mechanism finding 023 describes, pointed at the money instead of at
+    ///      availability.
+    function test_TheDrawnLaneIsNotBlockedByALiveTask() public {
         vm.prank(CURATOR);
         tournament.postTask(
             _oneVector(), _oneExpected(), _square(), 100_000,
             uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
         );
-        vm.prank(STRANGER);
-        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
-        generator.generateAndPost(60, 60);
+
+        // A curated task is live and its reveal is far in the future. The generator posts anyway.
+        uint256 id = generator.generateAndPost();
+        assertEq(id, tournament.latestGeneratedTaskId(), "the drawn task did not become the target");
     }
 
-    /// And it cannot be used to reach past that bound.
-    function test_TheGeneratorCannotPostALongWindow() public {
-        uint64 openSpan = tournament.OPEN_POST_MAX_SPAN();
+    /// @dev The caller cannot name the window. If they could, they would name a short one, trigger
+    ///      the draw, and be the only person with time to answer the task the pool is about to fund
+    ///      — reintroducing on this lane the head start that moving the pool here removes.
+    function test_TheGeneratorsWindowIsNotCallerChosen() public {
         vm.prank(STRANGER);
-        vm.expectRevert(bytes(unicode"Bad window / 时间窗口不合法"));
-        generator.generateAndPost(60, openSpan);
+        uint256 id = generator.generateAndPost();
+
+        (uint64 commitEnd, uint64 revealEnd,,) = tournament.taskGates(id);
+        assertEq(
+            uint256(commitEnd), block.timestamp + generator.COMMIT_SECONDS(), "commit window is not the constant"
+        );
+        assertEq(
+            uint256(revealEnd),
+            block.timestamp + generator.COMMIT_SECONDS() + generator.REVEAL_SECONDS(),
+            "reveal window is not the constant"
+        );
+
+        // And both clear the floors Tournament enforces on this lane, so the belt and the braces
+        // agree rather than one of them being the only thing holding.
+        assertGe(uint256(commitEnd), block.timestamp + tournament.MIN_COMMIT_SPAN(), "under the commit floor");
+        assertGe(uint256(revealEnd), uint256(commitEnd) + tournament.MIN_REVEAL_SPAN(), "under the reveal floor");
     }
 
     /// Flap can change how a task is drawn without anybody redeploying the tournament.
@@ -99,13 +131,13 @@ contract TaskGeneratorSatelliteTest is Test {
     /// Consecutive blocks draw different tasks, so the answer to one is worthless to the next.
     function test_ADifferentBlockDrawsADifferentTask() public {
         vm.prank(STRANGER);
-        uint256 first = generator.generateAndPost(60, 60);
+        uint256 first = generator.generateAndPost();
         bytes32 a = tournament.vectorAt(first, 3).expected;
 
         vm.warp(block.timestamp + 1201);
         vm.roll(block.number + 1);
         vm.prank(STRANGER);
-        uint256 second = generator.generateAndPost(60, 60);
+        uint256 second = generator.generateAndPost();
         bytes32 b = tournament.vectorAt(second, 3).expected;
 
         assertTrue(a != b, "two blocks drew the same task");
@@ -125,7 +157,7 @@ contract TaskGeneratorSatelliteTest is Test {
         uint256 height = block.number;
         for (uint256 i; i < 20; ++i) {
             vm.prank(STRANGER);
-            uint256 id = generator.generateAndPost(60, 60);
+            uint256 id = generator.generateAndPost();
             assertGt(id, 0, "a block produced no task");
             at += 200;
             height += 1;

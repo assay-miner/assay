@@ -58,10 +58,17 @@ contract TaskGenerator is Initializable {
     /// @dev Callable by anyone, taking nothing. The tournament's own rules still apply: this posts
     ///      as a stranger, so it only succeeds in the gap after the previous task has settled and
     ///      only for a window the tournament considers short.
-    function generateAndPost(uint64 commitSeconds, uint64 revealSeconds)
-        external
-        returns (uint256 taskId)
-    {
+    /// @dev Windows are constants, not arguments. Once the reward pool follows the drawn lane, a
+    ///      caller who could name the window could name a short one, trigger the draw, and be the
+    ///      only person with time to answer it — reintroducing on this lane exactly the advantage
+    ///      moving the pool here was meant to remove. `Tournament` floors both windows as well; this
+    ///      is the belt to that pair of braces.
+    uint64 public constant COMMIT_SECONDS = 10 minutes;
+    uint64 public constant REVEAL_SECONDS = 10 minutes;
+
+    function generateAndPost() external returns (uint256 taskId) {
+        uint64 commitSeconds = COMMIT_SECONDS;
+        uint64 revealSeconds = REVEAL_SECONDS;
         bytes32 seed = blockhash(block.number - 1);
         require(seed != bytes32(0), unicode"No seed / 无可用种子");
 
@@ -70,18 +77,8 @@ contract TaskGenerator is Initializable {
         // often enough that a no-argument call almost never succeeded. Each attempt is arithmetic
         // over nine instructions; the expensive step is postTask metering the reference, and that
         // happens once, after an instance has been chosen.
-        TaskGen.Op[] memory ops;
-        bytes memory naive;
-        bool found;
-        for (uint256 draws; draws < MAX_DRAWS; ++draws) {
-            ops = TaskGen.draw(uint256(keccak256(abi.encode(seed, draws))), OPS);
-            naive = TaskGen.compileNaive(ops);
-            if (keccak256(TaskGen.compileTight(TaskGen.optimise(ops))) == keccak256(naive)) continue;
-            if (_informative(ops, seed)) {
-                found = true;
-                break;
-            }
-        }
+        (TaskGen.Op[] memory ops, bool found) = drawFor(seed);
+        bytes memory naive = TaskGen.compileNaive(ops);
         // An explicit flag, not `draws == MAX_DRAWS`. Comparing the counter to the bound means the
         // guard silently stops working if the bound ever changes — and what slips through then is
         // not a revert but a posted task whose vectors collapse or whose baseline nothing can beat.
@@ -107,6 +104,34 @@ contract TaskGenerator is Initializable {
             0
         );
         emit Generated(taskId, seed, msg.sender);
+    }
+
+    /// @notice The instance a seed draws — the same choice `generateAndPost` makes, exposed.
+    ///
+    /// @dev Public because two parties outside this contract need it and neither could get it.
+    ///
+    ///      A miner needs the program to answer a task. Before the reward pool followed the drawn
+    ///      lane it did not matter: the shipped client read the instance out of `tasks/epoch.json`
+    ///      through a `SEED` environment variable, and `miner/src/seeds.ts` returned an empty list
+    ///      without one — so a miner who did not have the curator's file fired nothing at all, and
+    ///      said nothing about why. With the pool on this lane that would mean the money moves to a
+    ///      task nobody outside can even attempt. `Generated(taskId, seed, caller)` carries the
+    ///      seed; this turns it into the program.
+    ///
+    ///      A test needs it for the same reason and could not replicate it either: the redraw loop
+    ///      depends on `_informative`, which is private, so nothing outside could tell WHICH draw a
+    ///      seed settles on.
+    ///
+    ///      `found` is returned rather than reverted so a caller can ask about a seed that yields
+    ///      nothing usable without the call failing.
+    function drawFor(bytes32 seed) public pure returns (TaskGen.Op[] memory ops, bool found) {
+        for (uint256 draws; draws < MAX_DRAWS; ++draws) {
+            ops = TaskGen.draw(uint256(keccak256(abi.encode(seed, draws))), OPS);
+            bytes memory naive = TaskGen.compileNaive(ops);
+            if (keccak256(TaskGen.compileTight(TaskGen.optimise(ops))) == keccak256(naive)) continue;
+            if (_informative(ops, seed)) return (ops, true);
+        }
+        return (ops, false);
     }
 
     /// @dev The input of a drawn program can be destroyed — an AND against one bit then shifted

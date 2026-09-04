@@ -51,12 +51,14 @@ contract RewardAssetTest is BaseTest {
     }
 
     /// @dev A miner with a real, recorded score.
+    /// @dev Mines the DRAWN task, because that is the one the reward pool pays. Mining the curated
+    ///      fixture task would score fine and collect nothing — the bounty is not there any more.
     function _scoringMiner(address miner, uint256 agentId) internal {
         _enroll(miner, agentId);
-        _commit(miner, agentId, Bytecode.padded(), bytes32(agentId));
-        vm.warp(commitEnd + 1);
-        _reveal(miner, Bytecode.padded(), bytes32(agentId));
-        vm.warp(revealEnd + 1);
+        _commitDrawn(miner, agentId, drawnTight, bytes32(agentId));
+        vm.warp(drawnCommitEnd + 1);
+        _revealDrawn(miner, drawnTight, bytes32(agentId));
+        vm.warp(drawnRevealEnd + 1);
     }
 
     /// @dev The floor an operator would actually pass: one percent under the pool's own price.
@@ -96,9 +98,9 @@ contract RewardAssetTest is BaseTest {
         // A conversion credits the pool, not a task. Naming a task while converting was where the
         // curator's discretion lived, so the two are separate calls now.
         assertEq(flap.rewardPool(), got, "the pool is the tokens");
-        assertEq(flap.bounty(taskId), 0, "a conversion funded a task by itself");
-        flap.fundTaskFromPool(taskId);
-        assertEq(flap.bounty(taskId), got, "the task did not take the pool");
+        assertEq(flap.bounty(drawnTaskId), 0, "a conversion funded a task by itself");
+        flap.fundTaskFromPool(drawnTaskId);
+        assertEq(flap.bounty(drawnTaskId), got, "the task did not take the pool");
         assertEq(flap.freeTax(), 1 ether, "the unconverted remainder stays native");
         assertTrue(flap.solvent(), "every open bounty is covered");
         assertApproxEqRel(got, quoted, 0.01e18, "booked far from the quote");
@@ -149,16 +151,16 @@ contract RewardAssetTest is BaseTest {
         uint256 amt6_ = _within(2 ether);
         vm.prank(GUARDIAN);
         uint256 pot = flap.endow(amt6_, floor_);
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
 
         _scoringMiner(ALICE, AGENT_ALICE);
 
-        uint256 due = flap.collectable(taskId, ALICE);
+        uint256 due = flap.collectable(drawnTaskId, ALICE);
         assertGt(due, 0, "a scoring miner is owed something");
 
         uint256 bnbBefore = ALICE.balance;
         vm.prank(ALICE);
-        uint256 got = flap.collect(taskId);
+        uint256 got = flap.collect(drawnTaskId);
 
         assertEq(got, due, "paid what was owed");
         assertEq(IERC20(BTCB).balanceOf(ALICE), got, "the miner holds BTCB");
@@ -175,14 +177,14 @@ contract RewardAssetTest is BaseTest {
         uint256 amt7_ = _within(1 ether);
         vm.prank(GUARDIAN);
         flap.endow(amt7_, floor_);
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
         _scoringMiner(ALICE, AGENT_ALICE);
 
         vm.prank(ALICE);
-        flap.collect(taskId);
+        flap.collect(drawnTaskId);
         vm.prank(ALICE);
         vm.expectRevert(bytes(unicode"Already collected / 已经领取过了"));
-        flap.collect(taskId);
+        flap.collect(drawnTaskId);
     }
 
     /// @notice Anyone may make a bounty larger; nobody may make it smaller.
@@ -192,16 +194,16 @@ contract RewardAssetTest is BaseTest {
 
         vm.startPrank(SPONSOR);
         IERC20(BTCB).approve(address(flap), amount);
-        flap.sponsor(taskId, amount);
+        flap.sponsor(drawnTaskId, amount);
         vm.stopPrank();
 
-        assertEq(flap.bounty(taskId), amount, "the sponsorship is the bounty");
+        assertEq(flap.bounty(drawnTaskId), amount, "the sponsorship is the bounty");
         assertEq(flap.endowed(), amount, "and is accounted as open");
         assertTrue(flap.solvent());
 
         _scoringMiner(ALICE, AGENT_ALICE);
         vm.prank(ALICE);
-        assertEq(flap.collect(taskId), amount, "a lone scorer takes the whole sponsored pot");
+        assertEq(flap.collect(drawnTaskId), amount, "a lone scorer takes the whole sponsored pot");
     }
 
     /// @notice Money cannot be put behind a task that does not exist.

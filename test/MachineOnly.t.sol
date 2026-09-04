@@ -89,10 +89,47 @@ contract MachineOnlyTest is BaseTest {
         // GenTask's `_informative` gate rejects exactly this shape.
     }
 
-    /// A whole epoch is two minutes: commit and reveal are one minute each. Windows are sized for a client, not a person reading a freshly drawn program.
+    /// @dev Windows are sized for a client, not for a person reading a freshly drawn program.
+    ///
+    ///      This used to be `vm.contains(gen, '"commitSeconds": 60')`, which is a SUBSTRING of
+    ///      `"commitSeconds": 600` — so when the commit window went from 60 to 600 to close findings
+    ///      021 and 024, the gate that exists to notice exactly that stayed green, and would have
+    ///      stayed green at 6000 and 60000 too. It was guarding nothing for the whole time it read
+    ///      as the thing guarding it.
+    ///
+    ///      It parses the number now and bounds it on both sides: at least the floor `Tournament`
+    ///      enforces, and short enough that a human cannot read a freshly drawn nine-instruction
+    ///      program and hand-optimise it inside the window.
     function test_TheWindowsAreMachineSized() public view {
         string memory gen = vm.readFile("script/GenTask.s.sol");
-        assertTrue(vm.contains(gen, '"commitSeconds": 60'), "commit window opened up");
-        assertTrue(vm.contains(gen, '"revealSeconds": 60'), "reveal window opened up");
+        uint256 commitSeconds = _jsonNumberIn(gen, '"commitSeconds": ');
+        uint256 revealSeconds = _jsonNumberIn(gen, '"revealSeconds": ');
+
+        assertGe(commitSeconds, tournament.MIN_COMMIT_SPAN(), "under the contract's commit floor");
+        assertLe(commitSeconds, 30 minutes, "the commit window is no longer machine-scale");
+        assertGe(revealSeconds, 30, "the reveal window is too short to land a transaction in");
+        assertLe(revealSeconds, 30 minutes, "the reveal window is no longer machine-scale");
+    }
+
+    /// @dev Reads the digits following `key` in `hay`, stopping at the first non-digit. Written out
+    ///      because the substring check it replaces is exactly the bug above.
+    function _jsonNumberIn(string memory hay, string memory key) internal pure returns (uint256 n) {
+        bytes memory h = bytes(hay);
+        bytes memory k = bytes(key);
+        for (uint256 i; i + k.length < h.length; ++i) {
+            bool hit = true;
+            for (uint256 j; j < k.length; ++j) {
+                if (h[i + j] != k[j]) { hit = false; break; }
+            }
+            if (!hit) continue;
+            uint256 p = i + k.length;
+            require(h[p] >= 0x30 && h[p] <= 0x39, "no digits after the key");
+            while (p < h.length && h[p] >= 0x30 && h[p] <= 0x39) {
+                n = n * 10 + (uint8(h[p]) - 0x30);
+                ++p;
+            }
+            return n;
+        }
+        revert("key not found");
     }
 }

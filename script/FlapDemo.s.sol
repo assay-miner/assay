@@ -30,6 +30,10 @@ import {IPortalTypes, IPortalCommonTypes} from "../src/flap/IPortal.sol";
 ///      needs V2_MIGRATOR, and the salt has to be mined for a 0x7777 suffix from an offset
 ///      nobody has already swept.
 contract FlapDemo is Script {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     address payable constant VAULT_PORTAL = payable(0x90497450f2a706f1951b5bdda52B4E5d16f34C06);
     address constant PORTAL = 0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0;
     address constant TOKEN_IMPL_TAXED_V3 = 0x024f18294970B5c76c0691b87f138A0317156422;
@@ -81,7 +85,7 @@ contract FlapDemo is Script {
         AssayVault custody = new AssayVault(IERC20(address(token)), me);
         AgentRoster roster =
             new AgentRoster(IIdentityRegistry(IDENTITY_REGISTRY_56), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, me);
+        Tournament tournament = new Tournament(custody, roster, me, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();

@@ -28,6 +28,10 @@ import {VaultUISchema, VaultMethodSchema, FieldDescriptor} from "../src/flap/IVa
 ///      These tests encode that filter, so the day our schema drifts back into a shape their
 ///      renderer drops, the suite says so instead of the page silently going blank.
 contract FlapRenderTest is Test {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     AssayFlapVault vault;
 
     /// @dev Forked, and deliberately not skipped when the fork fails. The vault resolves its
@@ -40,7 +44,7 @@ contract FlapRenderTest is Test {
         TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, address(this));
+        Tournament tournament = new Tournament(custody, roster, address(this), NO_DRAWN_LANE);
         vault = new AssayFlapVault(tournament, address(token), address(this), new PriceGuard());
     }
 

@@ -194,7 +194,35 @@ contract Deploy is Script {
         // multisig curator has to be the address that performs the launch, not just this argument.
         address curator = vm.envOr("CURATOR", deployer);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), vault, minStake);
-        Tournament tournament = new Tournament(vault, roster, curator);
+
+        // The on-chain task generator, behind a beacon Flap owns. Drawing a good task is a question
+        // that will keep changing; what a settled task pays is not. This is the only upgradeable
+        // piece of the system, and the address that can upgrade it is the one the tournament and
+        // the vault already treat as the trusted operator — so it adds no party that was not
+        // already trusted, and the settlement contracts stay immutable behind it.
+        //
+        // It is deployed around the tournament rather than after it, because the two now name each
+        // other: `Tournament.generator` is immutable and the proxy's initializer takes the
+        // tournament. The cycle is broken by predicting the proxy's address rather than by
+        // deploying it uninitialized and calling `initialize` later — `TaskGenerator.initialize`
+        // has NO access control, and a forge broadcast is N separate transactions, so anyone
+        // watching could land `initialize(their own Tournament)` in the gap. The proxy would be
+        // permanently theirs, and with `generator` immutable and `fundTaskFromPool` the only exit
+        // from `rewardPool`, every BTCB the vault ever converts would be locked for good.
+        address generatorImpl = address(new TaskGenerator());
+        UpgradeableBeacon beacon = new UpgradeableBeacon(generatorImpl, _flapGuardian());
+
+        // The proxy must be the VERY NEXT deploy after the tournament for this to hold. Nothing
+        // between them may send a transaction from this key — the assertion below is what makes
+        // that a deploy-time failure rather than a silently mis-wired system.
+        address predictedGenerator = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
+
+        Tournament tournament = new Tournament(vault, roster, curator, predictedGenerator);
+        address generator = address(new BeaconProxy(
+            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
+        ));
+        require(generator == predictedGenerator, "generator address prediction missed");
+        require(tournament.generator() == generator, "tournament points at the wrong generator");
 
         // Custody wiring, then sealed. After `freeze()` no address can be added to the vault.
         vault.addController(address(roster));
@@ -202,17 +230,6 @@ contract Deploy is Script {
         vault.freeze();
 
         roster.setConsumer(address(tournament));
-
-        // The on-chain task generator, behind a beacon Flap owns. Drawing a good task is a question
-        // that will keep changing; what a settled task pays is not. This is the only upgradeable
-        // piece of the system, and the address that can upgrade it is the one the tournament and
-        // the vault already treat as the trusted operator — so it adds no party that was not
-        // already trusted, and the settlement contracts stay immutable behind it.
-        address generatorImpl = address(new TaskGenerator());
-        UpgradeableBeacon beacon = new UpgradeableBeacon(generatorImpl, _flapGuardian());
-        address generator = address(new BeaconProxy(
-            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
-        ));
 
         // The token layer. A protocol whose prize money comes from a token's trading tax is not
         // launched until that token exists, so this is part of the launch and not a second

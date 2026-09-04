@@ -33,6 +33,10 @@ import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 ///      which EIP-170 does not measure, instead of its runtime, which it does. The factory dropped
 ///      from 24,231 bytes to 2,637 and the binding constraint moved to the deployer.
 contract CodeSizeTest is Test {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     uint256 internal constant EIP170 = 24_576;
     /// @dev A build this close to the ceiling is one feature away from being undeployable, and
     ///      that failure lands during a broadcast. Fail here instead, while it is free.
@@ -64,7 +68,7 @@ contract CodeSizeTest is Test {
         AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
         AgentRoster roster =
             new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18);
-        tournament = new Tournament(custody, roster, address(this));
+        tournament = new Tournament(custody, roster, address(this), NO_DRAWN_LANE);
     }
 
     function test_TheFactoryFitsWithRoomToSpare() public {

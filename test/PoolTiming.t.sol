@@ -97,7 +97,7 @@ contract PoolTimingTest is BaseTest {
         uint256 taskId = _post(wideCommitSeconds, 60);
 
         vm.expectRevert(bytes(unicode"Pool is empty / 池中无资金"));
-        flap.fundTaskFromPool(taskId);
+        flap.fundTaskFromPool(drawnTaskId);
 
         vm.warp(block.timestamp + flap.CONVERSION_INTERVAL());
         vm.deal(TAXPAYER, 0.05 ether);
@@ -111,7 +111,7 @@ contract PoolTimingTest is BaseTest {
         (uint64 commitEnd_,,,) = tournament.taskGates(taskId);
         assertLt(block.timestamp, commitEnd_, "the window closed before the conversion landed");
 
-        uint256 funded = flap.fundTaskFromPool(taskId);
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
         assertGt(funded, 0, "the wider window still could not catch its own epoch's tax");
     }
 

@@ -20,6 +20,10 @@ import {TaxTokenMock} from "./TaxTokenMock.sol";
 ///      comparison passes is not the same as watching the money arrive. Every other test in this
 ///      repo builds a tournament that already has a task in it, so this path had never executed.
 contract NoTaskEverTest is Test {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     address constant CURATOR = address(0xC0);
     address constant SALVAGE = address(0x5A);
     address constant TAXPAYER = address(0x7A);
@@ -34,7 +38,7 @@ contract NoTaskEverTest is Test {
         TaxTokenMock token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), SALVAGE);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1_000e18);
-        tournament = new Tournament(custody, roster, CURATOR);
+        tournament = new Tournament(custody, roster, CURATOR, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();

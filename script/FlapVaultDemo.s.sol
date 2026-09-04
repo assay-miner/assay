@@ -21,6 +21,10 @@ import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 ///      and testnet keeps fork state alive long enough to drive a full economic cycle through it
 ///      where a public mainnet node does not.
 contract FlapVaultDemo is Script {
+    /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
+    ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
+    address internal constant NO_DRAWN_LANE = address(0xDEAD);
+
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address me = vm.addr(pk);
@@ -32,7 +36,7 @@ contract FlapVaultDemo is Script {
         TaxTokenMock token = new TaxTokenMock(me, 1_000_000_000e18);
         AssayVault custody = new AssayVault(IERC20(address(token)), me);
         AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, me);
+        Tournament tournament = new Tournament(custody, roster, me, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();
