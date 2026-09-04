@@ -96,7 +96,7 @@ contract LiveLoopTest is Test {
         }
         assertGt(baseline, best, "no beatable epoch was drawn in 64 tries");
 
-        uint64 commitEnd = uint64(block.timestamp + 60);
+        uint64 commitEnd = uint64(block.timestamp + 600);
         uint64 revealEnd = commitEnd + 60;
         vm.prank(CURATOR);
         // The literal translation is the reference. The chain measures it, so `baseline` above is

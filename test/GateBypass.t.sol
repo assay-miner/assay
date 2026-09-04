@@ -67,8 +67,8 @@ contract GateBypassTest is Test {
 
         // Task 2: posted later, closes sooner.
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
-        vm.warp(block.timestamp + 121);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0);
+        vm.warp(block.timestamp + 1201);
 
         (,, uint64 longReveal,,,,,,) = tournament.tasks(long_);
         assertGt(uint256(longReveal), block.timestamp, "task 1 must still be open for this to be the bug");
@@ -100,7 +100,7 @@ contract GateBypassTest is Test {
     /// But not while one is running.
     function test_AStrangerCannotPostWhileATaskIsLive() public {
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0);
 
         vm.prank(address(0x571A));
         vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
@@ -140,7 +140,7 @@ contract GateBypassTest is Test {
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 3600), uint64(block.timestamp + 7200), 0);
         uint64 high = tournament.latestRevealEnd();
         vm.prank(CURATOR);
-        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0);
         assertEq(tournament.latestRevealEnd(), high, "a shorter task moved the pointer backwards");
     }
 

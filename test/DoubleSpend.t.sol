@@ -63,7 +63,7 @@ contract DoubleSpendTest is BaseTest {
         // Task 2: a second, separately funded task whose money must stay its own.
         vm.prank(CURATOR);
         uint256 second = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
-            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+            uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
         );
         uint256 bounty2 = _endowTask(second, _within(0.025 ether));
         assertGt(bounty2, 0, "the second task was never funded");
@@ -122,7 +122,7 @@ contract DoubleSpendTest is BaseTest {
     function test_TheGuardianMayPostWhenTheCuratorCannot() public {
         vm.prank(guardian);
         uint256 id = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP,
-            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+            uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
         );
         assertGt(id, 0, "the Guardian could not post");
 
@@ -140,7 +140,7 @@ contract DoubleSpendTest is BaseTest {
     ///      window only from below, so a task posted with `revealEnd = type(uint64).max` locked
     ///      the stake of anybody who entered it for good.
     function test_ATaskCannotLockStakeForever() public {
-        uint64 commitEnds = uint64(block.timestamp + 60);
+        uint64 commitEnds = uint64(block.timestamp + 600);
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"Bad window / 时间窗口不合法"));
         tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnds, type(uint64).max, 0);
@@ -149,7 +149,7 @@ contract DoubleSpendTest is BaseTest {
     /// @notice And the bound is a real ceiling a task may run right up to, not a formality.
     function test_ATaskMayRunToTheBound() public {
         uint64 span = tournament.MAX_TASK_SPAN();
-        uint64 commitEnds = uint64(block.timestamp + 60);
+        uint64 commitEnds = uint64(block.timestamp + 600);
         vm.prank(CURATOR);
         uint256 id = tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnds, uint64(block.timestamp) + span, 0
         );

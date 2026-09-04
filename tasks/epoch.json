@@ -38,7 +38,7 @@
   "baselineGas": 1624,
   "referenceGas": 1456,
   "gasCap": 100000,
-  "commitSeconds": 60,
+  "commitSeconds": 600,
   "revealSeconds": 60,
   "pot": "0"
 }

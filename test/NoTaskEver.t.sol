@@ -88,7 +88,7 @@ contract NoTaskEverTest is Test {
 
         vm.prank(CURATOR);
         tournament.postTask(_oneVector(), _oneExpected(), Bytecode.tight(), 100_000,
-            uint64(block.timestamp + 60), uint64(block.timestamp) + span, 0
+            uint64(block.timestamp + 600), uint64(block.timestamp) + span, 0
         );
 
         // Held, right up to the bound.
@@ -121,7 +121,7 @@ contract NoTaskEverTest is Test {
     function test_TaxKeepsSettlingWindowAfterWindow() public {
         for (uint256 i; i < 5; ++i) {
             _tax(0.01 ether);
-            vm.warp(block.timestamp + 120); // one epoch
+            vm.warp(block.timestamp + 1200); // one epoch
             vm.prank(CURATOR);
             uint256 sent = flap.withdrawUnconverted(0);
             assertEq(sent, 0.01 ether, "an epoch did not settle");

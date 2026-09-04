@@ -94,7 +94,7 @@ contract NotStuckTest is BaseTest {
     ///         moment reveal closes — not a claim window later, or the tax from an idle market
     ///         would pile up unreachable for thirty days at a time.
     function test_AnEmptyTwoMinuteEpochSettlesImmediately() public {
-        uint64 commitEnds = uint64(block.timestamp + 60);
+        uint64 commitEnds = uint64(block.timestamp + 600);
         uint64 revealEnds = commitEnds + 60;
 
         vm.prank(CURATOR);
@@ -170,7 +170,7 @@ contract NotStuckTest is BaseTest {
         vm.prank(CURATOR);
         uint256 next = tournament.postTask(
             inputs, expected, Bytecode.verbose(), GAS_CAP,
-            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+            uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
         );
         uint256 fresh = _endowTask(next, _within(0.01 ether));
 

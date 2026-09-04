@@ -33,7 +33,7 @@ contract MeasurementParityTest is BaseTest {
         // What settlement will actually record, through the same call the tournament makes.
         vm.prank(CURATOR);
         uint256 id = tournament.postTask(
-            ins, exp, code, GAS_CAP, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+            ins, exp, code, GAS_CAP, uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
         );
         (bool okC, uint256 gasChain,) = tournament.previewAssay(id, code);
         assertTrue(okC, "the settlement path rejected the reference");

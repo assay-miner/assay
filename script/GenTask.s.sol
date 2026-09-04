@@ -145,7 +145,7 @@ contract GenTask is Script {
             '  "baselineGas": ', vm.toString(baseGas), ",\n",
             '  "referenceGas": ', vm.toString(tightGas), ",\n",
             '  "gasCap": ', vm.toString(GAS_CAP), ",\n",
-            '  "commitSeconds": 60,\n',
+            '  "commitSeconds": 600,\n',
             '  "revealSeconds": 60,\n',
             '  "pot": "0"\n',
             "}\n"

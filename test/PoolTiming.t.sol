@@ -10,18 +10,21 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 
 /// @notice Whether an epoch's own trading tax reaches that epoch's own task.
 ///
-/// @dev It usually does not, and that is the finding: `CONVERSION_INTERVAL` is five minutes,
-///      `tasks/epoch.json` — what the shipped ops flow actually posts — gives a task a sixty-second
-///      commit window, and `fundTaskFromPool` refuses once that window has closed. So by the time
-///      tax accrued during a task's own commit window converts, that task can no longer receive it;
-///      the pool holds it for whichever task is open next.
+/// @dev It now does, and `MIN_COMMIT_SPAN` is why. `CONVERSION_INTERVAL` is five minutes and
+///      `fundTaskFromPool` refuses once a task's commit window has closed, so a window shorter than
+///      that interval lets the rate limit alone decide that an epoch's tax misses that epoch's task.
+///      The shipped spec gave a task sixty seconds — a fifth of one conversion period — so four
+///      tasks in five could never be funded from tax at all.
 ///
-///      Money is never lost or misdirected — `rewardPool` only grows until some task's commit
-///      window is open when a call arrives — and the mismatch is a relationship between two
-///      operator-chosen numbers, not a defect in `fundTaskFromPool` itself. The second test here is
-///      why: the one-shot flag does not consume on an empty pool, so a wider commit window
-///      (`commitSeconds >= CONVERSION_INTERVAL`) already lets a later call catch the money. This
-///      file makes both halves checkable instead of leaving the claim to an operational comment.
+///      We answered that once by calling it a relationship between two operator-chosen numbers
+///      rather than a defect, and the audit was right to refuse it: `script/GenTask.s.sol` rewrites
+///      `tasks/epoch.json` from scratch every epoch, so the sixty was not a deployment setting
+///      somebody could correct once. It was regenerated into every task the machine posted.
+///
+///      It is a contract constant now. `postTask` will not accept a window shorter than the
+///      cadence, so the shipped tooling cannot reintroduce the gap and neither can anyone else's.
+///      `test_MinCommitSpanCoversTheConversionCadence` ties the two constants together across the
+///      two contracts that hold them, which is the only thing connecting them.
 contract PoolTimingTest is BaseTest {
     address internal constant TAXPAYER = address(0x7A);
 
@@ -45,45 +48,49 @@ contract PoolTimingTest is BaseTest {
         vm.stopPrank();
     }
 
-    /// @dev The shipped configuration, quantified. `tasks/epoch.json` carries `commitSeconds: 60`;
-    ///      `CONVERSION_INTERVAL` is 300. A conversion that arms at posting cannot execute before
-    ///      this task's own commit window has closed, so `fundTaskFromPool` is refused for the
-    ///      whole window even once the money exists.
-    function test_UnderTheShippedWindowTheEpochsOwnConversionArrivesTooLate() public {
+    /// @dev The configuration that produced findings 021 and 024 can no longer be created.
+    ///
+    ///      `tasks/epoch.json` carried `commitSeconds: 60` against a 300-second cadence, so a
+    ///      conversion armed at posting could not execute until after that task's own commit window
+    ///      had shut. This test used to reproduce exactly that and assert the refusal. The window is
+    ///      now refused at the source instead: a curated task whose commit window is shorter than
+    ///      the cadence cannot be posted at all, so there is no longer a state in which the rate
+    ///      limit alone decides that an epoch's tax missed that epoch's task.
+    function test_AWindowShorterThanTheCadenceCannotBePostedAtAll() public {
         uint64 shippedCommitSeconds = 60;
         assertLt(
             shippedCommitSeconds,
             flap.CONVERSION_INTERVAL(),
-            "the commit window is no longer shorter than the conversion cadence; this test is stale"
+            "the shipped window is no longer shorter than the cadence; this test is stale"
         );
 
-        uint256 taskId = _post(shippedCommitSeconds, 60);
-
-        vm.expectRevert(bytes(unicode"Pool is empty / 池中无资金"));
-        flap.fundTaskFromPool(taskId);
-
-        // Tax arrives, but only after the cadence's own floor — this is the earliest a self-armed
-        // conversion could possibly have executed.
-        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL());
-        vm.deal(TAXPAYER, 0.05 ether);
-        vm.prank(TAXPAYER);
-        (bool ok,) = payable(address(flap)).call{value: 0.05 ether}("");
-        require(ok, "tax transfer failed");
-        uint256 floor_ = (flap.quote(0.05 ether) * 99) / 100;
-        vm.prank(guardian);
-        flap.endow(0.05 ether, floor_);
-        assertGt(flap.rewardPool(), 0, "the tax converted; the pool now holds something");
-
-        // But this task's commit window closed at the shipped span, well before the cadence could
-        // have delivered it.
-        vm.expectRevert(bytes(unicode"Commitment closed / 承诺已截止"));
-        flap.fundTaskFromPool(taskId);
+        vm.startPrank(CURATOR);
+        token.approve(address(vault), type(uint256).max);
+        vm.expectRevert(bytes(unicode"Commit window too short / 承诺窗口过短"));
+        tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp) + shippedCommitSeconds,
+            uint64(block.timestamp) + shippedCommitSeconds + 60,
+            POT
+        );
+        vm.stopPrank();
     }
 
-    /// @dev The mitigation the shipped config does not use. `fundTaskFromPool`'s empty-pool revert
-    ///      happens before the one-shot flag is set, so it does not consume the attempt — a commit
-    ///      window wide enough to still be open when the conversion lands can be funded by a second
-    ///      call. Nothing here needs a contract change; `commitSeconds` is chosen per task.
+    /// @dev And the spec the ops flow actually posts satisfies it. `script/GenTask.s.sol` writes
+    ///      this number into a fresh `tasks/epoch.json` every epoch, so it is the value that reaches
+    ///      every live task — not a deployment setting anyone gets to correct once.
+    function test_TheShippedSpecSatisfiesTheFloor() public {
+        uint64 shipped = 600; // script/GenTask.s.sol: '"commitSeconds": 600'
+        assertGe(shipped, tournament.MIN_COMMIT_SPAN(), "the shipped spec cannot be posted");
+
+        uint256 taskId = _post(shipped, 60);
+        assertEq(taskId, tournament.taskCount(), "the shipped spec posts");
+    }
+
+    /// @dev The behaviour the floor now guarantees, kept as a direct measurement. An attempt
+    ///      against an empty pool reverts on `amount > 0` and consumes nothing, so a window still
+    ///      open when the conversion lands is funded by a later call. This used to be described as
+    ///      a mitigation the shipped config declined to use — it is what every curated task gets.
     function test_AWindowAsWideAsTheCadenceStillCatchesTheConversion() public {
         uint64 wideCommitSeconds = uint64(300 + 60); // one full cadence, plus room to call
 
@@ -106,5 +113,36 @@ contract PoolTimingTest is BaseTest {
 
         uint256 funded = flap.fundTaskFromPool(taskId);
         assertGt(funded, 0, "the wider window still could not catch its own epoch's tax");
+    }
+
+    /// @dev The gate for findings 021 and 024, which are one defect.
+    ///
+    ///      A task may only be handed the pool while its commit window is open; the conversions
+    ///      that fill the pool are rate-limited to one per CONVERSION_INTERVAL. If the window is
+    ///      shorter than the interval, the rate limit alone can decide that an epoch's tax misses
+    ///      that epoch's task — and the shipped spec's sixty seconds against a five-minute interval
+    ///      meant four tasks in five could never be funded from tax at all.
+    ///
+    ///      The two constants live in different contracts, so nothing but this assertion connects
+    ///      them. Lower MIN_COMMIT_SPAN, or raise CONVERSION_INTERVAL, and the gap reopens silently
+    ///      with every other test still green. That is exactly how it survived the round in which
+    ///      it was reported fixed.
+    function test_MinCommitSpanCoversTheConversionCadence() public view {
+        assertGe(
+            uint256(tournament.MIN_COMMIT_SPAN()),
+            flap.CONVERSION_INTERVAL(),
+            "a task's commit window can be shorter than the conversion rate limit"
+        );
+    }
+
+    /// @dev The other half: an open post must still be constructible under the new floor. A minimum
+    ///      commit span longer than the maximum span a stranger may claim would leave the fallback
+    ///      path with no legal window at all — closing 021 by bricking the thing 023 is about.
+    function test_TheOpenPostFallbackStillHasALegalWindow() public view {
+        assertLt(
+            uint256(tournament.MIN_COMMIT_SPAN()),
+            uint256(tournament.OPEN_POST_MAX_SPAN()),
+            "no open post can satisfy both the commit floor and the span ceiling"
+        );
     }
 }

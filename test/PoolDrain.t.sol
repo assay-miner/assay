@@ -7,6 +7,9 @@ import {BaseTest} from "./Base.t.sol";
 import {Bytecode} from "./Bytecode.sol";
 import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
+import {TaskGenerator} from "../src/TaskGenerator.sol";
+import {UpgradeableBeacon} from "@openzeppelin/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/proxy/beacon/BeaconProxy.sol";
 
 /// @notice The two ways somebody other than a miner could take the pool.
 ///
@@ -334,11 +337,56 @@ contract PoolDrainTest is BaseTest {
         assertEq(CURATOR.balance - before, sent, "the tax did not reach the curator");
     }
 
+    /// @dev The protocol's own fallback poster sits on the stranger side of the funding gate.
+    ///
+    ///      `TaskGenerator` is deployed infrastructure — a beacon proxy whose implementation the
+    ///      Guardian controls — and it exists so the tournament survives the curator going quiet.
+    ///      But it posts as itself, and `fundTaskFromPool` pays a task whose poster is the curator
+    ///      or the Guardian and nobody else. So every task the fallback path produces is one the
+    ///      converted tax can never reach, however open its window is, while `triggerConversion`
+    ///      stays permissionless and the pool it cannot reach keeps growing.
+    ///
+    ///      Found while fixing 021 and 024; the audit did not report it. Recorded as a measurement
+    ///      rather than a paragraph because it is counterintuitive — the gate was written to keep
+    ///      strangers out, and this is not a stranger. What a fallback task can still be paid is a
+    ///      pot escrowed at posting and `sponsor`, which is open to anyone; what it cannot be paid
+    ///      is the tax this vault exists to convert.
+    function test_AGeneratorPostedTaskCannotBeFundedFromThePool() public {
+        UpgradeableBeacon beacon = new UpgradeableBeacon(address(new TaskGenerator()), guardian);
+        TaskGenerator generator = TaskGenerator(address(new BeaconProxy(
+            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
+        )));
+
+        // Nothing of ours is live, so the open-post window is available to the fallback path.
+        vm.warp(uint256(tournament.latestRevealEnd()) + 1);
+
+        uint256 pool = _fillPool(0.05 ether);
+        assertGt(pool, 0, "the pool must hold something for this to mean anything");
+
+        uint256 genTaskId = generator.generateAndPost(300, 300);
+        assertEq(genTaskId, tournament.taskCount(), "the generator's task is the newest");
+
+        (uint64 commitEnd,,, address poster) = tournament.taskGates(genTaskId);
+        assertGt(uint256(commitEnd), block.timestamp, "its commit window is open");
+        assertEq(poster, address(generator), "posted by the generator itself, not by a person");
+
+        // Newest task, commit window open, money sitting in the pool — and there is no caller who
+        // can bring the two together.
+        vm.expectRevert(bytes(unicode"Task is not ours / 任务非本方发布"));
+        flap.fundTaskFromPool(genTaskId);
+    }
+
     /// @dev The rounding finding, quantified rather than argued. Floor division in
-    ///      `(pot * score) / totalScore` loses under one wei per scoring miner, so the whole
-    ///      undistributed remainder is bounded by the number of miners — a handful of wei of a
-    ///      token with eighteen decimals. This measures it instead of asserting it, so the claim in
-    ///      our audit response is checkable and stays true if the split ever changes.
+    ///      `(pot * score) / totalScore` performs exactly one division per scoring miner and each
+    ///      loses strictly under one wei, so the undistributed remainder is under `scorers` wei.
+    ///      That bound holds for any number of miners and is what this test asserts.
+    ///
+    ///      We first described it as "single-digit wei", and the challenge was right to refuse that:
+    ///      nothing caps how many miners may score, so a figure that assumed a handful of them was
+    ///      not derivable from the source. The N-independent statement is the one above — under one
+    ///      wei each — and it is the arithmetic itself, not an estimate of turnout. What turnout
+    ///      changes is only the multiplier, and each additional scorer must pay for an enrolment, a
+    ///      commitment and a reveal to add its one wei of dust to an eighteen-decimal token.
     ///
     ///      It is deliberately NOT fixed. Paying the remainder to whoever collects last would make
     ///      an equal-score payout depend on collection order, which is exactly what an earlier round

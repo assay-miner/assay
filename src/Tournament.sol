@@ -59,6 +59,30 @@ contract Tournament {
     ///      `revealEnd` locked the stake of everybody who entered it for as long as it liked.
     uint64 public constant MAX_TASK_SPAN = 30 days;
 
+    /// @notice The shortest commit window any task may have.
+    /// @dev    This constant is findings 021 and 024, which are one defect and not two.
+    ///
+    ///         A task can only be handed the reward pool while its commit window is open, and the
+    ///         conversions that fill that pool are rate-limited to one per `CONVERSION_INTERVAL`.
+    ///         The shipped ops spec gave a task sixty seconds. A sixty-second window covers a fifth
+    ///         of one conversion period, so four tasks in five could never be funded from tax at
+    ///         all, and no task could ever receive more than a single conversion's worth.
+    ///
+    ///         Removing the one-shot `pooledInto` flag did not change that. The flag was never what
+    ///         capped a task at one conversion — the window was, and dropping the flag left the cap
+    ///         exactly where it stood while appearing to answer the finding. That is why 024 came
+    ///         back after being reported fixed.
+    ///
+    ///         A window at least one full interval long always contains a moment at which the rate
+    ///         limit permits a conversion, whatever phase it is in when the task is posted. So the
+    ///         limit can no longer be the reason an epoch's tax missed that epoch's task.
+    ///
+    ///         Enforced here rather than in the ops spec because `script/GenTask.s.sol` rewrites
+    ///         `tasks/epoch.json` from scratch every epoch: a number corrected in that file is gone
+    ///         the next time a task is drawn. A constant in the contract is the only version of
+    ///         this decision that survives its own tooling.
+    uint64 public constant MIN_COMMIT_SPAN = 5 minutes;
+
     /// @notice The longest window a task posted by nobody in particular may run for.
     /// @dev Anyone may post once the previous task has settled, which is what keeps the protocol
     ///      running if the curator goes quiet. The project's tax is no longer what this protects:
@@ -206,6 +230,19 @@ contract Tournament {
                 && uint256(revealEnd) <= block.timestamp + MAX_TASK_SPAN,
             unicode"Bad window / 时间窗口不合法"
         );
+
+        // The commit floor binds curated tasks only, because they are the only tasks the floor can
+        // do anything for. `fundTaskFromPool` pays a task whose poster is the curator or the
+        // Guardian and no other, so a stranger's task cannot receive the converted tax however long
+        // its window is open. Imposing the floor on open posts would spend their span — which
+        // `OPEN_POST_MAX_SPAN` already caps at ten minutes so one stranger cannot sit on the
+        // fallback path — buying them a guarantee they are not eligible for.
+        if (msg.sender == curator || msg.sender == _getGuardian()) {
+            require(
+                commitEnd >= block.timestamp + MIN_COMMIT_SPAN,
+                unicode"Commit window too short / 承诺窗口过短"
+            );
+        }
 
         // The difficulty is measured here, not accepted here.
         //

@@ -62,7 +62,7 @@ contract TaskGeneratorSatelliteTest is Test {
         vm.prank(CURATOR);
         tournament.postTask(
             _oneVector(), _oneExpected(), _square(), 100_000,
-            uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
+            uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0
         );
         vm.prank(STRANGER);
         vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
@@ -102,7 +102,7 @@ contract TaskGeneratorSatelliteTest is Test {
         uint256 first = generator.generateAndPost(60, 60);
         bytes32 a = tournament.vectorAt(first, 3).expected;
 
-        vm.warp(block.timestamp + 121);
+        vm.warp(block.timestamp + 1201);
         vm.roll(block.number + 1);
         vm.prank(STRANGER);
         uint256 second = generator.generateAndPost(60, 60);
