@@ -85,8 +85,8 @@ later: `TaskGenerator.initialize` has no access control and a forge broadcast is
 transactions, so anyone could land `initialize(their own Tournament)` in the gap. With `generator`
 immutable and `fundTaskFromPool` the only exit from `rewardPool`, every BTCB the vault ever converts
 would be locked. The deploy asserts the prediction held, and it is verifiable by call:
-`tournament.generator()` returns `0x7566de584af82CC2f2119c647945b7F47006560d` and that proxy's `tournament()` returns
-`0x150d7d49F7eae9043fc5fa745A2fF5183d1F1927`.
+`tournament.generator()` returns `0xCe9ACb3D598Aa9802115db8A3F7aa54Fc29642Bc` and that proxy's `tournament()` returns
+`0xbeE96911B943afEf3C4E64cecF1209BeD0D4484b`.
 
 **Tested, and confirmed red.** `test_ANewerCuratedTaskCannotDivertThePoolFromTheDrawnOne` pins the
 variant the report did not name; `test_OnlyTheDrawnTaskCanBeFundedFromThePool` asserts both
@@ -118,6 +118,77 @@ being the only thing holding.
 
 ---
 
+### Finding 021: An epoch's converted tax can fail to fund that epoch's task
+
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+
+Fixed, and the last version of this fix was worse than the finding — we broke the money loop
+outright while closing finding 025.
+
+`script/PostTask.s.sol` posts a curated task and hands it the pool on the next line. Once the poster
+whitelist became `taskId == latestGeneratedTaskId()`, that line reverts with "Not the drawn task",
+and nothing in production called `generateAndPost` either. So after that change no drawn task would
+ever have been posted and nothing would ever have been funded — the pool would have grown and never
+paid. Stated plainly because it is the second time a change to where the money goes has orphaned the
+script that moves it.
+
+The loop now runs on the lane that carries it: the script draws the task the tax pays and funds that
+one, while the curated post it also makes keeps its own escrowed ASSAY pot. `./post` reads
+`taskGenerator` from the manifest and refuses outright if the manifest has a `flapVault` and no
+generator — a blank environment variable is an empty string rather than undefined, and the
+alternative is a broadcast that reverts with a task already posted and gas already spent.
+
+The original timing complaint is closed by construction rather than by parameter choice. The funded
+task's windows are `TaskGenerator`'s constants — 600s commit against a 300s `CONVERSION_INTERVAL` —
+and `Tournament` floors both on the drawn lane, so the rate limit can no longer be the reason an
+epoch's tax missed that epoch's task.
+
+`test_ThePostersSequenceFundsTheTaskTheTaxActuallyPays` walks the operator's sequence, in the file
+that exists because this pipeline drifted apart once before. Every other funding test builds its task
+in Solidity and none of them walks the script — which is exactly how the break got in.
+
+### Finding 013: Scheduled conversion uses a slippage floor fixed at scheduling time
+
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+
+You were right to call the previous round partial. We made the **floor** execution-time fresh and
+stopped, and the floor and the impact bound are not the same guarantee.
+
+`quote` runs `getAmountsOut`, which already prices in what the trade does to the reserves. So a fresh
+floor means "97% of what **this** trade would get" — a trade that moves the pair by forty percent
+clears it comfortably. `_arm` checks `impactBps` when it sizes the amount; between arming and
+execution nothing checked it again, and the Trigger Service fires at a moment nobody chooses.
+
+`trigger` re-reads it now, and refuses rather than converting:
+
+```solidity
+bool withinImpact = true;
+try priceGuard.impactBps(s.bnbAmount) returns (uint256 bps) {
+    withinImpact = bps <= MAX_ENDOW_SLIPPAGE_BPS;
+} catch {
+    // Unreadable, not out of bounds. The stored floor is what bounds this case.
+}
+```
+
+**Unreadable is not out of bounds**, and our first version got that wrong. Treating a reverting
+`impactBps` as a refusal silently reversed what finding 020 settled on purpose — when the pair cannot
+be priced, the stored floor stands and the conversion proceeds, because that floor was committed to
+when the market was healthy and still bounds the result.
+`test_ABrokenQuoteDoesNotUnwindACompletedConversion` caught it before this reached you.
+
+The state is forced rather than traded into, and the test says why: `impactBps` compares `quote`
+against spot on the **same** reserves, so a swap moves both and leaves the ratio alone — thinning
+BTCB/WBNB enough to matter for a half-BNB conversion needs liquidity removed, which a fork test
+cannot arrange. `test_TheSameConversionConvertsWhenTheImpactIsInsideTheBound` is the control,
+identical but for the reading, so the refusal is attributable to the guard rather than to a warp that
+landed wrong. Disabling the re-check converts 0.0794 BTCB at an impact the vault refuses to open
+with.
+
+Nothing is stranded by a refusal: the delete and the `reserved` release happen first, so the BNB is
+free again and the re-arm sizes the next attempt against `maxConvertible()` as it stands then.
+
+---
+
 ## The off-chain half, shipped in the same revision
 
 A fix that moved the money to a lane no miner could see would have been worse than the finding.
@@ -139,7 +210,7 @@ both sides now.
 
 ## Status
 
-- 253 tests pass.
+- 256 tests pass.
 - **BSC mainnet redeployed for this submission and carries exactly this source.** `Tournament` is
   immutable and constructor-wired to both the vault and the generator, so this change could not be
   an upgrade. The packaging step's bytecode check passes against the addresses below.
@@ -151,7 +222,7 @@ both sides now.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0x33D6144E14f08b19f98983c7Ce7c2F805d56da4D` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x150d7d49F7eae9043fc5fa745A2fF5183d1F1927` |
-| `TaskGenerator` | — | `0x7566de584af82CC2f2119c647945b7F47006560d` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xDd7464BCDc3ED18C782229848579c64a45a29775` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0xbeE96911B943afEf3C4E64cecF1209BeD0D4484b` |
+| `TaskGenerator` | — | `0xCe9ACb3D598Aa9802115db8A3F7aa54Fc29642Bc` |
 | Tax token | rehearsal token, see above | not launched |
