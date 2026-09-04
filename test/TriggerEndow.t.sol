@@ -811,4 +811,81 @@ contract TriggerEndowTest is BaseTest {
         assertEq(armed, 0, "the vault paid a fee to convert less than the fee");
         assertGt(flap.rewardPool(), 0, "the conversion itself did not land");
     }
+
+    // ------------------------------------------------ the impact bound, checked when it is met
+
+    /// @dev Finding 013 was repaired halfway, and the missing half is a different guarantee than
+    ///      the one that landed.
+    ///
+    ///      The earlier fix made the slippage FLOOR execution-time fresh: `trigger` prices a second
+    ///      floor and hands the router the stricter of the two. That protects the price. It does not
+    ///      protect the pair, because `quote` runs `getAmountsOut`, which already includes what the
+    ///      trade does to the reserves — a fresh floor is "97% of what THIS trade would get", so a
+    ///      trade that moves the pair by forty percent clears it comfortably. `_arm` checks
+    ///      `impactBps` when it sizes the amount; between arming and execution nothing checked it
+    ///      again, and the Trigger Service executes at a moment nobody chooses.
+    ///
+    ///      The state is forced rather than traded into. Thinning BTCB/WBNB enough to matter for a
+    ///      half-BNB conversion is not reachable by swapping — `impactBps` compares `quote` against
+    ///      spot on the SAME reserves, so a swap moves both and leaves the ratio alone; it needs
+    ///      liquidity removed, which is not something this test can arrange on a fork. So the guard
+    ///      is driven directly, with a control below that shares every other line: same arming, same
+    ///      warp, same caller, and the only difference is what the impact reading says.
+    function test_AConversionIsRefusedIfTheImpactBoundIsExceededAtExecution() public {
+        uint256 amount = 0.5 ether;
+        _tax(amount);
+        uint256 id = _schedule(amount);
+        assertGt(id, 0, "the conversion armed");
+
+        (uint96 armed,,) = flap.scheduled(id);
+        assertGt(uint256(armed), 0, "nothing was armed");
+        assertLe(
+            flap.priceGuard().impactBps(uint256(armed)),
+            SLIPPAGE_BPS,
+            "the armed amount was already outside the bound; _arm should not have scheduled it"
+        );
+
+        // The pair, as the swap will meet it: outside the bound this vault refuses to open with.
+        vm.mockCall(
+            address(flap.priceGuard()),
+            abi.encodeWithSelector(PriceGuard.impactBps.selector, uint256(armed)),
+            abi.encode(uint256(SLIPPAGE_BPS) + 1)
+        );
+
+        uint256 poolBefore = flap.rewardPool();
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL());
+        vm.prank(address(flap.triggerService()));
+        flap.trigger(id);
+
+        assertEq(
+            flap.rewardPool(), poolBefore, "the vault converted at an impact it refuses to open with"
+        );
+        assertLe(flap.reserved(), address(flap).balance, "reserved more than the vault can pay");
+    }
+
+    /// @dev The control for the test above, identical but for the impact reading. Without it the
+    ///      refusal could be anything — a warp that landed wrong, a request that was never
+    ///      executable — and the assertion would pass for a reason that has nothing to do with the
+    ///      guard it is named after.
+    function test_TheSameConversionConvertsWhenTheImpactIsInsideTheBound() public {
+        uint256 amount = 0.5 ether;
+        _tax(amount);
+        uint256 id = _schedule(amount);
+
+        (uint96 armed,,) = flap.scheduled(id);
+        vm.mockCall(
+            address(flap.priceGuard()),
+            abi.encodeWithSelector(PriceGuard.impactBps.selector, uint256(armed)),
+            abi.encode(uint256(SLIPPAGE_BPS))
+        );
+
+        uint256 poolBefore = flap.rewardPool();
+
+        vm.warp(block.timestamp + flap.CONVERSION_INTERVAL());
+        vm.prank(address(flap.triggerService()));
+        flap.trigger(id);
+
+        assertGt(flap.rewardPool(), poolBefore, "an in-bound conversion did not convert");
+    }
 }

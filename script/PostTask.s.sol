@@ -5,6 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
+import {TaskGenerator} from "../src/TaskGenerator.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice Publishes one task, escrows its ASSAY pot, and puts the accumulated tax behind it.
@@ -63,17 +64,31 @@ contract PostTask is Script {
         if (flapVaultAddr != address(0)) {
             AssayFlapVault flap = AssayFlapVault(payable(flapVaultAddr));
 
-            // Put the pool behind this task. Without this the tax converts into `rewardPool` and
-            // stops there: `bounty` stays zero, `collectable` returns zero, and `collect` reverts
-            // for the winner of a task that was funded on paper. Nothing called this in production
-            // — only tests did — so the loop had never actually closed.
+            // The task the pool pays is DRAWN, not the one posted above.
             //
+            // This is the money loop and it changed shape: `fundTaskFromPool` used to take the task
+            // this script had just posted, which is exactly the defect an audit measured — the
+            // account that authors the instance was the only account whose tasks the tax could
+            // reach, worth 98.63% of the bounty to it. The funded task is now the one
+            // `TaskGenerator` draws from a block hash nobody can choose.
+            //
+            // So the curated post above still happens — it carries its own escrowed ASSAY pot and
+            // is what an operator uses to run a task of their own choosing — and the drawn task is
+            // what the converted tax goes behind. Two tasks, two kinds of prize, and the one the
+            // poster designed cannot be handed the money.
+            //
+            // Leaving the old line in place would not have been a silent regression: with the
+            // poster whitelist gone, `fundTaskFromPool(taskId)` on a curated task reverts with
+            // "Not the drawn task". The loop would have been visibly, not quietly, broken.
+            uint256 drawnTaskId = TaskGenerator(vm.envAddress("TASK_GENERATOR")).generateAndPost();
+            console2.log("drawn task   ", drawnTaskId);
+
             // The pool this draws on is what *earlier* epochs converted, not the conversion armed
-            // below. That one lands five minutes from now, long after a sixty-second task has
-            // settled, so it belongs to the next task and not this one.
+            // below — that one lands a cadence from now, after this task's window has closed, so it
+            // belongs to the next drawn task and not this one.
             uint256 pool = flap.rewardPool();
             if (pool > 0) {
-                uint256 funded = flap.fundTaskFromPool(taskId);
+                uint256 funded = flap.fundTaskFromPool(drawnTaskId);
                 console2.log("funded       ", funded);
             } else {
                 console2.log("funded       ", "pool is empty; nothing converted yet");

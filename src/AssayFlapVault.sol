@@ -539,10 +539,40 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // request existed — free, and armed again below at a floor priced now rather than at a
         // price the market has left behind. Emitted, never swallowed: a conversion that did not
         // happen is visible on chain as one that did not happen.
-        try this.convertForSelf(s.bnbAmount, floorNow) {
-            // Converted. `_convertToPool` did the accounting.
+        // The floor was made execution-time fresh in an earlier round; the impact bound was not,
+        // and they are not the same guarantee. `quote` runs `getAmountsOut`, which already prices
+        // in what this trade does to the pair — so `fresh` is "97% of what this trade would get",
+        // not "this trade moves the pair by less than 3%". On a pair that has thinned since arming,
+        // a swap that shifts the price by forty percent still clears a floor derived from its own
+        // impacted quote. `_arm` checks `impactBps` when it sizes the amount; nothing checked it
+        // again against the pool the swap actually meets.
+        //
+        // Wrapped, because `impactBps` reads the same pair `quote` does and reverts on the same
+        // broken states. A reading that cannot be taken is NOT a reading that says "too big": the
+        // previous round settled that deliberately for the floor — when the pair cannot be priced,
+        // the stored floor stands and the conversion proceeds, because that floor was committed to
+        // when the market was healthy and still bounds what comes back. Treating an unavailable
+        // reading as a refusal reversed that decision by accident and broke
+        // test_ABrokenQuoteDoesNotUnwindACompletedConversion. Only a positive out-of-bounds answer
+        // refuses; and if the pair really is broken, the swap below fails and that is already caught.
+        bool withinImpact = true;
+        try priceGuard.impactBps(s.bnbAmount) returns (uint256 bps) {
+            withinImpact = bps <= MAX_ENDOW_SLIPPAGE_BPS;
         } catch {
+            // Unreadable, not out of bounds. The stored floor is what bounds this case.
+        }
+
+        if (!withinImpact) {
+            // Not converted, and nothing is stuck: the delete and the `reserved` release above
+            // already happened, so the BNB is free again and the re-arm below sizes the next
+            // attempt against `maxConvertible()` as it stands now rather than as it stood then.
             emit ConversionFailed(requestId, s.bnbAmount, floorNow);
+        } else {
+            try this.convertForSelf(s.bnbAmount, floorNow) {
+                // Converted. `_convertToPool` did the accounting.
+            } catch {
+                emit ConversionFailed(requestId, s.bnbAmount, floorNow);
+            }
         }
 
         // Arm the next epoch from inside this one. The service has no recurrence of its own — its

@@ -21,13 +21,27 @@ MANIFEST="deployments/${CHAIN_ID}-latest.json"
 export TOURNAMENT="$(jq -r .tournament "$MANIFEST")"
 export TOKEN="$(jq -r .taxToken "$MANIFEST")"
 
+# The generator is required whenever the tax layer is, because it draws the task the tax pays. A
+# blank value is an empty string and not undefined, so this is checked rather than defaulted — the
+# alternative is a broadcast that reverts halfway with the curated task already posted.
+export TASK_GENERATOR="$(jq -r '.taskGenerator // ""' "$MANIFEST")"
+case "$TASK_GENERATOR" in
+  0x0000000000000000000000000000000000000000|null|"") TASK_GENERATOR="" ;;
+esac
+
 # The tax layer is optional and its address is chained, never pasted. jq prints "null" for an
 # absent key; that is not an address, and neither is the zero one.
 FLAP_VAULT="$(jq -r '.flapVault // ""' "$MANIFEST")"
 case "$FLAP_VAULT" in
   0x0000000000000000000000000000000000000000|null|"") FLAP_VAULT="" ;;
 esac
-[ -n "$FLAP_VAULT" ] && export FLAP_VAULT
+if [ -n "$FLAP_VAULT" ]; then
+  [ -n "$TASK_GENERATOR" ] || {
+    echo "manifest has a flapVault but no taskGenerator — the tax has no lane to be paid on" >&2
+    exit 1
+  }
+  export FLAP_VAULT
+fi
 
 export TASK_SPEC="${TASK_SPEC:-tasks/epoch.json}"
 [ -s "$TASK_SPEC" ] || { echo "task spec not found: $TASK_SPEC" >&2; exit 1; }
