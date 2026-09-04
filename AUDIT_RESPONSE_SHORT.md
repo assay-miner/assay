@@ -82,6 +82,6 @@ Tested directly against the scenario described: `test_AnEarlySmallCallDoesNotCap
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xF062f9B72778294819486c68CbceAcbea8F9078a` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x5c9e36e588859516007e06de145Bde6f92bF883A` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0x6c06Bc4f0e3D2df402a56CC52FB2D2C1907f1972` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0xBF69D8e7ad7495C280aB01ded60Ff8DF5e209b37` |
 | Tax token | not launched | not launched |
