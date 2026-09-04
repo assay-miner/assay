@@ -248,14 +248,48 @@ contract PoolDrainTest is BaseTest {
         assertEq(flap.bounty(theirs), 0, "and their task got none of it");
     }
 
-    /// @dev The one-shot rule still has to hold, or the pool could be moved onto one task twice.
-    function test_PoolFundsATaskOnlyOnce() public {
-        _fillPool(0.05 ether);
+    /// @dev The old one-shot rule is gone on purpose, and this is why: a second conversion landing
+    ///      inside the same still-open commit window has to reach the task its trading produced,
+    ///      not roll forward to whichever task happens to be newest whenever it lands. Two separate
+    ///      fillings, both while the task is still open, both add to the same bounty.
+    function test_ATaskCanBeFundedMoreThanOnceWhileItIsStillOpen() public {
+        uint256 first = _fillPool(0.05 ether);
+        uint256 funded1 = flap.fundTaskFromPool(taskId);
+        assertEq(funded1, first, "the first filling landed");
+        assertEq(flap.bounty(taskId), first, "and is on the bounty");
+
+        uint256 second = _fillPool(0.05 ether);
+        uint256 funded2 = flap.fundTaskFromPool(taskId);
+        assertEq(funded2, second, "the second filling landed too");
+        assertEq(flap.bounty(taskId), first + second, "both are on the bounty now");
+    }
+
+    /// @dev A call against an empty pool costs gas and nothing else — it must not consume anything
+    ///      that would block a real filling from landing later in the same window.
+    function test_CallingAgainOnAnEmptyPoolChangesNothing() public {
+        uint256 pool = _fillPool(0.05 ether);
         flap.fundTaskFromPool(taskId);
 
-        _fillPool(0.05 ether);
-        vm.expectRevert(bytes(unicode"Already funded / 已注资"));
+        vm.expectRevert(bytes(unicode"Pool is empty / 池中无资金"));
         flap.fundTaskFromPool(taskId);
+        assertEq(flap.bounty(taskId), pool, "an empty-pool attempt moved something");
+    }
+
+    /// @dev The scenario the finding described directly: whoever calls first, for however little
+    ///      the pool held at that moment, no longer fixes what the task ends up with. A second,
+    ///      much larger conversion landing later in the same still-open window still reaches it.
+    function test_AnEarlySmallCallDoesNotCapWhatTheTaskCanStillReceive() public {
+        uint256 early = _fillPool(0.001 ether);
+        flap.fundTaskFromPool(taskId);
+        assertEq(flap.bounty(taskId), early, "the early sliver landed alone");
+
+        uint256 later = _fillPool(0.05 ether);
+        flap.fundTaskFromPool(taskId);
+        assertEq(
+            flap.bounty(taskId),
+            early + later,
+            "the later, larger conversion did not roll forward to a future task"
+        );
     }
 
     /// @dev A stranger cannot hold the withdrawal gate shut forever. OPEN_POST_MAX_SPAN caps one

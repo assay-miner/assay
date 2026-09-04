@@ -159,17 +159,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Whether a miner has taken their share of a task's bounty.
     mapping(uint256 taskId => mapping(address miner => bool)) public collected;
 
-    /// @dev Whether the pool has already been moved onto a task. Internal because nothing reads it
-    ///      from outside and the getter costs code size the factory does not have; the event
-    ///      `TaskFunded` already tells anyone watching that this happened.
-    ///
-    ///      This exists because `bounty[taskId] == 0` was the wrong question. `sponsor` is
-    ///      deliberately open to anyone, so anyone could make a task's bounty non-zero with one wei
-    ///      of BTCB and that task could then never be funded from the pool at all — a permanent
-    ///      denial for the price of dust. What the one-shot rule is actually about is this pool
-    ///      being moved once, so ask that directly and let sponsorship sit alongside it.
-    mapping(uint256 taskId => bool) internal pooledInto;
-
     /// @notice Sum of every task's unpaid bounty, in BTCB.
     uint256 public endowed;
 
@@ -430,15 +419,25 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         }
     }
 
-    /// @notice Moves the whole reward pool onto one task's bounty. Callable by anyone.
-    /// @dev One-shot per task, and the amount is whatever the pool holds when it is called: an
-    ///      epoch converts what it accrued and its task takes what that bought, plus anything an
-    ///      earlier task rolled back through `reclaimBounty`. Nobody picks a number, so this is a
-    ///      transfer and not a decision. A short pool pays what it has rather than reverting, so a task is never left
-    ///      unfunded waiting for somebody to judge it worth funding.
+    /// @notice Moves whatever the reward pool currently holds onto one task's bounty. Callable by
+    ///         anyone, and callable more than once for the same task.
+    /// @dev The amount is whatever the pool holds at the moment of the call: an epoch converts what
+    ///      it accrued and its task takes what that bought, plus anything an earlier task rolled
+    ///      back through `reclaimBounty`. Nobody picks a number, so this is a transfer and not a
+    ///      decision.
+    ///
+    ///      Not one-shot, on purpose. A conversion arms every `CONVERSION_INTERVAL` and a task's
+    ///      commit window can still be open when a second one lands, so whoever called this first —
+    ///      for however little the pool held at that moment — used to fix the task's bounty for
+    ///      good; every later conversion in the same window rolled forward to whichever task was
+    ///      newest when it arrived, not the one whose trading produced it. Letting this run again
+    ///      is what a task needs to collect everything that converts while it is still open, and it
+    ///      is safe to run again: the pool is swept to zero on every call, so a second call before
+    ///      new money arrives simply reverts on `amount > 0` rather than moving anything twice.
+    ///      A short pool still pays what it has rather than reverting the whole call, so a task is
+    ///      never left unfunded waiting for somebody to judge it worth funding.
     function fundTaskFromPool(uint256 taskId) external nonReentrant returns (uint256 amount) {
         _requireTask(taskId);
-        require(!pooledInto[taskId], unicode"Already funded / 已注资");
 
         // The newest task only. Without this the caller chooses which live task the whole pool
         // lands on, so a miner who dominates some other open task can point this epoch's converted
@@ -478,7 +477,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         require(amount > 0, unicode"Pool is empty / 池中无资金");
 
         rewardPool -= amount;
-        pooledInto[taskId] = true;
         bounty[taskId] += amount;
         emit TaskFunded(taskId, amount);
     }
