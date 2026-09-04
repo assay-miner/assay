@@ -77,6 +77,19 @@ export const tournamentAbi = [
   },
   {
     "type": "function",
+    "name": "MAX_TASK_SPAN",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_VECTORS",
     "inputs": [],
     "outputs": [
@@ -84,6 +97,19 @@ export const tournamentAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "OPEN_POST_MAX_SPAN",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -303,6 +329,32 @@ export const tournamentAbi = [
   },
   {
     "type": "function",
+    "name": "latestCuratedRevealEnd",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "latestRevealEnd",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pendingReward",
     "inputs": [
       {
@@ -340,9 +392,9 @@ export const tournamentAbi = [
         "internalType": "bytes32[]"
       },
       {
-        "name": "baselineGas",
-        "type": "uint32",
-        "internalType": "uint32"
+        "name": "referenceRuntime",
+        "type": "bytes",
+        "internalType": "bytes"
       },
       {
         "name": "gasCap",
@@ -559,6 +611,40 @@ export const tournamentAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "taskGates",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "commitEnd",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "revealEnd",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "totalScore",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "poster",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -1009,156 +1095,6 @@ export const tournamentAbi = [
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "AlreadyClaimed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadyCommitted",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadyReclaimed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadyRevealed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BadBaseline",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BadGasCap",
-    "inputs": [
-      {
-        "name": "gasCap",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "BadWindow",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ClaimWindowOpen",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "CommitClosed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "CommitmentMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "DeployFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "EmptyPot",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InsufficientGas",
-    "inputs": [
-      {
-        "name": "available",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "required",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NoScore",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoVectors",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotCurator",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotInRevealWindow",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NothingCommitted",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RevealNotClosed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RuntimeEmpty",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RuntimeTooLarge",
-    "inputs": [
-      {
-        "name": "size",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TooManyVectors",
-    "inputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnknownTask",
-    "inputs": [
-      {
-        "name": "taskId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   }
 ] as const;
 
@@ -1180,11 +1116,6 @@ export const agentrosterAbi = [
         "name": "minStake_",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "curator_",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -1243,7 +1174,7 @@ export const agentrosterAbi = [
   },
   {
     "type": "function",
-    "name": "curator",
+    "name": "deployer",
     "inputs": [],
     "outputs": [
       {
@@ -1548,652 +1479,6 @@ export const agentrosterAbi = [
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "AgentAlreadyBound",
-    "inputs": [
-      {
-        "name": "agentId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "boundTo",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "AlreadyEnrolled",
-    "inputs": [
-      {
-        "name": "miner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ConsumerAlreadyFrozen",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotAuthorizedForAgent",
-    "inputs": [
-      {
-        "name": "miner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "agentId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotConsumer",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotCurator",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotEnrolled",
-    "inputs": [
-      {
-        "name": "miner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "StakeBelowMinimum",
-    "inputs": [
-      {
-        "name": "provided",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "required",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "StakeLockedUntil",
-    "inputs": [
-      {
-        "name": "lockedUntil",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ZeroAgentId",
-    "inputs": []
-  }
-] as const;
-
-export const assaytokenAbi = [
-  {
-    "type": "constructor",
-    "inputs": [
-      {
-        "name": "recipient",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "DOMAIN_SEPARATOR",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_SUPPLY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "allowance",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "approve",
-    "inputs": [
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "balanceOf",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "decimals",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "eip712Domain",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "fields",
-        "type": "bytes1",
-        "internalType": "bytes1"
-      },
-      {
-        "name": "name",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "version",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "verifyingContract",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "salt",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "extensions",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "name",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "nonces",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "permit",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "v",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "r",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "s",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "symbol",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "totalSupply",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "transfer",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "transferFrom",
-    "inputs": [
-      {
-        "name": "from",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "event",
-    "name": "Approval",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EIP712DomainChanged",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Transfer",
-    "inputs": [
-      {
-        "name": "from",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "ECDSAInvalidSignature",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ECDSAInvalidSignatureLength",
-    "inputs": [
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ECDSAInvalidSignatureS",
-    "inputs": [
-      {
-        "name": "s",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC20InsufficientAllowance",
-    "inputs": [
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "allowance",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "needed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC20InsufficientBalance",
-    "inputs": [
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "balance",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "needed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC20InvalidApprover",
-    "inputs": [
-      {
-        "name": "approver",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC20InvalidReceiver",
-    "inputs": [
-      {
-        "name": "receiver",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC20InvalidSender",
-    "inputs": [
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC20InvalidSpender",
-    "inputs": [
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC2612ExpiredSignature",
-    "inputs": [
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ERC2612InvalidSigner",
-    "inputs": [
-      {
-        "name": "signer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidAccountNonce",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "currentNonce",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidShortString",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "StringTooLong",
-    "inputs": [
-      {
-        "name": "str",
-        "type": "string",
-        "internalType": "string"
-      }
-    ]
   }
 ] as const;
 
@@ -2215,6 +1500,11 @@ export const assayflapvaultAbi = [
         "name": "curator_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "priceGuard_",
+        "type": "address",
+        "internalType": "contract PriceGuard"
       }
     ],
     "stateMutability": "nonpayable"
@@ -2222,6 +1512,45 @@ export const assayflapvaultAbi = [
   {
     "type": "receive",
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "CANCEL_GRACE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "CONVERSION_INTERVAL",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FEE_COVER_MULTIPLE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -2241,6 +1570,19 @@ export const assayflapvaultAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cancelConversion",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -2311,6 +1653,30 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "convertForSelf",
+    "inputs": [
+      {
+        "name": "bnbAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRewardOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "rewardOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "curator",
     "inputs": [],
     "outputs": [
@@ -2371,11 +1737,6 @@ export const assayflapvaultAbi = [
     "name": "endow",
     "inputs": [
       {
-        "name": "taskId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "bnbAmount",
         "type": "uint256",
         "internalType": "uint256"
@@ -2407,6 +1768,38 @@ export const assayflapvaultAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "freeTax",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "fundTaskFromPool",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -2486,6 +1879,32 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "lastConversionAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxConvertible",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "paid",
     "inputs": [
       {
@@ -2518,6 +1937,19 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "priceGuard",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PriceGuard"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "quote",
     "inputs": [
       {
@@ -2528,7 +1960,46 @@ export const assayflapvaultAbi = [
     ],
     "outputs": [
       {
-        "name": "rewardOut",
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "rearmSelf",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "reclaimBounty",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "reserved",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -2550,6 +2021,19 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "rewardPool",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "router",
     "inputs": [],
     "outputs": [
@@ -2557,6 +2041,48 @@ export const assayflapvaultAbi = [
         "name": "",
         "type": "address",
         "internalType": "contract IPancakeRouter02"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "scheduled",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bnbAmount",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "minRewardOut",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "executeAfter",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "schedulerFee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -2671,13 +2197,39 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
-    "name": "unassigned",
+    "name": "trigger",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "triggerConversion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "triggerService",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "address",
+        "internalType": "contract IFlapTriggerService"
       }
     ],
     "stateMutability": "view"
@@ -2812,6 +2364,25 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
+    "name": "withdrawUnconverted",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "wrappedNative",
     "inputs": [],
     "outputs": [
@@ -2841,6 +2412,144 @@ export const assayflapvaultAbi = [
       },
       {
         "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BountyReclaimed",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BountyRolledOver",
+    "inputs": [
+      {
+        "name": "fromTaskId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ConversionCancelled",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "bnbAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ConversionFailed",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "bnbAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "floor",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ConversionScheduled",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "bnbAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRewardOut",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Converted",
+    "inputs": [
+      {
+        "name": "bnbAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "rewardOut",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "unassignedLeft",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2968,6 +2677,44 @@ export const assayflapvaultAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "TaskFunded",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UnconvertedWithdrawn",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
@@ -2993,5 +2740,30 @@ export const assayflapvaultAbi = [
         "internalType": "uint256"
       }
     ]
+  }
+] as const;
+
+export const assaytokenAbi = [
+  {
+    "type": "function",
+    "name": "totalSupply",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "symbol",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view"
   }
 ] as const;

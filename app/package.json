@@ -11,10 +11,11 @@
     "sync-abi": "node scripts/sync-abi.mjs",
     "check-abi": "node scripts/sync-abi.mjs --check",
     "check-i18n": "node scripts/check-i18n.mjs",
-    "verify": "node scripts/sync-abi.mjs --check && node scripts/check-i18n.mjs && node scripts/check-lang.mjs && tsc -b && vite build && node scripts/check-layout.mjs",
+    "verify": "node scripts/sync-abi.mjs --check && node scripts/check-i18n.mjs && tsc -b && vite build && npm run check-served",
     "gen": "node tools/gen-hero.mjs && node tools/gen-medallion.mjs",
     "check-layout": "node scripts/check-layout.mjs",
-    "check-lang": "node scripts/check-lang.mjs"
+    "check-lang": "node scripts/check-lang.mjs",
+    "check-served": "node scripts/with-preview.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
