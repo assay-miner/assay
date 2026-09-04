@@ -180,15 +180,19 @@ nothing here changes the cost or the reach of the griefing this finding describe
 - 252 tests pass. The two new gates were confirmed by breaking what they guard and watching only
   their own tests fail.
 - No token has been launched on either chain.
-- **Both chains are now behind this source, and deliberately so.** `MIN_COMMIT_SPAN` changes
-  `Tournament`, and `Tournament` is immutable and constructor-wired into the vault, so adopting it
-  on chain means redeploying the set rather than upgrading one contract. We are not spending that
-  before the review: the addresses below run the previous revision, and this submission is the
-  source we intend to deploy once it passes. The testnet address is a revision older still — that
-  deploy failed for gas and the public BNB testnet faucet is out of funds.
+- **BSC mainnet was redeployed for this submission and carries exactly this source.**
+  `MIN_COMMIT_SPAN` changes `Tournament`, which is immutable and constructor-wired into the vault,
+  so adopting it meant redeploying the set rather than upgrading one contract. The addresses in the
+  table below are the new ones, and the packaging step's bytecode check passes against them.
+  `cast call MIN_COMMIT_SPAN()` on the deployed `Tournament` returns `300`, so the fix is verifiable
+  by call and not only from a manifest.
+- **BSC testnet is still behind.** That deploy failed for gas and the public BNB testnet faucet is
+  out of funds, so that address runs an earlier revision.
+- **No token is launched on either chain.** `SKIP_TOKEN=true`; `taxToken` is the zero address in
+  both manifests.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0x6c06Bc4f0e3D2df402a56CC52FB2D2C1907f1972` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0xBF69D8e7ad7495C280aB01ded60Ff8DF5e209b37` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0x8A5C116F1D68bef2893974D2764f1692996a8110` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0xF23601b3E90bAE8E2c9eF8Cae39883b4399ACBB6` |
 | Tax token | not launched | not launched |

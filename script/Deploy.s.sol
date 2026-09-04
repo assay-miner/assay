@@ -297,6 +297,14 @@ contract Deploy is Script {
         vm.serializeAddress(json, "taskGeneratorBeacon", address(beacon));
         vm.serializeAddress(json, "taskGeneratorImpl", generatorImpl);
         vm.serializeAddress(json, "flapFactory", flapFactory);
+        // The two values that make a SKIP_TOKEN deploy reproducible, and the reason the previous
+        // mainnet manifest could not be. `AssayVault` is constructed with `predictedToken` — the
+        // address this salt makes the token land on — so launching later under a different salt
+        // gives the vault a token reference that will never be filled. The manifest recorded
+        // fourteen addresses and neither of these, which meant the one input the deploy could not
+        // re-derive was the one it did not write down.
+        vm.serializeBytes32(json, "salt", salt);
+        vm.serializeAddress(json, "predictedToken", predictedToken);
         vm.serializeAddress(json, "taxToken", taxToken);
         vm.serializeAddress(json, "flapVault", flapVault);
         string memory out = vm.serializeAddress(json, "tournament", address(tournament));

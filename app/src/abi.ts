@@ -103,6 +103,19 @@ export const tournamentAbi = [
   },
   {
     "type": "function",
+    "name": "MIN_COMMIT_SPAN",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "OPEN_POST_MAX_SPAN",
     "inputs": [],
     "outputs": [
