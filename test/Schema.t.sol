@@ -124,16 +124,56 @@ contract SchemaTest is BaseTest {
         return raw > 1e18 ? 1e18 : raw;
     }
 
-    /// @dev Without this the UI would ask a user to approve by hand before escrowing a pot.
-    function test_PostTaskDeclaresItsApproval() public view {
+    /// @dev This test used to assert the opposite, and asserting it is what kept the defect alive.
+    ///
+    ///      It checked that `postTask` declares an ApproveAction, that its tokenType is "taxToken"
+    ///      and its amount field is "pot" — every field correct, and the declaration still wrong,
+    ///      because `ApproveAction` names no spender. IVaultSchemasV1's workflow for it is
+    ///      `token.approve(vault, amount)` where `vault` is the contract whose schema this is, so
+    ///      declaring one asserts that THIS contract pulls. `postTask` calls `vault.deposit(...)`
+    ///      and `AssayVault` runs the transfer. A poster following the generated UI approved
+    ///      `Tournament` and `postTask` reverted inside a transfer `Tournament` never makes.
+    ///
+    ///      So the property is not "an approval is declared" — it is "an approval is declared only
+    ///      where this contract is the puller". Asserted against the escrow path itself below.
+    function test_PostTaskDeclaresNoApprovalBecauseItIsNotThePuller() public {
         VaultUISchema memory s = tournament.vaultUISchema();
         VaultMethodSchema memory post = s.methods[6];
         assertEq(post.name, "postTask");
-        assertEq(post.approvals.length, 1, "one approve to send first");
-        assertEq(post.approvals[0].tokenType, "taxToken", "resolved via taxToken()");
-        assertEq(post.approvals[0].amountFieldName, "pot", "amount comes from the pot field");
+        assertEq(post.approvals.length, 0, "postTask must not claim an approval it will not use");
 
-        // And the resolver the UI will call must actually answer.
+        // The description has to carry what the removed declaration would have arranged, or a UI
+        // user is left with a form that fails and nothing telling them why.
+        assertTrue(
+            vm.contains(post.description, "vault()"),
+            "the description does not say where the allowance goes"
+        );
+
+        // And the reason, demonstrated rather than described: an allowance to the tournament is not
+        // the allowance postTask needs.
+        address poster = makeAddr("uiPoster");
+        deal(address(token), poster, uint256(POT));
+        vm.startPrank(poster);
+        token.approve(address(tournament), type(uint256).max); // what the removed schema asked for
+        vm.warp(uint256(tournament.latestRevealEnd()) + 1);
+        vm.expectRevert();
+        tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), POT
+        );
+
+        // The allowance the escrow actually pulls against is to the custody contract.
+        token.approve(address(tournament.vault()), type(uint256).max);
+        uint256 id = tournament.postTask(
+            inputs, expected, Bytecode.verbose(), GAS_CAP,
+            uint64(block.timestamp + 60), uint64(block.timestamp + 120), POT
+        );
+        vm.stopPrank();
+        assertGt(id, 0, "approving the custody contract did not let the post through");
+    }
+
+    /// The resolver a UI calls for the token address must still answer, approval or not.
+    function test_TaxTokenResolves() public view {
         assertEq(tournament.taxToken(), address(token), "taxToken resolves to the asset");
     }
 

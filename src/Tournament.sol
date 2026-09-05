@@ -773,8 +773,26 @@ contract Tournament {
         m.inputs[5] = FieldDescriptor("revealEnd", "uint64", unicode"Reveals close / 揭示截止", 0);
         m.inputs[6] = FieldDescriptor("pot", "uint128", unicode"Prize pot / 奖池", 18);
         m.outputs = new FieldDescriptor[](0);
-        m.approvals = new ApproveAction[](1);
-        m.approvals[0] = ApproveAction("taxToken", "pot");
+
+        // No ApproveAction, deliberately, and the description carries what one would have said.
+        //
+        // `ApproveAction` names no spender. IVaultSchemasV1's own workflow for it is
+        // `token.approve(vault, amount)` where `vault` is the contract whose schema this is — so
+        // declaring one asserts that THIS contract pulls the token. `postTask` does not: it calls
+        // `vault.deposit(...)` and `AssayVault` runs the `safeTransferFrom`, because a logic
+        // contract in this design never holds the money even for a single call. So a poster
+        // following the generated UI approved `Tournament`, and `postTask` reverted inside a
+        // transfer `Tournament` never makes — every task with a non-zero pot, from the UI only.
+        // `script/PostTask.s.sol` has always approved `vault()`, which is why nothing caught it.
+        //
+        // Declaring it correctly is not available: the struct has no spender field and this
+        // function is `pure`, so it cannot read `vault()` to name the address either. The choice is
+        // between a schema that asks for the wrong approval and one that asks for none and says
+        // where it goes. Making `Tournament` the puller instead would put the pot inside a logic
+        // contract between two statements and hand a hostile token a reentrancy hook into
+        // `postTask`, which has no guard — a worse trade than a manual approval.
+        m.approvals = new ApproveAction[](0);
+        m.description = unicode"Publish a task (open window only for non-curators). A non-zero pot needs an ASSAY allowance to the custody contract at vault(), not to this one / 发布一个任务(非策展方仅限开放窗口期)。奖池非零时,ASSAY 授权要给 vault() 返回的托管合约,不是本合约";
         m.isWriteMethod = true;
     }
 

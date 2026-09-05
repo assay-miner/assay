@@ -33,6 +33,20 @@ const abiTypeOf = (fieldType) => (fieldType === "time" ? "uint256" : fieldType);
 let failed = 0;
 const fail = (m) => { console.error(`  MISMATCH ${m}`); failed++; };
 
+/** The source of one function, brace-matched. Used to ask whether it pulls tokens itself. */
+function functionBody(src, name) {
+  const m = src.match(new RegExp(`function\\s+${name}\\s*\\(`));
+  if (!m) return null;
+  const open = src.indexOf("{", m.index);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let j = open; j < src.length; j++) {
+    if (src[j] === "{") depth++;
+    else if (src[j] === "}" && --depth === 0) return src.slice(open, j + 1);
+  }
+  return null;
+}
+
 // A label is bilingual when it carries both halves and they actually differ. "BTCB / BTCB" passes a
 // naive `includes(" / ")` and is exactly what the rule prohibits.
 const CJK = /[㐀-鿿豈-﫿]/;
@@ -67,6 +81,26 @@ for (const { source, artifact } of TARGETS) {
     // The method's own description is a label too.
     const desc = body.match(/m\.description = unicode"((?:[^"\\]|\\.)*)"/);
     if (desc) checkLabel(`${source} ${method} description`, desc[1]);
+
+    // An ApproveAction names no spender. IVaultSchemasV1's own workflow for it is
+    // `token.approve(vault, amount)` where `vault` is the contract whose schema this is — so
+    // declaring one is a claim that THIS contract pulls the token itself. Tournament declared one
+    // on `postTask` and does not: it calls `vault.deposit(...)`, and AssayVault runs the
+    // `safeTransferFrom`. A poster following the generated UI approved Tournament, and postTask
+    // reverted inside a transfer Tournament never makes. The types matched, the labels were
+    // bilingual, and the form was still unusable — nothing here looked at who receives the money.
+    if (/m\.approvals\[\d+\] = ApproveAction\(/.test(body)) {
+      const fnSrc = functionBody(src, method);
+      if (fnSrc === null) {
+        fail(`${source} ${method} declares an approval but no such function was found to check`);
+      } else if (!/safeTransferFrom\(\s*msg\.sender\s*,\s*address\(this\)/.test(fnSrc)) {
+        fail(
+          `${source} ${method} declares an ApproveAction, so a UI will approve THIS contract — but ` +
+          `${method} never pulls with safeTransferFrom(msg.sender, address(this), ...). ` +
+          `Whoever actually pulls will find no allowance.`
+        );
+      }
+    }
 
     // Only write methods are ABI-encoded from the schema; reads are rendered, not called this way.
     if (!/m\.isWriteMethod = true/.test(body)) continue;
