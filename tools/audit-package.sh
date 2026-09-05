@@ -29,6 +29,18 @@ node tools/check-schema.mjs || {
   exit 1
 }
 
+# The response's shape, when a report is sitting next to it to compare against. Three rounds were
+# rejected on format, each time because the shape was inferred rather than copied — the last one
+# truncated a finding title at its first comma and the validator reported "Confirmed: 0".
+# AUDIT_REPORT is optional: without it the check still catches structure, and says out loud that
+# titles were NOT compared so a green run cannot be mistaken for a checked one.
+if [ -s AUDIT_RESPONSE_SHORT.md ]; then
+  node tools/check-response-format.mjs AUDIT_RESPONSE_SHORT.md "${AUDIT_REPORT:-}" || {
+    echo "refusing to package: the response is a shape the validator rejects" >&2
+    exit 1
+  }
+fi
+
 node tools/sync-submission.mjs --check || {
   echo "refusing to package: SUBMISSION.md does not match deployments/*-latest.json" >&2
   exit 1

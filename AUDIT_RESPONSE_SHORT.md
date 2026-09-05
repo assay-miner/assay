@@ -1,123 +1,87 @@
 # Flap Vault Interaction Risk Report
 
-Generated: 2026-09-04 17:15:07 UTC
+Generated: 2026-09-05 12:19:15 UTC
 
 ## Vault Security Rating
 **Low**
 
 Project: ASSAY (`AssayFlapVault`)
 
-Accepted in full. The relocation half is fixed; the withdrawal-freeze half is answered in the reason
-below with the measurements that decided it. The freeze is a regression we introduced when closing
-finding 025 — finding 015 was closed by adding `latestCuratedRevealEnd`, advanced only by
-curator/Guardian posts, and the 025 fix put `drawn` back into that predicate while making the drawn
-lane public. We re-latched a gate we had closed, and say so rather than let it read as new.
+Accepted. Every link in the description holds, we reproduced the revert, and the declaration is gone.
+The reason it survived is that the test guarding it asserted the declaration's presence and each of
+its fields — all correct — when the one thing that mattered is not a field at all.
 
 ---
 
 ## Risk Findings
-### Finding 1: Permissionless generateAndPost has no inter-epoch spacing, letting anyone relocate the reward-pool funding target and stall the reward flow
+### Finding 1: postTask pot deposit approval targets the wrong contract in Tournament.vaultUISchema
 - **Severity:** Low
 - **Confidence:** Low
 - **Detected by:** attacker_review
-- **Description:** The reward pool is only ever payable to `latestGeneratedTaskId`, which is written exclusively on the drawn lane of `Tournament.postTask`. `TaskGenerator.generateAndPost()` is fully public and, because it calls `postTask` from the generator address, always takes the drawn lane. Unlike the stranger lane (which requires `block.timestamp >= latestRevealEnd`, i.e. only in the gap between epochs), the drawn lane enforces no inter-epoch gap. Any address can therefore call `generateAndPost()` at will (~gas only) to publish a fresh drawn task, which resets `latestGeneratedTaskId` to that new task. `fundTaskFromPool`'s comment claims 'no poster can make their own task the funding target by posting after it,' but that guarantee only covers *winnability* (the instance is drawn from a blockhash). It does NOT prevent moving the target: an attacker can repeatedly post new drawn tasks so the pool follows a task that active miners have not committed to, causing all future converted tax to bypass the task those miners are working. The same spam also advances `latestCuratedRevealEnd` on every drawn post, keeping `withdrawUnconverted` permanently reverting.
+- **Description:** Tournament.postTask escrows its pot by calling AssayVault.deposit, which executes asset.safeTransferFrom(poster, AssayVault, pot). The token allowance therefore has to be granted to AssayVault. However, Tournament.vaultUISchema declares postTask with an ApproveAction ("taxToken", "pot"), and the Flap schema semantics fix the approve spender to the schema-owning contract itself (Tournament). A poster who follows the generated UI approves Tournament, but the actual pull is performed by AssayVault, so postTask reverts inside safeTransferFrom for any task created with a non-zero pot.
 - **Vulnerable Code:**
-  - `src/TaskGenerator.sol:generateAndPost`
-  - `src/Tournament.sol: postTask (drawn lane, missing latestRevealEnd gap)`
-  - `src/AssayFlapVault.sol:fundTaskFromPool`
+  - `src/Tournament.sol: vaultUISchema (postTask ApproveAction)`
+  - `src/Tournament.sol: postTask (vault.deposit call)`
+  - `src/AssayVault.sol: deposit (asset.safeTransferFrom(from, address(this), amount))`
 
 > **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
-> **Reason (if FP / By Design / Acknowledged):** Both halves hold. The relocation half is fixed by serialising the drawn lane on its own last epoch. The withdrawal-freeze half we are not fixing, and the measurements behind that decision are set out below rather than asserted — every mitigation we found opens a periodic sweep channel whose size is not controlled by the window and which can starve the conversion chain outright.
+> **Reason (if FP / By Design / Acknowledged):** Confirmed link by link and reproduced: with an allowance to `Tournament`, `postTask` with a non-zero pot reverts; with an allowance to `vault()` it posts. The `ApproveAction` is removed and the description now names where the allowance goes, because the declaration cannot be made correct — `ApproveAction` has no spender field and `vaultUISchema` is `pure`.
 
-**Measured on a fork, against the shipped code.** Relocation costs one `generateAndPost`: 1.13M gas,
-about five cents at the 0.05 gwei this project's own mainnet deploys paid. **Two calls in the same
-block relocated the target twice** — the lane had no spacing rather than loose spacing. What it
-denies the displaced task's miners is every conversion not yet swept onto it, and a drawn task
-carries `pot = 0`, so before the pool has moved that is the entire epoch — plus their stake, which
-`roster.lockUntil` holds to a reveal that will now pay nothing. Freezing `withdrawUnconverted` costs
-about $3.65/day at twenty-minute intervals.
+**Verified against the code.** `Tournament.postTask:384` calls
+`vault.deposit(KIND_POT, bytes32(taskId), msg.sender, pot)`, and `AssayVault.deposit:186` runs
+`asset.safeTransferFrom(from, address(this), amount)`. So the allowance the escrow pulls against
+belongs to `AssayVault`, and `IVaultSchemasV1`'s own workflow for an `ApproveAction` is steps 3 and 4:
+`token.allowance(user, vault)` then `token.approve(vault, amount)`, where `vault` is the contract
+whose schema it is. The two are different addresses on every deployment.
 
-**Understated in the report, twice.**
+**Reproduced.** A fresh poster approving `Tournament` for the maximum and calling `postTask` with a
+non-zero pot reverts inside the transfer. The same poster approving `tournament.vault()` posts. Both
+halves are one test, so the claim and its remedy are asserted together rather than described.
 
-*The shipped ops script was deterministically attackable.* `script/PostTask.s.sol` draws at one line
-and funds at the next inside a single `vm.startBroadcast()` — but a forge broadcast is N separate
-transactions, and the gap between them is insertable. An attacker landing one `generateAndPost()`
-there made the operator's own `fundTaskFromPool` revert with "Not the drawn task", aborting the run
-and leaving their own task the only fundable one. No bidding war, no monitoring, five cents, every
-time.
+**Why nothing operational hit it.** `script/PostTask.s.sol` has always approved
+`tournament.vault()`, with a comment giving the reason — the vault pulls directly so the pot never
+sits inside a logic contract even for one call. The defect was reachable only through a UI built from
+the schema, which is exactly the surface this schema exists to describe.
 
-*The withdrawal freeze is the default, not only an attack.* Every drawn post pushes
-`latestCuratedRevealEnd` twenty minutes out. At the cadence the protocol is designed to run,
-`withdrawUnconverted` never opens — with no attacker present at all.
+**Fix — the declaration is removed and the description carries what it would have arranged:**
 
-**Overstated in one direction, worth stating precisely.** A bounty already moved by
-`fundTaskFromPool` cannot be touched: relocation does not write `bounty[]`, and a miner who scored on
-the displaced task still collects exactly what was moved onto it. `rewardPool` is not frozen either,
-only redirected — anyone re-funds the new target for 47,609 gas. And `triggerConversion` has no epoch
-gate, so a frozen withdrawal does not strand BNB: it keeps converting into prize money. What the
-curator loses is the claim to empty-window tax, not the money's existence. Finally, "relocate at
-will" is true as to *which task* and not as to *which instance* — the attacker still cannot choose
-what is drawn, so this is a timing lever, not the information advantage finding 025 was about.
+> Publish a task (open window only for non-curators). A non-zero pot needs an ASSAY allowance to the
+> custody contract at `vault()`, not to this one.
 
-**Fix — serialise the drawn lane on its own last epoch:**
+**Declaring it correctly is not available, and we would rather say that than approximate it.**
+`ApproveAction` is `{ tokenType, amountFieldName }` — there is no spender field — and
+`vaultUISchema` is `pure`, so it cannot read `vault()` to put the address in the description either.
+The remaining option would be to make `Tournament` the puller: `safeTransferFrom` into itself, then
+forward. That puts the pot inside a logic contract between two statements and hands a hostile token a
+reentrancy hook into `postTask`, which carries no guard. Trading a custody property and a new
+reentrancy surface for an automatic approval is the wrong direction, so the schema asks for no
+approval and says where the allowance belongs.
 
-```solidity
-require(
-    block.timestamp >= tasks[latestGeneratedTaskId].revealEnd,
-    unicode"Drawn epoch still running / 抽取任务尚未结束"
-);
-```
+If a future `ApproveAction` gains a spender, this becomes a one-line declaration and we will make it.
 
-Reading the **drawn** task's reveal rather than `latestRevealEnd` is the whole of it. A stranger
-occupying the open-post slot advances `latestRevealEnd`; a funding lane waiting on that mark would
-hand finding 023's griefer the treasury's only route to miners, which is why the lane was left
-ungated in the first place. This waits on a mark nobody outside the lane can advance.
-`latestGeneratedTaskId` is 0 before the first draw and `tasks[0].revealEnd` is 0, so the first post
-is unconditionally allowed. It also closes the ops race without a helper contract: the operator's own
-drawn task is running, so the insertion is exactly what this refuses.
+**The test asserted the defect.** `test_PostTaskDeclaresItsApproval` checked that the approval
+exists, that its `tokenType` is `"taxToken"` and its `amountFieldName` is `"pot"`. All three were
+right. The declaration was still wrong, because the spender is not a field — so a test written
+entirely in terms of fields could not see it. It asserts the property now: no approval is declared
+where this contract is not the puller, the description names `vault()`, and the escrow path is
+demonstrated in both directions.
 
-**Two things we tried and rejected, because the reasoning matters more than the diff.**
-
-Our instinct was to serialise *and* drop `drawn` from the `latestCuratedRevealEnd` predicate. A probe
-falsified the second half: with it dropped, unconverted tax sitting under a live, **funded** drawn
-epoch becomes sweepable by the curator. The predicate is untouched.
-
-We also rejected a `DRAWN_LANE_GAP` constant that would reopen the withdrawal periodically, because
-it does not tune what it appears to. `withdrawUnconverted` takes `freeTax()`, which is the tax
-accrued since the last `_arm`, and arms are `CONVERSION_INTERVAL` apart — so a one-second window and
-a one-minute window let a sweeper take the same amount. "Shrink the gap to shrink the leak" is a
-wrong model of the leak. Worse, sweeping once per epoch keeps the balance permanently under
-`FEE_COVER_MULTIPLE * fee`, at which point `_arm` returns 0 and the self-arming chain stops: the
-mitigation can starve the pool it exists to protect.
-
-**Why the freeze is left open.** The cost of it is bounded and falls on us — the curator cannot
-reclaim tax from windows nobody mined. Nothing is stranded: conversions continue, miners keep being
-paid, and the Guardian's emergency withdrawals are unaffected. We would rather carry that than ship a
-mitigation that can stop the protocol paying at all. If Flap would rather have the channel, we will
-add it.
-
-**Two comments said the opposite of the code and are corrected.** `TaskGenerator` claimed "this posts
-as a stranger, so it only succeeds in the gap after the previous task has settled" — it posts on the
-drawn lane, which had no gap, and describing one the code did not have is a fair part of why nobody
-went looking. The vault claimed "no poster can make their own task the funding target by posting
-after it", which was true of a curated poster and of nobody else until this change.
-
-**Tested.** `test_TheFundingTargetCannotMoveWhileItsEpochRuns` (same block, and every point inside
-the epoch), `test_TheLaneReopensWhenTheEpochCloses` (serialises rather than seizes),
-`test_AStrangerHoldingTheOpenSlotCannotBlockTheDrawnLane`,
-`test_NobodyCanWedgeADrawBetweenTheOperatorsDrawAndItsFunding` (the ops race),
-`test_TheLaneRunsEpochAfterEpoch` (three consecutive epochs). Confirmed red by removing the require:
-exactly those fail with "next call did not revert as expected" and the other nine hold.
+**And the general rule is a gate.** This is the second schema/code drift here — the first was
+`postTask`'s parameter types, which is why `tools/check-schema.mjs` exists at all, and it compared
+names and then types while never asking who receives the money. It now requires that any method
+declaring an `ApproveAction` contains `safeTransferFrom(msg.sender, address(this), ...)` in its own
+body. Run against the code as you received it, it names `Tournament.postTask` and nothing else: the
+vault's own approval on `sponsor` is correct, because `sponsor` does pull into itself, and it is not
+flagged.
 
 ---
 
 ## Status
 
-- 261 tests pass.
-- **BSC mainnet redeployed for this submission and carries exactly this source.** `Tournament` is
-  immutable and constructor-wired to both the vault and the generator, so no change here can be an
-  upgrade. Verified by call in both directions: `tournament.generator()` returns
-  `0x6fF13305bCa28Aae1fe624619afAb94F736DaB3D` and that proxy's `tournament()` returns `0xB0A91CeA508492B76A4f7339b62417695E025D00`.
+- 262 tests pass.
+- **BSC mainnet redeployed for this submission and carries exactly this source.** Verified by call:
+  `tournament.vault()` returns `0x76033A5F2020FB177DeC06481f032800dA37ae2A`, which is the address a poster must approve, and
+  `tournament.generator()` and the generator's `tournament()` point at each other.
 - **BSC testnet is behind** — that deploy failed for gas and the public faucet is out of funds.
 - **No token is launched on mainnet.** `SKIP_TOKEN=true`; `taxToken` is the zero address in
   `deployments/56-latest.json`. A rehearsal token from an earlier round exists on testnet at
@@ -126,7 +90,8 @@ exactly those fail with "next call did not revert as expected" and the other nin
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xb24c25Cf8D94449527E31E3Ba32296aF7c8e6D5D` |
-| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0xB0A91CeA508492B76A4f7339b62417695E025D00` |
-| `TaskGenerator` | — | `0x6fF13305bCa28Aae1fe624619afAb94F736DaB3D` |
+| `AssayFlapFactory` | `0x6b220DACd22467e837249344399A5d52951Ae264` | `0xF5b3243259daA0E9b0CE8f51F6340a89e50B404F` |
+| `Tournament` | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` | `0x5196Bbe37D76df30F4Eeb412846946f78E85eb25` |
+| `AssayVault` (approve this) | — | `0x76033A5F2020FB177DeC06481f032800dA37ae2A` |
+| `TaskGenerator` | — | `0xEEB91744BCA82DCA2fc09513e5a76bdCaE4589B9` |
 | Tax token | rehearsal token, see above | not launched |
