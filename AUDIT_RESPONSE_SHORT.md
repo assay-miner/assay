@@ -1,31 +1,43 @@
-# Flap Vault Interaction Risk Report — response
+# Flap Vault Interaction Risk Report
 
-Generated in reply to the report of 2026-09-04 17:15 UTC · Project: ASSAY (`AssayFlapVault`)
+Generated: 2026-09-04 17:15:07 UTC
 
-Accepted. Both halves hold. The first is fixed; the second is acknowledged with a measured reason,
-not waved away. Two things in the report are understated and one is overstated, all three below.
+## Vault Security Rating
+**Low**
 
-The second half is a regression we introduced. Finding 015 was closed by adding
-`latestCuratedRevealEnd`, advanced **only** by curator/Guardian posts, precisely so a permissionless
-poster could not hold the withdrawal shut. Closing finding 025 put `drawn` back into that predicate
-while making the drawn lane public. We re-latched the gate we had closed, and say so here rather
-than let it read as a new discovery.
+Project: ASSAY (`AssayFlapVault`)
+
+Accepted in full. The relocation half is fixed; the withdrawal-freeze half is answered in the reason
+below with the measurements that decided it. The freeze is a regression we introduced when closing
+finding 025 — finding 015 was closed by adding `latestCuratedRevealEnd`, advanced only by
+curator/Guardian posts, and the 025 fix put `drawn` back into that predicate while making the drawn
+lane public. We re-latched a gate we had closed, and say so rather than let it read as new.
 
 ---
 
-### Finding 1: Permissionless generateAndPost has no inter-epoch spacing
+## Risk Findings
+### Finding 1: Permissionless generateAndPost has no inter-epoch spacing, letting anyone relocate the reward-pool funding target and stall the reward flow
+- **Severity:** Low
+- **Confidence:** Low
+- **Detected by:** attacker_review
+- **Description:** The reward pool is only ever payable to `latestGeneratedTaskId`, which is written exclusively on the drawn lane of `Tournament.postTask`. `TaskGenerator.generateAndPost()` is fully public and, because it calls `postTask` from the generator address, always takes the drawn lane. Unlike the stranger lane (which requires `block.timestamp >= latestRevealEnd`, i.e. only in the gap between epochs), the drawn lane enforces no inter-epoch gap. Any address can therefore call `generateAndPost()` at will (~gas only) to publish a fresh drawn task, which resets `latestGeneratedTaskId` to that new task. `fundTaskFromPool`'s comment claims 'no poster can make their own task the funding target by posting after it,' but that guarantee only covers *winnability* (the instance is drawn from a blockhash). It does NOT prevent moving the target: an attacker can repeatedly post new drawn tasks so the pool follows a task that active miners have not committed to, causing all future converted tax to bypass the task those miners are working. The same spam also advances `latestCuratedRevealEnd` on every drawn post, keeping `withdrawUnconverted` permanently reverting.
+- **Vulnerable Code:**
+  - `src/TaskGenerator.sol:generateAndPost`
+  - `src/Tournament.sol: postTask (drawn lane, missing latestRevealEnd gap)`
+  - `src/AssayFlapVault.sol:fundTaskFromPool`
 
-> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged  *(relocation — fixed)*
-> **Status:** `[ ]` TP　`[ ]` FP　`[ ]` By Design　`[x]` Acknowledged  *(withdrawal freeze — see below)*
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+> **Reason (if FP / By Design / Acknowledged):** Both halves hold. The relocation half is fixed by serialising the drawn lane on its own last epoch. The withdrawal-freeze half we are not fixing, and the measurements behind that decision are set out below rather than asserted — every mitigation we found opens a periodic sweep channel whose size is not controlled by the window and which can starve the conversion chain outright.
 
-**Measured on a fork against the shipped code.** Relocation costs one `generateAndPost`: 1.13M gas,
+**Measured on a fork, against the shipped code.** Relocation costs one `generateAndPost`: 1.13M gas,
 about five cents at the 0.05 gwei this project's own mainnet deploys paid. **Two calls in the same
 block relocated the target twice** — the lane had no spacing rather than loose spacing. What it
 denies the displaced task's miners is every conversion not yet swept onto it, and a drawn task
 carries `pot = 0`, so before the pool has moved that is the entire epoch — plus their stake, which
-`roster.lockUntil` holds to a reveal that will now pay nothing.
+`roster.lockUntil` holds to a reveal that will now pay nothing. Freezing `withdrawUnconverted` costs
+about $3.65/day at twenty-minute intervals.
 
-**Understated, twice.**
+**Understated in the report, twice.**
 
 *The shipped ops script was deterministically attackable.* `script/PostTask.s.sol` draws at one line
 and funds at the next inside a single `vm.startBroadcast()` — but a forge broadcast is N separate
@@ -38,7 +50,7 @@ time.
 `latestCuratedRevealEnd` twenty minutes out. At the cadence the protocol is designed to run,
 `withdrawUnconverted` never opens — with no attacker present at all.
 
-**Overstated, in one direction worth stating precisely.** A bounty already moved by
+**Overstated in one direction, worth stating precisely.** A bounty already moved by
 `fundTaskFromPool` cannot be touched: relocation does not write `bounty[]`, and a miner who scored on
 the displaced task still collects exactly what was moved onto it. `rewardPool` is not frozen either,
 only redirected — anyone re-funds the new target for 47,609 gas. And `triggerConversion` has no epoch
@@ -78,30 +90,24 @@ wrong model of the leak. Worse, sweeping once per epoch keeps the balance perman
 `FEE_COVER_MULTIPLE * fee`, at which point `_arm` returns 0 and the self-arming chain stops: the
 mitigation can starve the pool it exists to protect.
 
-**Why the withdrawal freeze is Acknowledged.** Every fix we found opens a periodic, un-closable
-sweep channel whose size is set by `CONVERSION_INTERVAL` rather than by the window, and which can
-starve the conversion chain outright. The cost of the freeze is bounded and falls on us: the curator
-cannot reclaim tax from windows nobody mined. Nothing is stranded — conversions continue, miners keep
-being paid, and the Guardian's emergency withdrawals are unaffected. We would rather carry that than
-ship a mitigation that can stop the protocol paying at all. If Flap would rather have the channel, we
-will add it.
+**Why the freeze is left open.** The cost of it is bounded and falls on us — the curator cannot
+reclaim tax from windows nobody mined. Nothing is stranded: conversions continue, miners keep being
+paid, and the Guardian's emergency withdrawals are unaffected. We would rather carry that than ship a
+mitigation that can stop the protocol paying at all. If Flap would rather have the channel, we will
+add it.
 
 **Two comments said the opposite of the code and are corrected.** `TaskGenerator` claimed "this posts
 as a stranger, so it only succeeds in the gap after the previous task has settled" — it posts on the
 drawn lane, which had no gap, and describing one the code did not have is a fair part of why nobody
-went looking for it. The vault claimed "no poster can make their own task the funding target by
-posting after it", which was true of a curated poster and of nobody else until this change.
+went looking. The vault claimed "no poster can make their own task the funding target by posting
+after it", which was true of a curated poster and of nobody else until this change.
 
 **Tested.** `test_TheFundingTargetCannotMoveWhileItsEpochRuns` (same block, and every point inside
 the epoch), `test_TheLaneReopensWhenTheEpochCloses` (serialises rather than seizes),
-`test_AStrangerHoldingTheOpenSlotCannotBlockTheDrawnLane` (constraint A held),
+`test_AStrangerHoldingTheOpenSlotCannotBlockTheDrawnLane`,
 `test_NobodyCanWedgeADrawBetweenTheOperatorsDrawAndItsFunding` (the ops race),
 `test_TheLaneRunsEpochAfterEpoch` (three consecutive epochs). Confirmed red by removing the require:
 exactly those fail with "next call did not revert as expected" and the other nine hold.
-
-`test_EveryBlockYieldsATask` asserted the old behaviour and now asks `drawFor` directly — it was
-always about the redraw loop rather than the posting cadence, and posting twenty times would have
-been testing the cadence instead.
 
 ---
 
