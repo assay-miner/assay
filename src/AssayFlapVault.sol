@@ -444,7 +444,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // the curator could post a fresh task one block after the one miners were working in and
         // the pool followed them; an audit measured that variant needing no search advantage at
         // all, only a second `postTask`. `latestGeneratedTaskId` is written on the drawn lane and
-        // nowhere else, so no poster can make their own task the funding target by posting after it.
+        // nowhere else — which stops a CURATED post from moving the target, and by itself stopped
+        // nothing else: the drawn lane is public, so anybody could move it by posting there. What
+        // makes this line true is that `Tournament` serialises that lane on its own last epoch, so
+        // the target cannot move until the epoch it names has closed.
         require(
             taskId == tournament.latestGeneratedTaskId(),
             unicode"Not the drawn task / 非抽取任务"

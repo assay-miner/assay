@@ -55,9 +55,12 @@ contract TaskGenerator is Initializable {
     ///      taken at block N can be far too low at block N+1. The first live call reverted out of
     ///      gas at 474,590 against an estimate made a block earlier; the same call with room
     ///      succeeded at 1,318,610. Send at least 3,000,000.
-    /// @dev Callable by anyone, taking nothing. The tournament's own rules still apply: this posts
-    ///      as a stranger, so it only succeeds in the gap after the previous task has settled and
-    ///      only for a window the tournament considers short.
+    /// @dev Callable by anyone, taking nothing. This does NOT post as a stranger — it posts as the
+    ///      generator, which is the tournament's drawn lane, and that lane has its own rules. The
+    ///      sentence that used to stand here said the opposite and was the reason the lane went out
+    ///      with no spacing at all: it described a gap the code did not have, so nobody looked for
+    ///      one. `Tournament` serialises the lane on its own last epoch now, so this succeeds only
+    ///      once the previous drawn task's reveal has closed.
     /// @dev Windows are constants, not arguments. Once the reward pool follows the drawn lane, a
     ///      caller who could name the window could name a short one, trigger the draw, and be the
     ///      only person with time to answer it — reintroducing on this lane exactly the advantage

@@ -143,26 +143,46 @@ contract TaskGeneratorSatelliteTest is Test {
         assertTrue(a != b, "two blocks drew the same task");
     }
 
-    /// Every block must yield a task, not just the lucky ones.
+    /// Every block must yield a usable instance, not just the lucky ones.
     ///
     /// A single draw collapses its vectors or comes out with no slack often enough that a
     /// no-argument call would fail most of the time — which is exactly what happened when this
     /// contract was first written without the redraw the off-chain generator has. Twenty
     /// consecutive blocks is enough to catch that; one is not.
-    function test_EveryBlockYieldsATask() public {
-        // Carried explicitly rather than read from block.* each turn: under via-ir the compiler
-        // hoists those reads out of the loop, so every vm.warp got the same pre-loop value and the
-        // clock never actually moved. The trace showed warp(1800000200) twice in a row.
+    ///
+    /// It asks `drawFor` rather than posting twenty times, because posting is serialised on the
+    /// drawn epoch now and twenty posts would be testing the cadence instead of the redraw. This is
+    /// the property the comment above has always been about, and it is the property a miner depends
+    /// on — `drawFor` is what resolves a `Generated` event's seed into the program to answer.
+    function test_EveryBlockYieldsAUsableInstance() public {
         uint256 at = block.timestamp;
         uint256 height = block.number;
         for (uint256 i; i < 20; ++i) {
-            vm.prank(STRANGER);
-            uint256 id = generator.generateAndPost();
-            assertGt(id, 0, "a block produced no task");
+            (, bool found) = generator.drawFor(blockhash(height - 1));
+            assertTrue(found, "a block's seed produced no usable instance");
             at += 200;
             height += 1;
             vm.warp(at);
             vm.roll(height);
+        }
+    }
+
+    /// And the posting cadence those instances actually run at: one epoch, then the next, with the
+    /// lane refusing in between. Three consecutive epochs is enough to show it serialises rather
+    /// than seizing after the first.
+    function test_TheLaneRunsEpochAfterEpoch() public {
+        uint256 previous;
+        for (uint256 i; i < 3; ++i) {
+            uint256 id = generator.generateAndPost();
+            assertGt(id, previous, "the lane did not advance");
+            previous = id;
+
+            (, uint64 revealEnd,,) = tournament.taskGates(id);
+            vm.expectRevert(bytes(unicode"Drawn epoch still running / 抽取任务尚未结束"));
+            generator.generateAndPost();
+
+            vm.warp(uint256(revealEnd));
+            vm.roll(block.number + 1);
         }
     }
 
@@ -178,5 +198,86 @@ contract TaskGeneratorSatelliteTest is Test {
     function _oneExpected() internal pure returns (bytes32[] memory e) {
         e = new bytes32[](1);
         e[0] = keccak256(abi.encodePacked(uint256(9)));
+    }
+
+    // ------------------------------------------------------ the lane, serialised on itself
+
+    /// @dev The funding target cannot be moved while the epoch it names is still running.
+    ///
+    ///      The drawn lane went out with no spacing of any kind — two calls in one block relocated
+    ///      it twice — and `fundTaskFromPool` pays only `latestGeneratedTaskId`. So anyone could
+    ///      point the converted tax away from the task miners had committed to, for one call.
+    function test_TheFundingTargetCannotMoveWhileItsEpochRuns() public {
+        uint256 first = generator.generateAndPost();
+        assertEq(first, tournament.latestGeneratedTaskId(), "the first drawn task is the target");
+
+        // Same block, and every point inside the epoch it opened.
+        vm.expectRevert(bytes(unicode"Drawn epoch still running / 抽取任务尚未结束"));
+        generator.generateAndPost();
+
+        (, uint64 revealEnd,,) = tournament.taskGates(first);
+        vm.warp(uint256(revealEnd) - 1);
+        vm.expectRevert(bytes(unicode"Drawn epoch still running / 抽取任务尚未结束"));
+        generator.generateAndPost();
+
+        assertEq(tournament.latestGeneratedTaskId(), first, "the target moved during its own epoch");
+    }
+
+    /// @dev And it opens again the moment that epoch closes, so the lane serialises rather than
+    ///      seizing. Without this the fix would be a lock, not an ordering.
+    function test_TheLaneReopensWhenTheEpochCloses() public {
+        uint256 first = generator.generateAndPost();
+        (, uint64 revealEnd,,) = tournament.taskGates(first);
+
+        vm.warp(uint256(revealEnd));
+        uint256 second = generator.generateAndPost();
+        assertGt(second, first, "the lane did not reopen at its own reveal");
+        assertEq(second, tournament.latestGeneratedTaskId(), "the new epoch is the target");
+    }
+
+    /// @dev The gate reads the DRAWN task's own reveal, not `latestRevealEnd`. That distinction is
+    ///      the whole reason this does not re-create finding 023 on the funding lane: a stranger
+    ///      occupying the open-post slot moves `latestRevealEnd`, and if the money's lane waited on
+    ///      that mark, whoever won the race for the slot could hold the treasury's only route to
+    ///      miners shut for as long as they kept paying gas.
+    function test_AStrangerHoldingTheOpenSlotCannotBlockTheDrawnLane() public {
+        // Nothing of ours is live, so a stranger may take the open slot with the longest span they
+        // are allowed, pushing latestRevealEnd well out.
+        uint64 openSpan = tournament.OPEN_POST_MAX_SPAN();
+        vm.prank(STRANGER);
+        tournament.postTask(
+            _oneVector(), _oneExpected(), _square(), 100_000,
+            uint64(block.timestamp + 60), uint64(block.timestamp) + openSpan, 0
+        );
+        assertGt(uint256(tournament.latestRevealEnd()), block.timestamp, "the stranger holds the slot");
+
+        // The drawn lane is unaffected.
+        uint256 id = generator.generateAndPost();
+        assertEq(id, tournament.latestGeneratedTaskId(), "a stranger blocked the funding lane");
+    }
+
+    /// @dev The operator's own sequence, which was deterministically attackable for five cents.
+    ///
+    ///      `script/PostTask.s.sol` draws at one line and funds at the next, inside one
+    ///      `vm.startBroadcast()` — but a forge broadcast is N separate transactions, so the gap
+    ///      between them is insertable. An attacker landing a `generateAndPost()` in it moved the
+    ///      target, the operator's own `fundTaskFromPool` reverted with "Not the drawn task", the
+    ///      whole broadcast aborted, and the attacker's task became the only fundable one. No
+    ///      bidding war, no monitoring — one call, every time.
+    ///
+    ///      Serialising the lane closes it without a helper contract: the operator's own drawn task
+    ///      is running, so the insertion is exactly what the new guard refuses.
+    function test_NobodyCanWedgeADrawBetweenTheOperatorsDrawAndItsFunding() public {
+        uint256 operators = generator.generateAndPost();
+
+        vm.prank(STRANGER);
+        vm.expectRevert(bytes(unicode"Drawn epoch still running / 抽取任务尚未结束"));
+        generator.generateAndPost();
+
+        assertEq(
+            tournament.latestGeneratedTaskId(),
+            operators,
+            "an attacker wedged a draw into the operator's own broadcast"
+        );
     }
 }

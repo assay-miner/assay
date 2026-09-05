@@ -264,6 +264,31 @@ contract Tournament {
         bool curated = msg.sender == curator || msg.sender == _getGuardian();
 
         if (drawn) {
+            // One drawn epoch at a time, and the gate reads the DRAWN task's own reveal rather than
+            // `latestRevealEnd`.
+            //
+            // Without it the lane had no spacing of any kind: `generateAndPost` is public, every
+            // drawn post rewrites `latestGeneratedTaskId`, and `fundTaskFromPool` pays only that
+            // task — so anyone could move the funding target off the task miners had committed to,
+            // for the price of one call. Measured at 1.13M gas, about five cents at the price this
+            // project's own deploys paid. What it denies is every conversion not yet swept onto the
+            // old task, and a drawn task carries `pot = 0`, so that is the whole of the epoch for
+            // the miners who entered it — plus their stake, locked to a reveal that will pay
+            // nothing. Two calls in one block relocated it twice, so this was absent rather than
+            // merely loose.
+            //
+            // Reading the drawn task's own reveal is what keeps this from re-creating finding 023's
+            // mechanism on the funding lane: a stranger occupying the open-post slot moves
+            // `latestRevealEnd`, and if the money's lane waited on that, whoever won the race for
+            // the slot could hold the treasury's only route to miners shut. This waits on the lane's
+            // own last epoch, which nobody outside the lane can advance.
+            //
+            // `latestGeneratedTaskId` is 0 before the first drawn post and `tasks[0].revealEnd` is
+            // 0, so the first one is unconditionally allowed.
+            require(
+                block.timestamp >= tasks[latestGeneratedTaskId].revealEnd,
+                unicode"Drawn epoch still running / 抽取任务尚未结束"
+            );
             require(
                 commitEnd >= block.timestamp + MIN_COMMIT_SPAN
                     && revealEnd >= commitEnd + MIN_REVEAL_SPAN
