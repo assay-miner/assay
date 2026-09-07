@@ -22,7 +22,9 @@ import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 ///
 ///      All five answer no, and the tests below are how that is known rather than asserted.
 contract CustodyTest is BaseTest {
-    /// The curator's only powers are naming the tournament once and posting tasks.
+    /// The curator's only powers are posting tasks and being the address `withdrawUnconverted` pays.
+/// Naming the tournament is the DEPLOYER's — `AgentRoster.setConsumer` and `AssayVault.addController`
+/// both check `msg.sender == deployer`, and both are sealed at deploy.
     function test_CuratorCannotTakeMinerStake() public {
         _enroll(ALICE, AGENT_ALICE);
         assertEq(vault.balanceOf(roster.stakeAccount(ALICE)), MIN_STAKE, "stake sits in its own vault account");

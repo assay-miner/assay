@@ -213,7 +213,7 @@ forge test        # ${TEST_COUNT} tests, ${SUITE_COUNT} suites, ${FORK_COUNT} fo
 
 ## Where to look hardest
 
-\`scheduleEndow\` and its callback. The conversion used to be priced and broadcast by the same
+\`triggerConversion\` and its callback. The conversion used to be priced and broadcast by the same
 party, which is exactly the ordering an insider can arrange around; it now goes through Flap's
 Trigger Service, so the transaction that touches the pool is submitted by a backend the curator
 does not control. \`endow\` remains as a Guardian-only escape hatch for the case where the

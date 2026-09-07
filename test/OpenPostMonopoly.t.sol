@@ -26,10 +26,11 @@ import {Bytecode} from "./Bytecode.sol";
 ///      is a one-line workaround for anyone willing to hold two EOAs, which costs nothing on a
 ///      chain where accounts are free.
 ///
-///      What is NOT reachable this way: the reward pool. `fundTaskFromPool` has required the
-///      poster to be the curator or the Guardian since an earlier round, so a griefer's own tasks
-///      can never be handed the converted tax — occupying the slot denies other STRANGERS a
-///      chance to post, not the project a chance to fund. Acknowledged rather than fixed: every
+///      What is NOT reachable this way: the reward pool. `fundTaskFromPool` pays only
+///      `latestGeneratedTaskId`, which is written on the drawn lane and nowhere else, so a griefer's
+///      open posts can never be handed the converted tax — and neither can the project's own curated
+///      ones. Occupying the slot denies other STRANGERS a chance to post; the funded lane does not
+///      read `latestRevealEnd` at all, so it is not blocked by this at all. Acknowledged rather than fixed: every
 ///      mitigation we found either does not work (above) or requires an off-chain trust
 ///      assumption this contract does not have (recognising that two addresses are the same
 ///      actor). Recorded as a test so the mechanism is measured rather than left as a paragraph

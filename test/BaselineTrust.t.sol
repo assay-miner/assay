@@ -12,7 +12,10 @@ import {Bytecode} from "./Bytecode.sol";
 import {Crucible} from "../src/Crucible.sol";
 import {CrucibleHarness} from "./CrucibleHarness.sol";
 
-/// @notice A task's difficulty arrives as a number in calldata. Nothing on chain derives it.
+/// @notice A task's difficulty is MEASURED on chain from the reference the poster supplies.
+/// @dev    It used to arrive as a number in calldata with nothing deriving it, which is what these
+///         tests were written against. `postTask` runs the reference through the same Crucible that
+///         settles a reveal and records what it cost, so a poster can no longer name a difficulty.
 contract BaselineTrustTest is Test {
     /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
     ///      Naming it says that on purpose rather than leaving a bare address to be read as real.

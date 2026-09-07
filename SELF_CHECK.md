@@ -57,7 +57,7 @@ Out of scope, and load-bearing: `src/Tournament.sol` supplies every score this v
 | 009 | Auto-forward | N/A — not implemented (optional) |
 | 010 | V3 ERC20-quote accounting | N/A — native quote, `vaultQuoteToken()` not implemented |
 
-`vaultUISchema()` declares 8 methods. Field types are drawn only from the spec vocabulary and `decimals` is 18 for amounts and 0 for raw integers; both are asserted in `test_EveryFieldUsesTheSpecVocabulary`.
+`vaultUISchema()` declares 12 methods. Field types are drawn only from the spec vocabulary and `decimals` is 18 for amounts and 0 for raw integers; both are asserted in `test_EveryFieldUsesTheSpecVocabulary`.
 
 ## Findings Summary
 
@@ -111,10 +111,13 @@ and could surround the swap. Splitting those apart removes it:
 - `endow` is now **Guardian-only**, kept for the case where the scheduler itself is unavailable.
   Leaving it open to the curator would have left the original path intact and fixed nothing.
 
-The floor is bounded where it is set rather than where it executes. Bounding it at execution
-would re-derive it from a pool the curator could have moved beforehand; bounding it at scheduling
-ties it to the price when it was set, and execution simply honours it. If the market moves past
-the floor in the meantime the swap reverts, the request is marked FAILED, and anyone may
+The floor is bounded at BOTH points, and the stricter one wins. Bounding it only at execution
+would re-derive it from a pool somebody could have moved beforehand; bounding it only at scheduling
+ties it to a price the market may have left behind. So `trigger` prices a second floor and hands
+the router `max(stored, fresh)`, and re-checks the impact bound against the pool the swap will
+actually meet. If the market has moved past the floor the swap reverts inside a `try`/`catch`,
+`ConversionFailed` is emitted, the BNB returns to free tax, and the same callback re-arms at a
+floor priced now. Nothing waits for a human, and anyone may
 `retryTrigger` it — a conversion that would now be bad does not quietly happen.
 
 **The failure modes that come with the integration**, each handled rather than assumed:
@@ -122,7 +125,7 @@ the floor in the meantime the swap reverts, the request is marked FAILED, and an
 | Risk | Handling |
 |---|---|
 | Callback driven by anyone | `msg.sender == triggerService`, an immutable resolved from `block.chainid`, plus `nonReentrant` |
-| A swallowed failure marking the request EXECUTED | No `try`/`catch` anywhere on the path. A failed conversion reverts, the service records FAILED, and `retryTrigger` stays available |
+| A swallowed failure marking the request EXECUTED | Accepted deliberately since finding 016. There ARE four `try`/`catch` blocks and a failed conversion IS consumed, the service records FAILED, and `retryTrigger` stays available |
 | A request consumed by a failure | The record is deleted **before** the swap; a revert undoes the deletion with everything else, so a failed conversion leaves the request intact and retryable |
 | A stuck request nobody can clear | `cancelConversion(requestId)`: the Guardian at any time, and anyone once the request is `CANCEL_GRACE` (1 hour) past its `executeAfter`. The curator has no cancel right — cancelling frees BNB into `freeTax()`, which is what `withdrawUnconverted` pays it. A later callback for a cancelled id finds nothing and reverts |
 | The fee eating bounty money | Paid by the caller through `msg.value`, never taken from tax. Change is refunded rather than quietly becoming bounty |
@@ -132,9 +135,11 @@ the floor in the meantime the swap reverts, the request is marked FAILED, and an
 scheduled by the curator, executed by Flap's backend, `0.025758 BTCB` booked behind task 1,
 `unassigned()` at zero and `solvent()` true. The transaction that performed the swap was not ours.
 
-`test/TriggerEndow.t.sol` covers the path in 14 tests and is proven by breaking it: removing the
-callback's sender check, wrapping the conversion in a `try`/`catch`, and reopening `endow` to the
-curator each turn a specific test red.
+`test/TriggerEndow.t.sol` covers the path in 28 tests and is proven by breaking it: removing the
+callback's sender check, removing the execution-time impact re-check, and reopening `endow` to the
+curator each turn a specific test red. An earlier version of this line offered "wrapping the
+conversion in a `try`/`catch`" as one of the breakages; that stopped being a breakage when finding
+016 made the `try`/`catch` the design.
 
 **What remains.** The curator can still move the pool *before* scheduling, which lowers the spot
 the floor is measured against. They cannot act on it: they do not submit the execution and cannot
@@ -342,7 +347,7 @@ None. The vault is deployed directly by the factory, not behind a proxy. All ven
 As specified by Rule 009 and discussed in M-01.
 
 ### Decentralization recommendations
-After the Guardian, the curator holds no discretion left to centralize. *When* a conversion happens is not its call: `triggerConversion()` checks no caller, only that one `CONVERSION_INTERVAL` has passed, and the scheduler's callback re-arms the next epoch itself. *Which task* receives it is not its call either: `fundTaskFromPool` is permissionless and takes the newest task, while its commit window is open, and only if a curator or Guardian published it — the last clause keeps a stranger from pointing the pool at a task only they can win, not the curator from choosing among ours.
+After the Guardian, the curator holds no discretion left to centralize. *When* a conversion happens is not its call: `triggerConversion()` checks no caller, only that one `CONVERSION_INTERVAL` has passed, and the scheduler's callback re-arms the next epoch itself. *Which task* receives it is not its call either: `fundTaskFromPool` is permissionless and takes the newest DRAWN task, while its commit window is open. Not the newest task, and not one of ours: the target is `latestGeneratedTaskId`, written only when `TaskGenerator` posts, so the instance is drawn from a block hash nobody chooses and the curator can no longer point the pool at a task it authored.
 
 What the curator still is: the fixed address `withdrawUnconverted` pays, for tax that no conversion has taken. It cannot cancel a live conversion, precisely because cancelling would move BNB into the side it gets paid from. `test/Permissions.t.sol` is the executable version of this paragraph.
 

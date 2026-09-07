@@ -89,8 +89,8 @@ contract NotStuckTest is BaseTest {
         assertEq(flap.freeTax(), 0, "something was left behind");
     }
 
-    /// @notice The cadence the protocol actually runs at: a two-minute epoch, one minute to
-    ///         commit and one to reveal. An epoch nobody entered must settle to the project the
+    /// @notice The cadence the protocol actually runs at: a twenty-minute epoch, ten minutes to
+    ///         commit and ten to reveal, both constants on `TaskGenerator`. An epoch nobody entered must settle to the project the
     ///         moment reveal closes — not a claim window later, or the tax from an idle market
     ///         would pile up unreachable for thirty days at a time.
     /// @dev An epoch nobody entered settles the moment its window closes, rather than waiting out

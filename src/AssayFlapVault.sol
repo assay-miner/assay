@@ -30,9 +30,11 @@ import {Tournament} from "./Tournament.sol";
 ///
 ///      Why the prize is BTCB and not the native coin: a miner who wins a gas tournament is paid
 ///      for work, and being paid for work in the same asset whose price move you were not betting
-///      on is the point. The tax arrives as BNB and is converted the moment it is put behind a
-///      task, so a bounty is denominated in what will actually be paid out from the instant it is
-///      announced. The miner therefore carries no market risk between winning and collecting, and
+///      on is the point. The tax arrives as BNB, is converted into the pool on its own cadence,
+///      and a task takes what the pool holds when `fundTaskFromPool` is called during its commit
+///      window — conversion and assignment are two steps, not one. What matters for the miner is
+///      unchanged: a bounty is BTCB from the moment it is announced, because it is assigned after
+///      the conversion rather than before it. The miner therefore carries no market risk between winning and collecting, and
 ///      `collect` is a plain token transfer that cannot fail for a market reason.
 ///
 ///      Custody note: value that arrives here is assigned to a task the moment that task is
@@ -93,8 +95,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice BNB already promised to a scheduled conversion.
     /// @dev `unassigned()` is the raw balance, which is what its name says and what the UI shows.
     ///      But a scheduled conversion escrows nothing, so without this a withdrawal could take
-    ///      the BNB out from under an armed request: the callback would revert, its fee would be
-    ///      spent for nothing, and tax on its way to a bounty would land as project revenue.
+    ///      the BNB out from under an armed request. Since finding 016 the callback no longer
+    ///      reverts in that case — the swap is caught and `ConversionFailed` is emitted — so what
+    ///      this prevents is not a stuck request but a wasted epoch: the scheduler fee spent for
+    ///      nothing and tax on its way to a bounty landing as project revenue instead.
     uint256 public reserved;
 
 
@@ -159,7 +163,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     /// @notice Whether a miner has taken their share of a task's bounty.
     mapping(uint256 taskId => mapping(address miner => bool)) public collected;
 
-    /// @notice Sum of every task's unpaid bounty, in BTCB.
+    /// @notice BTCB this contract holds for miners and for the pool, in BTCB.
+    /// @dev    NOT the sum of unpaid bounties. It rises in `_convertToPool` before any task is
+    ///         named, and `reclaimBounty` returns a bounty to `rewardPool` without lowering it,
+    ///         because the BTCB never leaves. It falls in exactly one place: `collect`.
     uint256 public endowed;
 
     /// @notice BTCB this vault has paid out across every task.
@@ -272,15 +279,6 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         return _convertToPool(bnbAmount, minRewardOut);
     }
 
-    /// @dev The swap and the booking, in one place because there are two ways in.
-    ///
-    ///      A rule written at one entry point and forgotten at the second is the defect this
-    ///      codebase has produced most often. Both `endow` and the scheduler's callback land
-    ///      here, so the amount booked is the amount that arrived, on both paths, by
-    ///      construction rather than by two authors agreeing.
-    /// @dev Credits the pool, not a task. What comes out is owed to whichever tasks the pool ends
-    ///      up funding, so `endowed` rises here and falls only when a miner collects or an empty
-    ///      window settles — the BTCB is spoken for from the moment it exists.
     /// @notice The swap, reachable only by this contract, so `trigger` can survive it failing.
     /// @dev `try` needs an external call, and this is the whole reason this wrapper exists. Not
     ///      `nonReentrant`: `trigger` already holds that lock and this is called from inside it.
@@ -315,10 +313,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice Schedules one conversion of tax into BTCB. Callable by anyone.
     ///
-    /// @dev Takes no task and no amount. The size is a constant and the earliest next call is a
-    ///      constant away from the last one, so the only thing a caller supplies is the fee and
-    ///      the gas. Review asked for how much, which task and when to follow on-chain rules; this
-    ///      is the first two, and the clock is the third.
+    /// @dev Takes no task and no amount. The SIZE is derived — whatever tax has accrued, capped by
+    ///      `maxConvertible()` against the pair's current depth — and only the SPACING is a
+    ///      constant. So the only thing a caller supplies is the fee and the gas. Review asked for
+    ///      how much, which task and when to follow on-chain rules; this is the first two, and the
+    ///      clock is the third.
     ///
     ///      It converts into a pool rather than into a task on purpose. Naming a task and naming an
     ///      amount were the same call, and that is where the discretion lived — splitting them
@@ -476,8 +475,10 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // choose which block includes their transaction, so no poster knows the instance before
         // everyone else does. The advantage is removed rather than priced.
 
-        // The whole pool. An epoch converts what it accrued and its task takes what that bought,
-        // so nothing accumulates across epochs and no number here decides how much a task is worth.
+        // The whole pool, whatever is in it. That is usually what this epoch converted, but it
+        // also carries anything an earlier task rolled back through `reclaimBounty`, and anything
+        // a conversion landing after a commit window closed had to wait to be assigned. No number
+        // here decides how much a task is worth — the pool's balance does.
         amount = rewardPool;
         require(amount > 0, unicode"Pool is empty / 池中无资金");
 
@@ -488,19 +489,37 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice The scheduler's callback. Executes a conversion that was scheduled earlier.
     ///
-    /// @dev Three things here are deliberate.
+    /// @dev Three things here are deliberate, and the second and third reverse what this comment
+    ///      used to say. It described the design before finding 016, and the response to that
+    ///      finding said in as many words that the decision was being reversed — then left the
+    ///      paragraph asserting the old one. A later round read the code and the comment and
+    ///      reported them as contradicting, which they did.
     ///
     ///      The entry is gated on the scheduler's own address, which is an immutable resolved
     ///      from the chain id, so nothing else can drive this.
     ///
-    ///      The record is deleted before the swap. A revert undoes the deletion along with
-    ///      everything else, so a failed conversion leaves the request intact and retryable
-    ///      rather than consumed — which is the difference between a callback that can be
-    ///      re-armed and one that is stuck forever.
+    ///      The record is deleted and `reserved` released BEFORE the swap, and they stay released
+    ///      whether or not the swap succeeds. The old ordering had the same two statements, but a
+    ///      reverting swap undid them: the request sat there for ever with `reserved` inflated,
+    ///      understating `freeTax()` and shrinking every later endow, arming and withdrawal until
+    ///      somebody cleared it by hand. That is finding 016. A failed conversion IS consumed now,
+    ///      and the BNB it was holding goes back to free tax where it started.
     ///
-    ///      And there is no `try`/`catch`. Swallowing a failed fulfilment would let the service
-    ///      record the request as EXECUTED when nothing happened, and `retryTrigger` only works
-    ///      on a request marked FAILED. Reverting is what keeps the retry path alive.
+    ///      And there IS a `try`/`catch` — four of them: the fresh floor's `quote`, the impact
+    ///      re-check, the swap through `convertForSelf`, and the re-arm through `rearmSelf`. That
+    ///      gives up `retryTrigger` for this path, deliberately. The service marks a returning
+    ///      callback EXECUTED and `retryTrigger` only works on one marked FAILED, so this really
+    ///      does close that door — but a retry would re-attempt the same stored floor the market
+    ///      has already left behind, which is what made the request unexecutable in the first
+    ///      place. Re-arming inside the same callback prices a new floor against the market that
+    ///      just moved, so the recovery the retry existed for happens immediately and without the
+    ///      service. Nothing is consumed in the sense that mattered: the BNB returns to free tax
+    ///      before the new request is armed, and if that arming is itself declined the tax simply
+    ///      sits there and `triggerConversion` restarts the chain.
+    ///
+    ///      A failure is emitted, never swallowed. `ConversionFailed` carries the amount and the
+    ///      floor that was refused, so a conversion that did not happen is visible on chain as one
+    ///      that did not happen.
     function trigger(uint256 requestId) external override nonReentrant {
         require(msg.sender == address(triggerService), unicode"Only the scheduler / 仅限调度器");
 
@@ -610,9 +629,11 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     }
 
     /// @notice Drops a scheduled conversion. The BNB simply stays unconverted.
-    /// @dev Present so a request that can never succeed — a floor the market has left behind, a
-    ///      task that should not have been chosen — does not sit there waiting to fire at a time
-    ///      nobody is watching. A later callback for a cancelled id finds nothing and reverts.
+    /// @dev Present so a request that can never succeed — a floor the market has left behind —
+    ///      does not sit there holding `reserved` and waiting to fire at a time nobody is watching.
+    ///      A scheduled conversion names no task; `ScheduledEndow` carries an amount, a floor and a
+    ///      due time, and which task the proceeds end up behind is decided later by
+    ///      `fundTaskFromPool`. A later callback for a cancelled id finds nothing and reverts.
     function cancelConversion(uint256 requestId) external {
         ScheduledEndow memory s = scheduled[requestId];
         require(s.bnbAmount > 0, unicode"No such request / 无此请求");
@@ -1065,7 +1086,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
 
-        // 4 — converting revenue and putting it behind a task.
+        // 4 — converting revenue into the pool. Putting it behind a task is fundTaskFromPool.
         m = schema.methods[4];
         m.name = "endow";
         m.description = unicode"Add to the pool (Guardian only) / 向池中注资(仅限守护者)";

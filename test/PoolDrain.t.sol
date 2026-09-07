@@ -176,10 +176,11 @@ contract PoolDrainTest is BaseTest {
         assertEq(flap.bounty(drawnTaskId), funded + 1e15, "the sponsorship landed");
     }
 
-    /// @dev Only the newest task can be funded. Without this the caller picks which live task the
-    ///      whole pool lands on, so a miner who dominates some other open task points this epoch's
-    ///      converted tax at their own and takes it against a score nobody was competing with.
-    ///      Delete the taskCount check in fundTaskFromPool and this stops reverting.
+    /// @dev Only the newest DRAWN task can be funded — `latestGeneratedTaskId`, not `taskCount()`.
+    ///      Without this the caller picks which live task the whole pool lands on, so a miner who
+    ///      dominates some other open task points this epoch's converted tax at their own and takes
+    ///      it against a score nobody was competing with. Delete the latestGeneratedTaskId check in
+    ///      fundTaskFromPool and this stops reverting.
     /// @dev The diversion variant, closed. The audit found that the curator needed no search
     ///      advantage at all: `fundTaskFromPool` used to require the NEWEST task, so posting a fresh
     ///      one while miners were committing to another moved the pool onto it — measured, the
@@ -344,10 +345,11 @@ contract PoolDrainTest is BaseTest {
     ///
     ///      `TaskGenerator` is deployed infrastructure — a beacon proxy whose implementation the
     ///      Guardian controls — and it exists so the tournament survives the curator going quiet.
-    ///      But it posts as itself, and `fundTaskFromPool` pays a task whose poster is the curator
-    ///      or the Guardian and nobody else. So every task the fallback path produces is one the
-    ///      converted tax can never reach, however open its window is, while `triggerConversion`
-    ///      stays permissionless and the pool it cannot reach keeps growing.
+    ///      It posts as itself on the drawn lane, and since findings 025/026 that is the ONLY lane
+    ///      `fundTaskFromPool` pays. This paragraph described the opposite — a poster whitelist that
+    ///      shut the fallback path out of the treasury — and that whitelist is what those findings
+    ///      removed, because it routed every converted BTCB to the one account that also authors
+    ///      the instance. The task the tax reaches is the one nobody chose.
     ///
     ///      Found while fixing 021 and 024; the audit did not report it. Recorded as a measurement
     ///      rather than a paragraph because it is counterintuitive — the gate was written to keep

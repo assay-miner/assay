@@ -37,13 +37,21 @@ on and both are cheaper to change now than after:
   controls (Rule 009), an unbounded slippage floor on a privileged swap (Rule 003), missing test
   coverage (Rule 006), and reentrancy ordering in `sponsor`.
 
-Measured, not estimated:
+Measured, not estimated — and derived by `tools/sync-submission.mjs` rather than typed, because
+every figure that used to stand here was wrong: the vault's runtime was quoted at 16,464 bytes, the
+factory at 19,526 (the `AssayVaultDeployer` split moved the vault's creation code out and the number
+never followed), and the schema at 8 methods. A heading asserting the numbers were measured is the
+worst place to keep numbers nothing measures.
+
+<!-- measured:start -->
 
 | | |
 |---|---|
-| `receive()` gas | **12,988** — 1.3% of the 1,000,000 ceiling |
-| `AssayFlapVault` runtime | 16,464 bytes |
-| `AssayFlapFactory` runtime | 19,526 bytes |
+| `receive()` gas | measured by `test_ReceiveStaysUnderTheGasCeiling`, which asserts the Rule 005 ceiling rather than restating a figure |
+| `AssayFlapVault` runtime | 22,062 bytes |
+| `AssayFlapFactory` runtime | 2,637 bytes |
+| `vaultUISchema()` methods | 12 |
+<!-- measured:end -->
 
 ## 4. Integration tests — **done**
 

@@ -4,7 +4,7 @@ A gas-optimisation tournament settled on chain, paid for by a token's trading ta
 
 A task is a set of calldata inputs, the keccak256 of each expected output, and a gas baseline.
 Miners submit raw EVM runtime bytecode. The chain deploys it behind a constructor-free prologue,
-runs every test vector under `STATICCALL`, and reads the meter. Score is `baselineGas × 1e18 /
+runs every test vector under `STATICCALL`, and reads the meter. Score is the gas saved as a fraction of the baseline, squared — `(baseline - used)² × 1e18 /
 gasUsed`, capped at 32×. Nobody grades anything; the meter does.
 
 The same submission is paid twice, by two contracts, in two assets: the ASSAY pot the task was
@@ -103,7 +103,7 @@ Posting is open, but not evenly. The curator and the Guardian may post at any ti
 legal window; anyone else may post only after the previous task has settled, and only for at most
 ten minutes (`OPEN_POST_MAX_SPAN`). That open path exists so a lost curator key cannot end the
 tournament — it is not a claim on the treasury, and `fundTaskFromPool` refuses to move the reward
-pool onto a task the project did not publish. So *what gets mined* is still mostly ours to choose,
+pool onto any task at all except the one the chain drew. So *what gets mined* is still mostly ours to choose,
 and that is the centralised part of this version; it is not hidden. The
 next step is the ERC-8183 escrow path, where anyone posts a task with a bounty and this contract
 acts as the delivery evaluator — the verification core does not change to get there.

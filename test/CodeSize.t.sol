@@ -107,4 +107,33 @@ contract CodeSizeTest is Test {
         console2.log("tournament runtime   ", address(tournament).code.length);
         assertLt(address(tournament).code.length, EIP170, "tournament exceeds EIP-170");
     }
+
+    /// @dev `receive()` gas, measured rather than restated.
+    ///
+    ///      SUBMISSION.md carried "**12,988** — 1.3% of the 1,000,000 ceiling" under a heading that
+    ///      reads "Measured, not estimated". Nothing measured it: grep for the figure found it in
+    ///      that one document and nowhere else. A number written once and then quoted is the same
+    ///      defect as a comment that stopped being true — it just looks more like evidence.
+    ///
+    ///      Rule 005 caps what a vault may spend in `receive()`, so this is worth having as a real
+    ///      measurement. The document cites this test now instead of repeating its result.
+    function test_ReceiveStaysUnderTheGasCeiling() public {
+        // Same shape the size checks above use: receive() reads no token state, so a placeholder
+        // tax token is enough and this test does not need the fixture's.
+        AssayFlapVault flap = new AssayFlapVault(tournament, address(1), address(2), new PriceGuard());
+        vm.deal(address(this), 1 ether);
+
+        uint256 before = gasleft();
+        (bool ok,) = payable(address(flap)).call{value: 0.01 ether}("");
+        uint256 used = before - gasleft();
+        assertTrue(ok, "receive reverted");
+
+        console2.log("receive() gas        ", used);
+        assertLt(used, 1_000_000, "receive() exceeds the Rule 005 ceiling");
+
+        // A ceiling test that only checks the ceiling would pass if receive() started making
+        // external calls and cost fifty times as much. This is the shape it actually has: an event
+        // and nothing else.
+        assertLt(used, 50_000, "receive() got much more expensive; it should only emit");
+    }
 }

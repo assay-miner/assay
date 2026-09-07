@@ -59,7 +59,7 @@ contract Tournament {
     ///      `revealEnd` locked the stake of everybody who entered it for as long as it liked.
     uint64 public constant MAX_TASK_SPAN = 30 days;
 
-    /// @notice The shortest commit window any task may have.
+    /// @notice The shortest commit window a CURATED or DRAWN task may have. Strangers are exempt.
     /// @dev    This constant is findings 021 and 024, which are one defect and not two.
     ///
     ///         A task can only be handed the reward pool while its commit window is open, and the
@@ -98,8 +98,10 @@ contract Tournament {
     /// @notice The longest window a task posted by nobody in particular may run for.
     /// @dev Anyone may post once the previous task has settled, which is what keeps the protocol
     ///      running if the curator goes quiet. The project's tax is no longer what this protects:
-    ///      the vault's withdrawal waits on `latestCuratedRevealEnd`, which only a curator or
-    ///      Guardian post advances. What the cap still bounds is how long one open post can keep
+    ///      the vault's withdrawal waits on `latestCuratedRevealEnd`, which an open post does not
+    ///      advance. A DRAWN post does — see the note beside that assignment — and
+    ///      `TaskGenerator.generateAndPost` is permissionless, so the mark is not curator-only in
+    ///      practice. That is the open half of finding 027 and it is acknowledged, not overlooked. What the cap still bounds is how long one open post can keep
     ///      the next poster out, since `latestRevealEnd` is a high-water mark no later post can
     ///      walk back. A stranger gets ten minutes; the curator and the Guardian keep the full
     ///      range.
@@ -227,8 +229,9 @@ contract Tournament {
     /// @dev The curator and the Guardian may post at any time, across the full MAX_TASK_SPAN. A
     ///      stranger may post too, but only in the gap between epochs and only inside
     ///      OPEN_POST_MAX_SPAN, so a lost or compromised curator key cannot end task creation.
-    ///      Only a curated post advances `latestCuratedRevealEnd`, so an open post cannot hold the
-    ///      vault's withdrawal shut.
+    ///      An open post does not advance `latestCuratedRevealEnd`, so a stranger holding the
+    ///      open slot cannot hold the vault's withdrawal shut. A drawn post does advance it, and
+    ///      the drawn lane is permissionless — the open half of finding 027, acknowledged there.
     ///
     ///      What is still ahead is the ERC-8183 escrow path: a task
     ///      becomes a job, the pot becomes the bounty, and this contract becomes the evaluator
@@ -315,8 +318,10 @@ contract Tournament {
 
         // The commit floor also binds curated tasks. They no longer receive the pool, but they
         // still carry an escrowed ASSAY pot that miners compete for, and a window shorter than the
-        // conversion cadence was the original finding here. Strangers are exempt: `OPEN_POST_MAX_SPAN`
-        // already caps their whole span at ten minutes, so a floor would leave them no legal window.
+        // conversion cadence was the original finding here. Strangers are exempt because the floor
+        // buys them nothing — their tasks cannot receive the pool — and because it would cost them
+        // most of a span `OPEN_POST_MAX_SPAN` already caps at ten minutes. A five-minute commit is
+        // constructible inside ten, so this is a bad trade rather than an impossible one.
         if (curated) {
             require(
                 commitEnd >= block.timestamp + MIN_COMMIT_SPAN,
@@ -591,13 +596,14 @@ contract Tournament {
         return address(vault.asset());
     }
 
-    /// @notice Live one-line status, polled by the UI as a banner.
-    /// @notice The three fields a gate needs from a task, without decoding the rest of it.
+    /// @notice The fields a gate needs from a task, without decoding the rest of it.
     /// @dev The vault reads task state at seven call sites, each only to decide whether a window
     ///      is open or whether anybody scored. Going through `tasks()` made every one of them
     ///      decode all nine fields, and the vault is the contract with no code size to spare —
-    ///      it is embedded whole in the factory, which sits under EIP-170. This returns the three
-    ///      that are actually read.
+    ///      it is embedded whole in the factory, which sits under EIP-170. This returns only the
+    ///      fields those call sites read — four now: `poster` was added when `fundTaskFromPool`
+    ///      had a poster whitelist, and although that whitelist is gone the field is still read by
+    ///      tests asserting who posted a task, so it stays.
     function taskGates(uint256 taskId)
         external
         view
@@ -666,8 +672,11 @@ contract Tournament {
     ///      each card. `getTasks` + `claim` is that pairing, and so is `getMiners`. A schema of
     ///      scalar views alone would render as one flat column of numbers.
     ///
-    ///      `approvals` on `postTask` tells the UI to send the ERC-20 approve first, naming the
-    ///      input field that carries the amount, so nobody has to approve by hand.
+    ///      `postTask` declares NO approval, deliberately. An `ApproveAction` names no spender and
+    ///      Flap resolves it to the contract whose schema it is, but the escrow is pulled by
+    ///      `AssayVault`, so the declaration told posters to approve an address that never pulls
+    ///      and every non-zero pot reverted from the UI. That is finding 028; the description
+    ///      carries where the allowance goes instead.
     function vaultUISchema() external pure returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayTournament";
         schema.description = unicode"Gas-optimisation tournaments settled on chain. Submit EVM runtime bytecode; the chain deploys it, runs every test vector and reads the meter. / 链上结算的 gas 优化锦标赛。提交 EVM 运行时字节码,链把它部署、跑完全部测试向量、读取计量表。";

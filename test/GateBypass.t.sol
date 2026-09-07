@@ -12,8 +12,10 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
 
-/// @notice The withdrawal gate says "the most recent task has settled". It reads the task with the
-///         highest id, which is not the same claim: a task posted later can close earlier.
+/// @notice The withdrawal gate waits on `latestCuratedRevealEnd`, a high-water mark, rather than on
+///         "the most recent task". Those are not the same claim — a task posted later can close
+///         earlier — and reading the mark is what makes the difference safe. A stranger's post does
+///         not advance it; a curated or a drawn one does.
 contract GateBypassTest is Test {
     /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
     ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
@@ -113,8 +115,8 @@ contract GateBypassTest is Test {
 
     /// And not for a window long enough to matter.
     ///
-    /// This is the whole reason open posting is bounded. `latestRevealEnd` is a high-water mark no
-    /// later post can walk back, so a stranger posting MAX_TASK_SPAN would freeze the project's own
+    /// This is the whole reason open posting is bounded — though the withdrawal no longer waits on
+    /// this mark. `latestRevealEnd` is a high-water mark no later post can walk back, so a stranger posting MAX_TASK_SPAN would freeze the project's own
     /// tax for thirty days for the price of gas, with nothing able to undo it.
     function test_AStrangerCannotFreezeTheTaxWithALongWindow() public {
         // Both views read before any prank or expectRevert: a view call sitting in the argument

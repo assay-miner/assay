@@ -67,7 +67,8 @@ contract TaskGeneratorSatelliteTest is Test {
         assertEq(tournament.vectorCount(id), generator.VECTORS(), "wrong vector count");
     }
 
-    /// The tournament's own rules still apply to it — it posts as a stranger, not as an insider.
+    /// The tournament's own rules still apply to it, but they are the DRAWN lane's rules — it posts as
+/// the generator, not as a stranger. Saying otherwise is what let the lane ship with no spacing.
     /// @dev The drawn lane is deliberately NOT gated on `latestRevealEnd`. It used to be — the
     ///      generator posted as a stranger and waited its turn like one. That cannot stand now that
     ///      the reward pool follows this lane: whoever wins the race to occupy the open slot would

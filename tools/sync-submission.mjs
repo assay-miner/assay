@@ -8,6 +8,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const START = "<!-- deployments:start -->";
+const M_START = "<!-- measured:start -->";
+const M_END = "<!-- measured:end -->";
 const END = "<!-- deployments:end -->";
 const check = process.argv.includes("--check");
 
@@ -46,6 +48,34 @@ const body = [
   table(97, "BNB Smart Chain testnet (97) — the proof deployment"),
 ].join("\n");
 
+/**
+ * The facts SUBMISSION.md states under "Measured, not estimated" — derived here rather than typed.
+ *
+ * They were typed, and every one of them was wrong: the vault's runtime was quoted at 16,464 bytes
+ * against a real 22,062, the factory at 19,526 against a real 2,637 (the AssayVaultDeployer split
+ * moved the vault's creation code out of it and the figure never followed), and the schema was said
+ * to declare 8 methods against a real 12. A heading that asserts the numbers were measured is the
+ * worst place to keep numbers nothing measures.
+ */
+function measured() {
+  const runtime = (name) => {
+    const art = JSON.parse(readFileSync(`out/${name}.sol/${name}.json`, "utf8"));
+    const hex = art.deployedBytecode.object.replace(/^0x/, "");
+    return (hex.length / 2).toLocaleString("en-US");
+  };
+  const vaultSrc = readFileSync("src/AssayFlapVault.sol", "utf8");
+  const methods = (vaultSrc.match(/m\.name = "/g) ?? []).length;
+
+  return [
+    "| | |",
+    "|---|---|",
+    "| `receive()` gas | measured by `test_ReceiveStaysUnderTheGasCeiling`, which asserts the Rule 005 ceiling rather than restating a figure |",
+    `| \`AssayFlapVault\` runtime | ${runtime("AssayFlapVault")} bytes |`,
+    `| \`AssayFlapFactory\` runtime | ${runtime("AssayFlapFactory")} bytes |`,
+    `| \`vaultUISchema()\` methods | ${methods} |`,
+  ].join("\n");
+}
+
 const doc = readFileSync("SUBMISSION.md", "utf8");
 const i = doc.indexOf(START);
 const j = doc.indexOf(END);
@@ -53,11 +83,19 @@ if (i < 0 || j < 0) {
   console.error(`SUBMISSION.md is missing the ${START} / ${END} markers`);
   process.exit(1);
 }
-const next = `${doc.slice(0, i + START.length)}\n\n${body}\n${doc.slice(j)}`;
+let next = `${doc.slice(0, i + START.length)}\n\n${body}\n${doc.slice(j)}`;
+
+const mi = next.indexOf(M_START);
+const mj = next.indexOf(M_END);
+if (mi < 0 || mj < 0) {
+  console.error(`SUBMISSION.md is missing the ${M_START} / ${M_END} markers`);
+  process.exit(1);
+}
+next = `${next.slice(0, mi + M_START.length)}\n\n${measured()}\n${next.slice(mj)}`;
 
 if (check) {
   if (next !== doc) {
-    console.error("SUBMISSION.md's deployment tables are stale — run tools/sync-submission.mjs");
+    console.error("SUBMISSION.md is stale (deployments or measured facts) — run tools/sync-submission.mjs");
     process.exit(1);
   }
   console.log("SUBMISSION.md matches the manifests");
