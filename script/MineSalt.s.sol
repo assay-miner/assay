@@ -15,7 +15,15 @@ contract MineSalt is Deploy {
         // without mining a different one and printing an address it will never deploy to.
         bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
         if (salt == bytes32(0)) {
-            salt = mineVanitySalt(venue, vm.envOr("SALT_OFFSET", uint256(1)));
+            // NOT 1. Scanning from a fixed low offset returns the first vanity hit on the venue,
+            // which is the one everybody else's identical scan returns too — 0x2dc5c on BSC
+            // mainnet, taken since block 98,443,003. `Deploy` already derived its offset from the
+            // deployer; this script, which is what an operator actually runs, did not. Same
+            // derivation here, so the two call sites cannot disagree again.
+            salt = mineVanitySalt(
+                venue,
+                vm.envOr("SALT_OFFSET", uint256(keccak256(abi.encode("assay.v1", vm.envAddress("DEPLOYER")))))
+            );
         }
         address predicted =
             ClonesUpgradeable.predictDeterministicAddress(venue.taxedV3Impl, salt, venue.portal);

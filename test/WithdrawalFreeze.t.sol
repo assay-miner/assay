@@ -60,31 +60,88 @@ contract WithdrawalFreezeTest is BaseTest {
         require(ok, "tax transfer failed");
     }
 
-    /// @dev The freeze, repeated. A stranger paying only gas keeps the withdrawal shut across
-    ///      consecutive drawn epochs. The serialisation gate is `>=`, so the next epoch is legal in
-    ///      the very block the last one ends and there is no block in between where the withdrawal
-    ///      is callable.
+    /// @dev The freeze, repeated, held by the STRANGER and by nobody else.
+    ///
+    ///      This test used to start at `_laneIsFree()`, which warps to the drawn task's reveal and
+    ///      leaves the fixture's CURATED task — `Base.t.sol:109`, a two-hour window — still holding
+    ///      `latestCuratedRevealEnd`. The generator's own windows are `COMMIT_SECONDS +
+    ///      REVEAL_SECONDS` = twenty minutes, so every one of the stranger's posts ended well inside
+    ///      that mark and never cleared the `>` at `Tournament.sol:373`. All three reverts fired
+    ///      because of the curator's own task. The test passed with `generateAndPost` contributing
+    ///      nothing, which is the one thing it exists to measure.
+    ///
+    ///      So it now starts past the curated mark, and asserts on each round that the stranger's
+    ///      post is what moved it. Delete `generateAndPost` from the loop and the assertion fails
+    ///      rather than the reverts continuing to pass.
     function test_AStrangerKeepsTheWithdrawalShutAcrossEpochs() public {
-        _laneIsFree();
+        // Past the fixture's curated task, so nothing of the project's is holding the gate.
+        vm.warp(uint256(tournament.latestCuratedRevealEnd()));
+        vm.roll(block.number + 1);
         _tax(0.05 ether);
 
+        // The withdrawal is callable at this instant — both gates are `>=` — which is what makes
+        // the reverts below attributable to the stranger rather than to leftover state.
+        assertGe(
+            block.timestamp,
+            uint256(tournament.latestCuratedRevealEnd()),
+            "the gate is still shut before the stranger has done anything"
+        );
+
         for (uint256 round; round < 3; ++round) {
+            uint64 markBefore = tournament.latestCuratedRevealEnd();
+
             vm.prank(STRANGER);
             uint256 id = generator.generateAndPost();
 
             (, uint64 revealEnd,,) = tournament.taskGates(id);
             assertGt(uint256(revealEnd), block.timestamp, "the epoch is not live");
+            assertEq(
+                uint256(tournament.latestCuratedRevealEnd()),
+                uint256(revealEnd),
+                "the stranger's drawn post did not move the mark, so it is not what shuts the gate"
+            );
+            assertGt(
+                uint256(tournament.latestCuratedRevealEnd()),
+                uint256(markBefore),
+                "the mark did not advance this round"
+            );
 
             vm.prank(CURATOR);
             vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
             flap.withdrawUnconverted(0);
 
-            // The next epoch is legal at exactly this instant, so nothing opens in between.
+            // The next epoch is legal at exactly this instant: the drawn lane's own gate is `>=`
+            // too, so the griefer never has to skip a block. What the boundary leaves is a
+            // same-block ordering race, not a closed gate — the withdrawal also passes at exactly
+            // this timestamp, and whoever is ordered first wins it.
             vm.warp(uint256(revealEnd));
             vm.roll(block.number + 1);
         }
 
         assertGt(flap.freeTax(), 0, "the tax the curator cannot reach is not accumulating");
+    }
+
+    /// @dev The other half of that boundary, stated as a test rather than as a claim: at exactly
+    ///      `latestCuratedRevealEnd` the withdrawal gate PASSES. So "held shut indefinitely" costs
+    ///      the griefer winning an ordering race in each boundary block, not merely paying gas —
+    ///      and the response to the auditor says so instead of claiming a closed gate.
+    function test_AtTheBoundaryTheWithdrawalIsCallable() public {
+        vm.warp(uint256(tournament.latestCuratedRevealEnd()));
+        vm.roll(block.number + 1);
+        _tax(0.05 ether);
+
+        vm.prank(STRANGER);
+        uint256 id = generator.generateAndPost();
+        (, uint64 revealEnd,,) = tournament.taskGates(id);
+
+        // Exactly the instant the epoch ends — the drawn lane would accept a fresh post here.
+        vm.warp(uint256(revealEnd));
+
+        uint256 before = CURATOR.balance;
+        vm.prank(CURATOR);
+        uint256 sent = flap.withdrawUnconverted(0);
+        assertGt(sent, 0, "the boundary block is not open to the withdrawal after all");
+        assertEq(CURATOR.balance - before, sent, "the tax did not reach the curator");
     }
 
     /// @dev And no attacker is required. This is `script/PostTask.s.sol`'s own loop — draw, then

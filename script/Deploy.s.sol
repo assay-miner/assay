@@ -28,6 +28,7 @@ contract Deploy is Script {
     error NoVanitySalt();
     error NoVaultCreated();
     error TokenAddressMismatch(address predicted, address actual);
+    error PredictedTokenTaken(address predicted, bytes32 salt);
 
     /// @notice Where Flap's portal, its clone deployer and its taxed-V3 implementation live.
     /// @dev The implementation is what a vanity salt is mined against, and getting it wrong
@@ -94,13 +95,26 @@ contract Deploy is Script {
     ///      Starts from a caller-supplied offset because low offsets were swept years ago: the
     ///      portal rejects an already-staged address, and a fixed start would make every launch
     ///      from this script collide with the last one.
-    function mineVanitySalt(FlapVenue memory v, uint256 from) public pure returns (bytes32 salt) {
+    ///
+    ///      That paragraph was already here, and the collision happened anyway. `MineSalt.mine` —
+    ///      the script that actually produces the salt an operator pastes into SALT — defaulted its
+    ///      offset to 1, which is exactly the fixed start this comment warns about. It returned
+    ///      0x2dc5c, the FIRST salt from zero that lands on 0x…7777 on BSC mainnet, and therefore
+    ///      the single most contested salt on the venue. Somebody had taken it sixteen weeks
+    ///      earlier: 0x7516947d…7777 has held an EIP-1167 clone of the same taxed-V3 impl since
+    ///      block 98,443,003. Advice in a comment is not a gate, and the second call site never
+    ///      read it.
+    ///
+    ///      So the check moved into the loop. `view`, not `pure`, because deciding whether an
+    ///      address is free is a question only the chain can answer — a vanity suffix says nothing
+    ///      about whether anyone already holds it.
+    function mineVanitySalt(FlapVenue memory v, uint256 from) public view returns (bytes32 salt) {
         salt = bytes32(from);
         for (uint256 i; i < 4_000_000; ++i) {
             address predicted =
                 ClonesUpgradeable.predictDeterministicAddress(v.taxedV3Impl, salt, v.portal);
             bytes20 a = bytes20(predicted);
-            if (a[18] == 0x77 && a[19] == 0x77) return salt;
+            if (a[18] == 0x77 && a[19] == 0x77 && predicted.code.length == 0) return salt;
             salt = bytes32(uint256(salt) + 1);
         }
         revert NoVanitySalt();
@@ -181,6 +195,15 @@ contract Deploy is Script {
         }
         address predictedToken =
             ClonesUpgradeable.predictDeterministicAddress(venue.taxedV3Impl, salt, venue.portal);
+
+        // Refuse the whole deploy if that address is already somebody's contract. `AssayVault` is
+        // constructed with `predictedToken` and holds it in an immutable, so a taken address does
+        // not fail at launch — it binds custody, permanently, to a token this project does not
+        // control, and every stake and pot after that is denominated in a stranger's supply. The
+        // launch-time check at the bottom of this file cannot catch it: it compares the launched
+        // token against the prediction, and with SKIP_TOKEN set there is no launch to compare.
+        // This is the same fact asked one step earlier, where it is still free to act on.
+        if (predictedToken.code.length != 0) revert PredictedTokenTaken(predictedToken, salt);
 
         vm.startBroadcast(pk);
         AssayVault vault = new AssayVault(IERC20(predictedToken), salvage);

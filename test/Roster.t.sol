@@ -226,10 +226,11 @@ contract RosterTest is BaseTest {
     ///      verbatim, wait for them to reveal, and replay the same `(runtime, salt)` — which
     ///      verifies, because `reveal` hashes against `s.agentId` and both carried the same one.
     ///
-    ///      Measured before the guard: one leg took 44.6% of the pot for no work.
+    ///      Measured before the guard: one leg took 50.0% of the pot for no work, three took 75.0%.
     ///
-    ///      This does not need a sale. `AgentRoster`'s own header recommends mining from a
-    ///      disposable hot key with the identity in cold storage, and every rotation of that key is
+    ///      This does not need a sale. `AgentRoster`'s own header documents the delegation this
+    ///      enables — the NFT can stay in cold storage while a disposable hot key does the mining —
+    ///      and every rotation of that key is
     ///      exactly the release condition — so a rotated-out key kept a replay channel against its
     ///      own owner's new one.
     function test_AReleasedHolderCannotCommitAgain() public {

@@ -197,7 +197,10 @@ contract AgentRoster {
         // `submissions` is a public mapping, so the released holder could copy the current holder's
         // commitment verbatim, wait for them to reveal, and replay the same (runtime, salt). It
         // verifies, because `reveal` hashes against `s.agentId` and both carried the same one.
-        // Measured on the fixture: one leg took 44.6% of the pot for no work, three took 70.8%.
+        // Measured on the fixture with this line removed: against a single honest miner one leg
+        // took 50.0% of the pot for no work and three took 75.0%. Identical runtimes score
+        // identically — `score` is a pure function of `gasUsed` against the baseline — so the legs
+        // simply split the pot by count, N of them taking N/(N+1).
         //
         // `Tournament`'s own NatSpec is what this restores — "a stolen (runtime, salt) pair hashes
         // to a different commitment under a different agent id" was true only while an id had one
