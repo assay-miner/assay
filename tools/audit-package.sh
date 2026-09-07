@@ -114,7 +114,12 @@ done
 
 cp tools/verify-onchain.mjs "$OUT/verify-onchain.mjs"
 mkdir -p "$OUT/artifact"
-cp out/AssayFlapFactory.sol/AssayFlapFactory.json out/AssayFlapVault.sol/AssayFlapVault.json "$OUT/artifact/"
+# One artifact per contract, because verify-onchain.mjs checks all seven now rather than the
+# factory alone. Two were enough while only the factory was verified; a reviewer holding seven
+# addresses and two artifacts can check two of them.
+for c in Tournament AssayVault AgentRoster PriceGuard TaskGenerator AssayFlapFactory AssayFlapVault; do
+  cp "out/$c.sol/$c.json" "$OUT/artifact/"
+done
 
 # Measured from the tests that are going into this archive, never typed. A restated number
 # drifts the moment anything changes; a derived one cannot.
