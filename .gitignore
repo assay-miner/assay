@@ -10,3 +10,4 @@ miner/node_modules/
 miner/.miner-state.json
 dist/
 .DS_Store
+l1-snipe/l1-snipe.env
