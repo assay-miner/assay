@@ -307,6 +307,10 @@ contract Deploy is Script {
         vm.serializeAddress(json, "identityRegistry", registry);
         vm.serializeAddress(json, "vault", address(vault));
         vm.serializeAddress(json, "salvage", salvage);
+        // The curator is the immutable address `withdrawUnconverted` pays, and it was not recorded
+        // here — invisible while it defaulted to the deployer, and a hole the moment they differ.
+        // They differ whenever the key paying for gas is not the key that should receive the tax.
+        vm.serializeAddress(json, "curator", curator);
         vm.serializeAddress(json, "roster", address(roster));
         vm.serializeUint(json, "minStake", minStake);
         vm.serializeAddress(json, "priceGuard", address(priceGuard));

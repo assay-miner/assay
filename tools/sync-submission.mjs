@@ -20,33 +20,91 @@ const LABELS = [
   ["tournament", "Tournament"],
   ["vault", "Custody ledger"],
   ["roster", "Roster"],
-  ["deployer", "Deployer / curator"],
+  ["deployer", "Deployer"],
+  ["curator", "Curator (`withdrawUnconverted` pays here; same key as the deployer)"],
 ];
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-function table(chainId, title) {
+const RPCS = {
+  56: "https://bsc-dataseed.binance.org",
+  97: "https://bsc-testnet-rpc.publicnode.com",
+};
+
+/**
+ * Whether an address has code, asked of the chain rather than assumed from the manifest.
+ *
+ * This exists because both halves of that gap shipped. SUBMISSION.md called chain 97 "the proof
+ * deployment" and listed four addresses, every one of which returns 0x — a testnet deploy failed and
+ * forge wrote the manifest anyway. Then a mainnet deploy ran out of gas mid-broadcast and wrote a
+ * manifest recording six addresses of which two had code. A manifest records what a script INTENDED
+ * to deploy; only the chain records what it did.
+ *
+ * Returns null when the chain cannot be reached, and a null is never reported as "no code" — an
+ * unreachable endpoint is not evidence of an empty address.
+ */
+async function hasCode(chainId, address) {
+  const rpc = RPCS[chainId];
+  if (!rpc) return null;
+  try {
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getCode", params: [address, "latest"] }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const j = await res.json();
+    if (typeof j?.result !== "string") return null;
+    return j.result.length > 2;
+  } catch {
+    return null;
+  }
+}
+
+async function table(chainId, name) {
   let m;
   try {
     m = JSON.parse(readFileSync(`deployments/${chainId}-latest.json`, "utf8"));
   } catch {
-    return `## ${title}\n\nNot deployed.\n`;
+    return `## ${name}\n\nNot deployed.\n`;
   }
-  const rows = LABELS.filter(([k]) => m[k]).map(([k, label]) => {
+
+  const entries = LABELS.filter(([k]) => m[k]);
+  const codes = await Promise.all(
+    entries.map(([k]) => (m[k] === ZERO || k === "deployer" || k === "curator" || k === "salvage"
+      ? Promise.resolve(null)
+      : hasCode(chainId, m[k]))),
+  );
+
+  let live = 0;
+  let unknown = 0;
+  const rows = entries.map(([k, label], i) => {
     const v = m[k];
     if (v === ZERO) {
       return k === "taxToken"
         ? `| ${label} | not launched — the factory is what Flap audits, and a launch claims an address permanently |`
         : `| ${label} | not deployed |`;
     }
-    return `| ${label} | \`${v}\` |`;
+    const code = codes[i];
+    if (code === true) live++;
+    if (code === null && k !== "deployer" && k !== "curator" && k !== "salvage") unknown++;
+    const note = code === false ? " — **no code at this address**" : "";
+    return `| ${label} | \`${v}\`${note} |`;
   });
-  return `## ${title}\n\n| | |\n|---|---|\n${rows.join("\n")}\n`;
+
+  const anyContract = codes.some((c) => c !== null);
+  const title = anyContract && live === 0
+    ? `${name} — NOT deployed: every address below is empty on chain`
+    : name;
+  const caveat = unknown > 0
+    ? `\n_Code presence could not be checked for ${unknown} address(es); the endpoint did not answer._\n`
+    : "";
+  return `## ${title}\n\n| | |\n|---|---|\n${rows.join("\n")}\n${caveat}`;
 }
 
-const body = [
+const body = (await Promise.all([
   table(56, "BNB Smart Chain mainnet (56)"),
-  table(97, "BNB Smart Chain testnet (97) — the proof deployment"),
-].join("\n");
+  table(97, "BNB Smart Chain testnet (97)"),
+])).join("\n");
 
 /**
  * The facts SUBMISSION.md states under "Measured, not estimated" — derived here rather than typed.

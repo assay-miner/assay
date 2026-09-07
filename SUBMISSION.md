@@ -125,25 +125,26 @@ Repository at `abfa000`.
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0xF5b3243259daA0E9b0CE8f51F6340a89e50B404F` |
+| Factory (the contract Flap audits) | `0x6a70179bC27Dd2b49f6500E87c88c6d06f246001` |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0x5196Bbe37D76df30F4Eeb412846946f78E85eb25` |
-| Custody ledger | `0x76033A5F2020FB177DeC06481f032800dA37ae2A` |
-| Roster | `0xB660cAb4F560B521a4EF0faA4A98dC029b6928A6` |
-| Deployer / curator | `0x8F1054643baF32fe6c06C5CA9B3a990197883D8b` |
+| Tournament | `0xcEA1b50ebfb4A1FB2E1f9e66bd9e030AD9A55E0c` |
+| Custody ledger | `0xb208f98e8008e1a84884040fa1cFBEE69eA47Ac7` |
+| Roster | `0xE20D57e6e5DDF93821d6f78125C9Ac348F1925cC` |
+| Deployer | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
+| Curator (`withdrawUnconverted` pays here; same key as the deployer) | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 
-## BNB Smart Chain testnet (97) — the proof deployment
+## BNB Smart Chain testnet (97) — NOT deployed: every address below is empty on chain
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0x6b220DACd22467e837249344399A5d52951Ae264` |
+| Factory (the contract Flap audits) | `0x6b220DACd22467e837249344399A5d52951Ae264` — **no code at this address** |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` |
-| Custody ledger | `0xe432Ad772b2498631f7e1806BD0D33c35b184233` |
-| Roster | `0xd596C3Fe4B174f65A1cDe2A1a230f5Eff25d32F0` |
-| Deployer / curator | `0x8F1054643baF32fe6c06C5CA9B3a990197883D8b` |
+| Tournament | `0x2d14990a90640435CdbE13BA80e9c57e81d9c5dd` — **no code at this address** |
+| Custody ledger | `0xe432Ad772b2498631f7e1806BD0D33c35b184233` — **no code at this address** |
+| Roster | `0xd596C3Fe4B174f65A1cDe2A1a230f5Eff25d32F0` — **no code at this address** |
+| Deployer | `0x8F1054643baF32fe6c06C5CA9B3a990197883D8b` |
 
 <!-- deployments:end -->
 

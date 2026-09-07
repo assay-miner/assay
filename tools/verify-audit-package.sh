@@ -48,11 +48,29 @@ forge build >/dev/null 2>&1 && ok "compiles from a clean extraction" || { bad "d
 # `|| true`: a failing suite must be reported, not exit the gate. Without it `set -e` turned a
 # red test into the script simply stopping after the compile line, which reads as "still running"
 # rather than "your archive is broken" — the same silent-exit shape as the forge install above.
-OUT=$(forge test 2>&1 | tail -3 || true)
+# The WHOLE output, not `| tail -3`.
+#
+# That pipe measured nothing here: the summary happens to be the last line in the repository, so the
+# gate looked correct, while in a clean extraction forge printed lint warnings after it and the grep
+# below found no number at all. The verifier then reported "tests did not pass cleanly" and
+# "measured  / " for a suite that was passing. A gate whose reading depends on how many lines a tool
+# decides to print after its answer is a gate that will one day be wrong in the other direction.
+#
+# The pipe also discarded forge's exit code, which is the same defect that let a frontend that could
+# not compile sit behind a green `npm run verify` earlier in this project.
+OUT=$(forge test 2>&1); TEST_STATUS=$?
 RAN=$(echo "$OUT" | grep -oE '[0-9]+ tests passed' | grep -oE '^[0-9]+' || true)
 SUITES=$(echo "$OUT" | grep -oE 'Ran [0-9]+ test suites' | grep -oE '[0-9]+' || true)
 FAIL=$(echo "$OUT" | grep -oE '[0-9]+ failed' | grep -oE '^[0-9]+' | head -1 || true)
-[ "${FAIL:-0}" = "0" ] && [ -n "$RAN" ] && ok "$RAN tests pass across $SUITES suites" || bad "tests did not pass cleanly"
+if [ "$TEST_STATUS" != "0" ]; then
+  bad "forge test exited $TEST_STATUS"
+  printf '%s\n' "$OUT" | grep -E '^\[FAIL' | sort -u | head -10 | sed 's/^/    /'
+elif [ -z "$RAN" ]; then
+  bad "forge test passed but printed no summary this gate could read"
+  printf '%s\n' "$OUT" | tail -5 | sed 's/^/    /'
+else
+  ok "$RAN tests pass across $SUITES suites"
+fi
 
 # The claim in the README has to survive being measured. This is the check that was missing when a
 # reviewer counted 33 tests against a documented 103.
