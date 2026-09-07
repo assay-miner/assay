@@ -111,4 +111,41 @@ contract RosterTest is BaseTest {
         vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
         tournament.postTask(inputs, expected, Bytecode.tight(), GAS_CAP, commitEnd, revealEnd, POT);
     }
+
+    // ------------------------------------------------------ the id that would not survive a commit
+
+    /// @dev `Tournament.Submission.agentId` is a `uint64` and `commit` narrows to it, while `reveal`
+    ///      recomputes the commitment from that narrowed value and the NatSpec documents the full
+    ///      one. So an id above `type(uint64).max` used to enrol cleanly, commit cleanly, and then
+    ///      fail `reveal` with "Commitment mismatch" — after `lockUntil` had already pinned the
+    ///      stake to the task's reveal. The miner lost an epoch and could not withdraw.
+    ///
+    ///      Refused at enrolment now, which is the cheapest place: nothing is staked yet.
+    function test_AnAgentIdTooLargeForASubmissionIsRefusedAtEnrolment() public {
+        uint256 tooBig = uint256(type(uint64).max) + 1;
+        registry.mint(tooBig, ALICE);
+
+        vm.startPrank(ALICE);
+        token.approve(address(vault), type(uint256).max);
+        vm.expectRevert(bytes(unicode"Agent id too large / agent 编号过大"));
+        roster.enroll(tooBig, MIN_STAKE);
+        vm.stopPrank();
+
+        // And nothing was taken: the refusal is before any stake moves.
+        assertEq(roster.enrolmentOf(ALICE).stake, 0, "a refused enrolment still took a stake");
+    }
+
+    /// @dev The boundary itself, from both sides, so the bound is the value it claims to be rather
+    ///      than one off it.
+    function test_TheLargestIdASubmissionCanHoldStillEnrols() public {
+        uint256 largest = uint256(type(uint64).max);
+        registry.mint(largest, BOB);
+
+        vm.startPrank(BOB);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(largest, MIN_STAKE);
+        vm.stopPrank();
+
+        assertEq(roster.enrolmentOf(BOB).agentId, largest, "the largest fitting id was refused");
+    }
 }

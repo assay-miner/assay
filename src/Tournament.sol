@@ -409,6 +409,10 @@ contract Tournament {
 
         uint256 agentId = roster.requireEnrolled(msg.sender);
         s.commitment = commitment;
+        // Safe to narrow: `AgentRoster.enroll` refuses an id above `type(uint64).max`, so an
+        // enrolled id always fits. Before that bound existed this truncated silently, and `reveal`
+        // below recomputes the commitment from the narrowed value while the NatSpec documents the
+        // full one — a miner with a large id could never reveal and lost a locked stake for it.
         s.agentId = uint64(agentId);
 
         // Keep the stake at risk until this round is fully settled.

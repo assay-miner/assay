@@ -79,6 +79,20 @@ contract AgentRoster {
     /// @notice Binds `msg.sender` to `agentId` and takes the stake.
     function enroll(uint256 agentId, uint256 stake) external {
         require(agentId != 0, unicode"Agent id is zero / agent 编号为零");
+        // Bounded here because `Tournament.Submission.agentId` is a `uint64` and `commit` narrows to
+        // it. A larger id would be truncated silently, and `reveal` recomputes the commitment from
+        // the TRUNCATED value while the documented formula uses the full one — so the miner could
+        // never reveal, could not score, and their stake stayed locked to `revealEnd` for nothing.
+        // The `Revealed` event and the leaderboard card read the same narrowed field, so they would
+        // have labelled them with the wrong agent besides.
+        //
+        // Refusing at enrolment costs the caller nothing; failing at reveal costs them a locked
+        // stake and a wasted epoch. The ERC-8004 registry this points at mints sequential ERC-721
+        // ids — `ownerOf(1)`, `ownerOf(2)` and `ownerOf(100)` all resolve on chain today — so
+        // reaching this bound needs about 1.8e19 identities and no real caller will meet it. It is
+        // here to make the truncation impossible rather than improbable, since the registry is a
+        // contract we do not control.
+        require(agentId <= type(uint64).max, unicode"Agent id too large / agent 编号过大");
         require(_enrolments[msg.sender].agentId == 0, unicode"Already enrolled / 已注册");
 
         address bound = minerOf[agentId];
