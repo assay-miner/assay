@@ -125,12 +125,12 @@ Repository at `abfa000`.
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0x22db6EB62341Ed52E94A6626B44fc4377F762C91` |
+| Factory (the contract Flap audits) | `0x358ABcb03db5DE8c3d692e02E58AA97670a937eA` |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0x17b827D2a8676A37341BcF42CEF1a8eb2ef8De0F` |
-| Custody ledger | `0x12dFE705723eef7b5e685E5864938097e1C0F8Db` |
-| Roster | `0x84069e8Ec3f9FeA05CB99D3fF1Ce61be0FbbE5F1` |
+| Tournament | `0x73fc9f777B162972b33A68C0498638a99A13fc6C` |
+| Custody ledger | `0x3020b5E57BFe635dDA000d9fD00756F322D6530E` |
+| Roster | `0xc58ed968EB39cb3378C386C53543DC7B32C18125` |
 | Deployer | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 | Curator (`withdrawUnconverted` pays here; same key as the deployer) | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 

@@ -25,7 +25,8 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 ///      reads `bounty[]`, and `bounty[]` has two writers. `fundTaskFromPool` is one; `sponsor` at
 ///      AssayFlapVault.sol:650 is the other, and it is `external`, permissionless, and bounded only
 ///      by `require(amount > 0)`. One wei of BTCB on each drawn epoch rebuilds the freeze exactly,
-///      for 84,563 gas on top of a post the project makes anyway. That is the same dust-jam
+///      for 92,273 gas on top of a post the project makes anyway — a fresh `bounty[]` slot every
+///      epoch, so it is the cold price every time. That is the same dust-jam
 ///      primitive this repository already knows — `test_DustSponsorshipCannotBlockPoolFunding`
 ///      exists because one wei of somebody else's BTCB could make a task permanently unfundable —
 ///      moved onto a different gate. A gate that reads a value a stranger can write is the shape of
