@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
 import {AssayVault} from "../src/AssayVault.sol";
@@ -34,15 +37,12 @@ contract GeneratorFeedsPosterTest is Test {
     function setUp() public {
         vm.warp(1_800_000_000);
         TaxTokenMock token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), SALVAGE);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1_000e18);
-        beacon = new UpgradeableBeacon(address(new TaskGenerator()), address(0xF1A9));
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
-        tournament = new Tournament(custody, roster, CURATOR, predicted);
-        generator = TaskGenerator(address(new BeaconProxy(
-            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
-        )));
-        require(address(generator) == predicted, "generator prediction missed in the fixture");
+        AssayVault custody = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
+        AgentRoster roster = Stack.newRoster(Guardians.TESTNET, address(0), custody, 1_000e18, address(this));
+        address genBeacon;
+        (tournament, generator,, genBeacon) =
+            Stack.newTournamentAndGenerator(address(0xF1A9), custody, roster, CURATOR, address(this));
+        beacon = UpgradeableBeacon(genBeacon);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();

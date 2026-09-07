@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
@@ -61,8 +64,8 @@ contract ForkIdentityTest is Test {
         address owner = reg.ownerOf(1);
 
         TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
-        AssayVault vault = new AssayVault(IERC20(address(token)), address(this));
-        AgentRoster roster = new AgentRoster(reg, vault, MIN_STAKE);
+        AssayVault vault = Stack.newVault(Guardians.TESTNET, address(token), address(this), address(this));
+        AgentRoster roster = Stack.newRoster(Guardians.TESTNET, address(reg), vault, MIN_STAKE, address(this));
         vault.addController(address(roster));
         vault.freeze();
 

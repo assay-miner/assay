@@ -3,23 +3,22 @@ pragma solidity 0.8.26;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+import {Stack} from "./Stack.sol";
 import {TaxTokenMock} from "../test/TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
-import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 
 /// @notice Stands up the stack plus a Flap vault, without going through the portal.
 ///
 /// @dev The portal path is proven separately, on a mainnet fork, in `test/FlapGate.t.sol` and
 ///      `script/FlapDemo.s.sol` — an unregistered factory launches and the portal records the
-///      vault. This script exists because the *rendered page* does not depend on who called the
-///      constructor: the vault bytecode, its schema and its behaviour are identical either way,
-///      and testnet keeps fork state alive long enough to drive a full economic cycle through it
-///      where a public mainnet node does not.
+///      vault. This script exists because the *rendered page* does not depend on who created the
+///      vault: the implementation behind it, its schema and its behaviour are identical either
+///      way, and testnet keeps fork state alive long enough to drive a full economic cycle
+///      through it where a public mainnet node does not.
 contract FlapVaultDemo is Script {
     /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
     ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
@@ -31,19 +30,31 @@ contract FlapVaultDemo is Script {
         address registry = block.chainid == 56
             ? 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432
             : 0x8004A818BFB912233c491871b3d84c89A494BD9e;
+        // Flap requires every contract to be upgradeable from a beacon their Guardian owns, so
+        // nothing here is a bare `new` any more — each piece is an implementation, a beacon and an
+        // initialized proxy, assembled by script/Stack.sol. Resolved by chain id the same way the
+        // registry above is, and to the same addresses VaultBase and Tournament resolve.
+        address guardian = block.chainid == 56
+            ? 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b
+            : 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
 
         vm.startBroadcast(pk);
         TaxTokenMock token = new TaxTokenMock(me, 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), me);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, me, NO_DRAWN_LANE);
+        // `me` twice: the salvage destination, and the deployer the initializer records. The
+        // second used to be `msg.sender` read inside the constructor, which an initializer behind
+        // a proxy cannot rely on — the broadcasting key has to be named rather than inferred.
+        AssayVault custody = Stack.newVault(guardian, address(token), me, me);
+        AgentRoster roster = Stack.newRoster(guardian, registry, custody, 1000e18, me);
+        Tournament tournament = Stack.newTournament(guardian, custody, roster, me, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
 
+        PriceGuard priceGuard = Stack.newPriceGuard(guardian);
         // taxToken is recorded, never called — the portal passes a predicted address too.
-        AssayFlapVault flapVault = new AssayFlapVault(tournament, address(token), me, new PriceGuard());
+        AssayFlapVault flapVault =
+            Stack.newFlapVault(guardian, tournament, address(token), me, priceGuard);
         vm.stopBroadcast();
 
         string memory json = "d";

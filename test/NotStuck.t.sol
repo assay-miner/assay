@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
@@ -28,7 +31,7 @@ contract NotStuckTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 

@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {UpgradeableBeacon} from "@openzeppelin/proxy/beacon/UpgradeableBeacon.sol";
+
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {IVaultPortal, IVaultPortalTypes} from "../src/flap/IVaultPortal.sol";
 import {IPortalTypes, IPortalCommonTypes} from "../src/flap/IPortal.sol";
@@ -144,15 +149,15 @@ contract FlapGateTest is Test {
         // Stand the ASSAY stack up on the fork, then a factory pointing at it.
         vm.startPrank(launcher);
         TaxTokenMock token = new TaxTokenMock(launcher, 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), launcher);
-        AgentRoster roster = new AgentRoster(
-            IIdentityRegistry(0x8004A169FB4a3325136EB29fA0ceB6D2e539a432), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, launcher, NO_DRAWN_LANE);
+        AssayVault custody = Stack.newVault(Guardians.TESTNET, address(token), launcher, launcher);
+        AgentRoster roster = Stack.newRoster(Guardians.TESTNET, 
+            0x8004A169FB4a3325136EB29fA0ceB6D2e539a432, custody, 1000e18, launcher);
+        Tournament tournament = Stack.newTournament(Guardians.TESTNET, custody, roster, launcher, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
-        AssayFlapFactory factory = new AssayFlapFactory(tournament, new PriceGuard());
+        AssayFlapFactory factory = Stack.newFactory(Guardians.TESTNET, tournament, Stack.newPriceGuard(Guardians.TESTNET), address(new UpgradeableBeacon(address(new AssayFlapVault()), Guardians.TESTNET)));
         vm.stopPrank();
 
         // Confirm Flap has never registered it.

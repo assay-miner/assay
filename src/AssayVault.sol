@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
+import {Initializable} from "@openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// @title AssayVault
 /// @notice The single place any ASSAY value is held.
@@ -22,13 +23,19 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 ///         is not payable by anyone, so a stray transfer into this contract cannot be raked into
 ///         a payout and made to look like a profit.
 ///
-///      3. **No operator reach.** There is no owner, no pause, no upgrade path, no rescue of
-///         accounted funds, and no admin key. The controllers are named once at deploy and then
-///         frozen. The only thing anyone can move out of here is a balance the ledger already
-///         says belongs to the address being paid.
+///      3. **No operator reach in this code.** Nothing in this file gives anybody a privileged
+///         position over the ledger: no owner, no pause, no rescue of accounted funds, no admin
+///         key, and no path that writes a balance outside the four value movements below. The
+///         controllers are named once, at initialization, and then frozen. The only thing anyone
+///         can move out of here is a balance the ledger already says belongs to the address
+///         being paid.
+///
+///         Upgrades are Flap's, through the beacon this sits behind, whose owner is their
+///         Guardian. This contract holds no upgrade function and names no upgrade authority, so
+///         the beacon is the single place that power lives.
 ///
 ///      The one deliberate exception is the salvage path, which can move *only* value the ledger
-///      has never attributed to anyone, and only ever to an address fixed at deployment. It is
+///      has never attributed to anyone, and only ever to an address fixed at initialization. It is
 ///      bounded by arithmetic, not by trust, and it exists so a fat-fingered transfer is
 ///      recoverable instead of stranded here forever.
 ///
@@ -37,8 +44,9 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 ///      `totalAccounted`; for every *other* token, and for native value, the sweepable amount is
 ///      the entire balance, because no unit of any of them has ever been, or can ever be,
 ///      credited to an account. Both branches are the same rule — "move what nobody owns" — and
-///      neither branch has a parameter an attacker can steer: the destination is immutable, the
-///      amount is derived, and the caller keeps nothing but the gas bill.
+///      neither branch has a parameter an attacker can steer: the destination is written once by
+///      `initialize` and by nothing afterwards, the amount is derived, and the caller keeps
+///      nothing but the gas bill.
 ///
 ///      Two structural guards keep the foreign-token branch honest. First, a token that is
 ///      merely an *alias* for `asset` (a second entry point onto the same balance, the shape
@@ -52,16 +60,34 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 ///      This contract has no `receive` and no `payable` function, so native value cannot be sent
 ///      here by accident; `sweepNative` exists for the two ways it can arrive anyway — a
 ///      `selfdestruct` beneficiary and a block-reward address — which no contract can refuse.
-contract AssayVault {
+contract AssayVault is Initializable {
     using SafeERC20 for IERC20;
 
-    /// @notice The only asset this vault custodies.
-    IERC20 public immutable asset;
+    // The three values below used to be `immutable`, which put them in the implementation's code.
+    // A proxy delegatecalls that code but carries its own storage, so an immutable read behind the
+    // beacon would return whatever the *implementation* was constructed with — not this ledger's
+    // asset. They are state now, and their declaration order is therefore permanent: an upgrade
+    // does not lose a variable it reorders, retypes or drops, it reinterprets the bytes the old
+    // implementation wrote. Append below `totalAccounted`, never insert.
+    //
+    // One measured detail, because it is not visible from reading this file: `Initializable`
+    // declares `_initialized` (uint8) and `_initializing` (bool) first, so `asset` packs into the
+    // two-byte remainder of slot 0 at offset 2. That is only a fact about the base in use here.
+    // Swapping to an `Initializable` that keeps its flags somewhere else — OpenZeppelin v5 moved
+    // them to a namespaced slot — vacates those two bytes, slides `asset` to offset 0, and makes
+    // every already-written `asset` unreadable. Read the layout back after any such change
+    // (`forge inspect AssayVault storageLayout`) rather than assuming this note still holds.
 
-    /// @notice Where an accidental transfer into this contract can be swept. Fixed at deploy.
-    address public immutable salvage;
+    /// @notice The only asset this vault custodies. Written once, by `initialize`.
+    IERC20 public asset;
 
-    address public immutable deployer;
+    /// @notice Where an accidental transfer into this contract can be swept. Written once, by
+    ///         `initialize`; there is no setter for it here.
+    address public salvage;
+
+    /// @notice The account that may name controllers until `freeze()` seals the set. Supplied to
+    ///         `initialize` explicitly rather than taken from `msg.sender` — see there for why.
+    address public deployer;
 
     /// @notice Contracts permitted to open accounts and move value inside their own namespace.
     mapping(address controller => bool) public isController;
@@ -74,6 +100,13 @@ contract AssayVault {
     /// @notice Sum of every account balance. The real token balance may never fall below it.
     uint256 public totalAccounted;
 
+    /// @dev Reserved slots, so a later implementation can add state without landing on top of
+    ///      anything declared beneath this contract. Nothing is declared beneath it today — the
+    ///      only base is `Initializable`, and a base's storage is laid out first, above — but an
+    ///      unused gap costs nothing, and the alternative to reserving it is discovering it was
+    ///      needed after the beacon is live and the layout can no longer move.
+    uint256[50] private __gap;
+
     event ControllerAdded(address indexed controller);
     event ControllersFrozen();
     event Deposited(address indexed controller, bytes32 indexed account, address indexed from, uint256 amount);
@@ -84,11 +117,36 @@ contract AssayVault {
     event SweptNative(address indexed to, uint256 amount);
 
 
-    constructor(IERC20 asset_, address salvage_) {
+    /// @dev Locks the implementation itself. The copy sitting behind the beacon is logic, never a
+    ///      ledger, and this stops anyone initializing that bare copy into a plausible-looking
+    ///      vault — real `asset`, real `salvage`, a `deployer` of their choosing — that shares an
+    ///      address with nothing and custodies nothing.
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Names the asset, the salvage destination and the deployer. Runs exactly once.
+    ///
+    /// @dev This is the old constructor, moved. `initializer` is what now buys the guarantee
+    ///      construction used to give for free: a constructor cannot be called twice, so `asset`
+    ///      and `salvage` could never be re-pointed once the code was on chain. Behind a proxy
+    ///      this body is an ordinary external function, and the modifier is the only thing
+    ///      standing between a second call and a salvage address — or an asset, the unit every
+    ///      recorded balance is denominated in — swapped out from under balances already written.
+    ///
+    /// @dev `deployer_` is a parameter, not `msg.sender`. Under the beacon deployment this call
+    ///      arrives by delegatecall from the proxy's constructor, so `msg.sender` does happen to
+    ///      be the deploying account — but that is a fact about one deployment shape, not about
+    ///      this function. Initialized any other way, through a factory or a relayer or a
+    ///      multicall, `msg.sender` is that intermediary, and the address landing here is the one
+    ///      that names every controller before `freeze()` seals the set. It is stated out loud so
+    ///      the caller has to mean it.
+    function initialize(IERC20 asset_, address salvage_, address deployer_) external initializer {
         require(address(asset_) != address(0) && salvage_ != address(0), unicode"Zero address / 零地址");
         asset = asset_;
         salvage = salvage_;
-        deployer = msg.sender;
+        deployer = deployer_;
     }
 
     /// @dev Two conditions, not one. The controller check is the obvious half. The freeze check
@@ -256,7 +314,8 @@ contract AssayVault {
 
     /// @notice Sends stray `asset` to the salvage address. Permissionless, and bounded to surplus.
     /// @dev Cannot reach accounted funds by construction: it moves exactly `unaccounted()`, and
-    ///      the destination is immutable, so calling it confers nothing on the caller.
+    ///      the destination was written by `initialize` and cannot be written again, so calling it
+    ///      confers nothing on the caller.
     function sweepUnaccounted() external nonReentrantSweep returns (uint256 amount) {
         return _sweepAsset();
     }

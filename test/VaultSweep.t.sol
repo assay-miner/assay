@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {BaseTest} from "./Base.t.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
@@ -174,7 +177,7 @@ contract VaultSweepTest is BaseTest {
     ///      so there is something to steal and the theft is the genuine article.
     function _aliasFixture() internal returns (AssayVault v, SharedLedger t, AliasEntry door) {
         t = new SharedLedger(address(this), 1_000e18);
-        v = new AssayVault(IERC20(address(t)), SALVAGE);
+        v = Stack.newVault(Guardians.TESTNET, address(t), SALVAGE, address(this));
         v.addController(address(this));
         v.freeze();
         t.approve(address(v), type(uint256).max);
@@ -266,7 +269,7 @@ contract VaultSweepTest is BaseTest {
 
     function test_ARejectingSalvageStrandsNativeValueLoudly() public {
         TaxTokenMock t = new TaxTokenMock(address(this), 1_000_000_000e18);
-        AssayVault v = new AssayVault(IERC20(address(t)), address(new RejectingSalvage()));
+        AssayVault v = Stack.newVault(Guardians.TESTNET, address(t), address(new RejectingSalvage()), address(this));
         vm.deal(address(v), 1 ether);
         vm.expectRevert(bytes(unicode"Native sweep failed / 原生币清扫失败"));
         v.sweepNative();

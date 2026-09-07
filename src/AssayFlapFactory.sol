@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Initializable} from "@openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
+import {BeaconProxy} from "@openzeppelin/proxy/beacon/BeaconProxy.sol";
+
 import {VaultFactoryBaseV2} from "./flap/VaultFactoryBaseV2.sol";
 import {IVaultFactory} from "./flap/IVaultFactory.sol";
 import {VaultDataSchema, FieldDescriptor} from "./flap/IVaultSchemasV1.sol";
 import {AssayFlapVault} from "./AssayFlapVault.sol";
 import {Tournament} from "./Tournament.sol";
 import {PriceGuard} from "./PriceGuard.sol";
-import {AssayVaultDeployer} from "./AssayVaultDeployer.sol";
 
 /// @title AssayFlapFactory
 /// @notice Creates an ASSAY vault when a token is launched through Flap's VaultPortal.
@@ -20,29 +22,69 @@ import {AssayVaultDeployer} from "./AssayVaultDeployer.sol";
 ///      The factory is deliberately thin. It holds no funds, decides nothing about rewards, and
 ///      exists only to bind a freshly-launched tax token to a vault that already knows which
 ///      tournament it settles against.
-contract AssayFlapFactory is VaultFactoryBaseV2 {
+///
+///      It is itself deployed behind a beacon proxy, which is what Flap requires of every
+///      contract on their platform: the upgrade authority is the Guardian's beacon, not anything
+///      in here. There is deliberately no upgrade function and no owner on this implementation.
+contract AssayFlapFactory is VaultFactoryBaseV2, Initializable {
     /// @notice The tournament every vault this factory creates will pay against.
-    Tournament public immutable tournament;
+    /// @dev Storage rather than `immutable` because an implementation behind a proxy has no
+    ///      constructor of its own to burn a value into: the proxy's storage is the only place a
+    ///      value set at initialization can live. The declaration order of the three below is
+    ///      permanent — a later implementation that reorders them reads other variables' values.
+    Tournament public tournament;
 
     /// @notice Prices every vault this factory creates. Fixed here so no vault is ever handed a
     ///         pricing contract by whoever launched its token.
-    PriceGuard public immutable priceGuard;
+    PriceGuard public priceGuard;
 
-    /// @notice Holds the vault's creation code, so this contract's runtime does not.
-    /// @dev Constructed here rather than passed in. Code reached by `new` from a constructor lands
-    ///      in this contract's creation code, which EIP-170 does not measure, instead of its runtime,
-    ///      which it does — that is the entire point. Building it here also means the deployer's
-    ///      `msg.sender` is this factory forever, so there is no address for a caller to supply.
-    AssayVaultDeployer public immutable deployer;
+    /// @notice The beacon each created vault points at, and therefore the authority that may
+    ///         upgrade every vault this factory has ever made.
+    /// @dev This slot used to hold an `AssayVaultDeployer`, constructed here, whose only purpose
+    ///      was EIP-170: `new AssayFlapVault(...)` written inside `newVault` put the vault's whole
+    ///      21,789-byte creation code into this factory's *runtime*, which is what the
+    ///      24,576-byte limit measures. A `BeaconProxy`'s creation code is a few dozen bytes, so
+    ///      the pressure that contract was invented to relieve no longer exists and the contract
+    ///      goes with it.
+    ///
+    ///      Supplied to `initialize` rather than built here, because a beacon has to outlive the
+    ///      implementation that points at it. One this factory constructed for itself would be a
+    ///      new beacon — and so a severed upgrade path for every vault already created — every
+    ///      time the factory implementation changed.
+    address public vaultBeacon;
 
     event VaultCreated(address indexed vault, address indexed taxToken, address indexed creator);
 
-    constructor(Tournament tournament_, PriceGuard priceGuard_) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        // The implementation is never used directly; only proxies delegatecall into it. Locking it
+        // means nobody can initialize the implementation itself and pose as this factory.
+        _disableInitializers();
+    }
+
+    /// @notice Binds this factory to its tournament, its price guard and its vault beacon.
+    ///
+    /// @dev This is the old constructor, moved. Construction guaranteed single execution for free;
+    ///      behind a beacon proxy there is no constructor to run, and `initializer` is what now
+    ///      carries that guarantee — it is the whole reason the three values below can still be
+    ///      read as fixed rather than as settable state.
+    ///
+    ///      The two address checks are the constructor's, unchanged. They matter for the same
+    ///      reason they always did: a factory holding a zero here mints vaults that point at
+    ///      nothing, and that is discovered at somebody's token launch rather than at deployment.
+    function initialize(Tournament tournament_, PriceGuard priceGuard_, address vaultBeacon_)
+        external
+        initializer
+    {
         require(address(priceGuard_) != address(0), unicode"PriceGuard address is zero / 定价合约地址为零");
         priceGuard = priceGuard_;
         require(address(tournament_) != address(0), unicode"Tournament address is zero / 锦标赛地址为零");
         tournament = tournament_;
-        deployer = new AssayVaultDeployer();
+        // The one check the constructor did not need: `new AssayVaultDeployer()` could not return
+        // zero, an argument can. Same reasoning as the two above, applied to the value that
+        // replaced it.
+        require(vaultBeacon_ != address(0), unicode"Vault beacon address is zero / 金库信标地址为零");
+        vaultBeacon = vaultBeacon_;
     }
 
     /// @inheritdoc IVaultFactory
@@ -60,7 +102,16 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
             unicode"Only the vault portal may create a vault / 只有金库门户可以创建金库"
         );
 
-        vault = deployer.deploy(tournament, taxToken, creator, priceGuard);
+        // Deployed and initialized in one call, so there is no block in which a vault exists with
+        // an unset tournament for somebody else to claim. The arguments are exactly the ones the
+        // vault's constructor took, in the order it took them; nothing about the vault's own
+        // configuration is decided here, and nothing is supplied by the launcher.
+        vault = address(
+            new BeaconProxy(
+                vaultBeacon,
+                abi.encodeCall(AssayFlapVault.initialize, (tournament, taxToken, creator, priceGuard))
+            )
+        );
         emit VaultCreated(vault, taxToken, creator);
     }
 
@@ -78,4 +129,9 @@ contract AssayFlapFactory is VaultFactoryBaseV2 {
         schema.fields = new FieldDescriptor[](0);
         schema.isArray = false;
     }
+
+    /// @dev Room for a later implementation to add state without landing on top of anything
+    ///      declared below this contract. Storage behind a beacon is permanent; the gap is what
+    ///      makes the next version's variables free to exist.
+    uint256[50] private __gap;
 }

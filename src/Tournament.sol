@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Initializable} from "@openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Crucible} from "./Crucible.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {
@@ -30,7 +31,7 @@ import {AssayVault} from "./AssayVault.sol";
 ///      Prize money is never held here. Each task's pot lives in `AssayVault`, in an account
 ///      namespaced to this contract and keyed by task id, so one task can never be paid out of
 ///      another task's escrow and no operator key can reach any of it.
-contract Tournament {
+contract Tournament is Initializable {
     /// @notice Account namespace for task pots inside the vault.
     bytes32 public constant KIND_POT = "pot";
 
@@ -107,9 +108,19 @@ contract Tournament {
     ///      range.
     uint64 public constant OPEN_POST_MAX_SPAN = 10 minutes;
 
-    AssayVault public immutable vault;
-    AgentRoster public immutable roster;
-    address public immutable curator;
+    /// @notice The three addresses this tournament is wired to, fixed at initialization.
+    /// @dev Storage rather than `immutable`, because this runs behind a BeaconProxy. An immutable
+    ///      lives in the implementation's code, and a beacon shares one implementation across every
+    ///      proxy pointing at it — so three immutables would be three values every proxy read
+    ///      identically, whichever vault it was meant to be wired to. Coming down into storage is
+    ///      what lets each proxy have its own.
+    ///
+    ///      Their declaration order is now permanent. These sit at the front of the layout and
+    ///      everything below is positioned relative to them, so an upgrade that reorders or removes
+    ///      one does not lose a value, it reinterprets a live one as a different variable.
+    AssayVault public vault;
+    AgentRoster public roster;
+    address public curator;
 
     struct Task {
         address poster;
@@ -186,10 +197,10 @@ contract Tournament {
 
 
     /// @notice The only address whose tasks the reward pool may fund.
-    /// @dev    Immutable, and the whole point of the redesign. The pool used to be routed to tasks
-    ///         posted by the curator, who also authors the instance — so the one account able to
-    ///         optimise a task over unbounded time before publishing it was also the only account
-    ///         whose tasks the tax could pay. An audit measured the result: against the shipped
+    /// @dev    Written exactly once, and the whole point of the redesign. The pool used to be
+    ///         routed to tasks posted by the curator, who also authors the instance — so the one
+    ///         account able to optimise a task over unbounded time before publishing it was also
+    ///         the only account whose tasks the tax could pay. An audit measured the result: against the shipped
     ///         epoch the curator's answer scores 98.63% of the bounty, and a variant needs no search
     ///         advantage at all — post a newer task and `fundTaskFromPool`'s newest-task rule moves
     ///         the pool off the one miners are working in.
@@ -198,17 +209,48 @@ contract Tournament {
     ///         a caller cannot pin which block includes their transaction. Routing the pool there
     ///         removes the information advantage instead of pricing it.
     ///
-    ///         Immutable rather than a one-shot setter because the whole set must be redeployed
+    ///         Set in `initialize` rather than by a setter because the whole set must be redeployed
     ///         anyway — `Deploy.s.sol` calls `vault.freeze()`, and `AssayVault.addController` is
     ///         deployer-only and refuses once frozen, so a new Tournament cannot attach to an
     ///         existing vault. A setter would be a lever that exists and has to be proven spent;
-    ///         an immutable never exists.
-    address public immutable generator;
+    ///         there is still no such lever, and nothing in this contract writes this variable
+    ///         after `initialize` has run.
+    ///
+    ///         This was `immutable` until the beacon. Behind a shared implementation an immutable
+    ///         is one value for every proxy, so it had to come down into storage — and
+    ///         `initializer` is what now supplies the guarantee `immutable` supplied for free.
+    address public generator;
 
     /// @notice The newest task the generator drew. The only task `fundTaskFromPool` will pay.
     uint256 public latestGeneratedTaskId;
 
-    constructor(AssayVault vault_, AgentRoster roster_, address curator_, address generator_) {
+    /// @dev Room for a later version to declare state in. The layout above is permanent once a
+    ///      beacon is pointing at this code, so an upgrade that needs a new variable has to put it
+    ///      somewhere no existing value lives and nothing inherited below can reach — that is the
+    ///      whole of what these fifty reserved slots buy.
+    uint256[50] private __gap;
+
+    /// @dev The implementation itself is never initialized. It is the code a beacon points at and
+    ///      holds none of the state above; locking it at construction stops anybody from calling
+    ///      `initialize` on the bare implementation address and standing up something that answers
+    ///      every view like this contract while being wired to a vault nobody chose.
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Wires the tournament to its vault, roster, curator and generator.
+    /// @dev This is the old constructor, moved. Construction guaranteed single execution for free;
+    ///      behind a BeaconProxy there is no constructor running against this state, and
+    ///      `initializer` is what replaces that guarantee — it consumes the version slot, so the
+    ///      four assignments below happen exactly once and no later call can repoint the vault or
+    ///      the drawn lane. Every check the constructor made is made here, unchanged.
+    function initialize(
+        AssayVault vault_,
+        AgentRoster roster_,
+        address curator_,
+        address generator_
+    ) external initializer {
         require(generator_ != address(0), unicode"Zero generator / 生成器为零地址");
         vault = vault_;
         roster = roster_;
@@ -250,9 +292,10 @@ contract Tournament {
         uint64 revealEnd,
         uint128 pot
     ) external returns (uint256 taskId) {
-        // The Guardian may post too. curator is immutable and this was its only gate, so a lost or
-        // compromised key ended task creation permanently — the vault side already had this
-        // fallback on every privileged function and the tournament had none at all.
+        // The Guardian may post too. `curator` is written once and never again, and this was its
+        // only gate, so a lost or compromised key ended task creation permanently — the vault
+        // side already had this fallback on every privileged function and the tournament had none
+        // at all.
         // Three lanes, and which one a post is in decides both its window rules and whether the
         // reward pool can ever reach it.
         //

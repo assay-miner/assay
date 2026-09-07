@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Initializable} from "@openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
 import {AssayVault} from "./AssayVault.sol";
 
@@ -16,27 +17,34 @@ import {AssayVault} from "./AssayVault.sol";
 ///
 ///      This contract never holds a token. Stake lives in `AssayVault`, in an account namespaced
 ///      to this contract, so the tournament cannot reach it and neither can anybody's admin key.
-contract AgentRoster {
+///
+///      Deployed behind a beacon, so the wiring below is storage rather than code. What used to be
+///      `immutable` — the registry, the vault, the stake floor, the deployer — was compiled into
+///      the bytecode of one deployment; under a proxy the bytecode is shared by every instance and
+///      only storage can differ per instance. The names, types and visibility are unchanged, and so
+///      is the order they are declared in: the beacon can replace this code, and a later version
+///      that reorders these lines would read each proxy's existing slots as the wrong fields.
+contract AgentRoster is Initializable {
     /// @notice Account namespace for miner stake inside the vault.
     bytes32 public constant KIND_STAKE = "stake";
 
-    IIdentityRegistry public immutable identityRegistry;
-    AssayVault public immutable vault;
-    uint256 public immutable minStake;
+    IIdentityRegistry public identityRegistry;
+    AssayVault public vault;
+    uint256 public minStake;
 
     /// @notice The tournament permitted to extend stake locks. Set once, then frozen forever.
     address public consumer;
     bool public consumerFrozen;
 
-    /// @notice The address that constructed this roster, and the only one that may name the
-    ///         tournament — once.
+    /// @notice The address named as this roster's deployer at initialization, and the only one
+    ///         that may name the tournament — once.
     /// @dev This used to be `curator`, which put a live permission behind the same hot key a
     ///      reviewer flagged on Tournament. The permission is one-shot and is spent during the
     ///      deploy, so it belongs to whoever is doing the deploying, not to whoever will be
     ///      running the protocol afterwards. After `setConsumer` the deployer has nothing left to
     ///      call; the one privileged caller that remains is the consumer itself, which is the
     ///      tournament, and it holds only `lockUntil`.
-    address public immutable deployer;
+    address public deployer;
 
     struct Enrolment {
         uint256 agentId;
@@ -58,11 +66,41 @@ contract AgentRoster {
     event ConsumerSet(address indexed consumer);
 
 
-    constructor(IIdentityRegistry registry, AssayVault vault_, uint256 minStake_) {
+    /// @dev The implementation is never initialized in its own right. It exists behind the beacon
+    ///      as code only; an implementation somebody else had initialized would be a live contract
+    ///      answering every getter with a `deployer` of their choosing — no reach into any proxy,
+    ///      but a convincing decoy for anyone who read it instead of the proxy.
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Sets what construction used to set: the registry, the vault, the stake floor, and
+    ///         the single address permitted to name the consumer.
+    ///
+    /// @dev `initializer` is what replaces the constructor's guarantee. A constructor ran exactly
+    ///      once because the EVM made that free — there is no second construction to run. Behind a
+    ///      beacon this is an ordinary external call into a proxy's storage, and nothing about the
+    ///      call itself says "first", so the modifier is the entire reason a second caller cannot
+    ///      re-point the registry, the vault and the deployer of a roster that already holds stake.
+    ///
+    /// @dev `deployer_` is a parameter rather than `msg.sender`. Through a `BeaconProxy` this call
+    ///      arrives by delegatecall from the proxy's constructor, so `msg.sender` does happen to be
+    ///      the deploying account today — but that is a fact about one deployment shape, not about
+    ///      this function. Initialized any other way, by a factory or a relayer, `msg.sender` would
+    ///      be that intermediary, and since `setConsumer` is gated on this field the one-shot
+    ///      permission to name the tournament would silently land on it. Naming the address is what
+    ///      keeps that gate pointing where the deploy intends.
+    function initialize(
+        IIdentityRegistry registry,
+        AssayVault vault_,
+        uint256 minStake_,
+        address deployer_
+    ) external initializer {
         identityRegistry = registry;
         vault = vault_;
         minStake = minStake_;
-        deployer = msg.sender;
+        deployer = deployer_;
     }
 
     /// @notice The vault account holding `miner`'s stake. Anyone can read its balance directly.
@@ -214,4 +252,10 @@ contract AgentRoster {
     function enrolmentOf(address miner) external view returns (Enrolment memory) {
         return _enrolments[miner];
     }
+
+    /// @dev Reserved slots, so a later version of this contract can add state without shifting
+    ///      anything declared below it in the layout. A proxy keeps its storage across an upgrade,
+    ///      so a new variable that lands on an occupied slot does not read empty — it reads a
+    ///      miner's stake, or the consumer address, as whatever the new field claims to be.
+    uint256[50] private __gap;
 }

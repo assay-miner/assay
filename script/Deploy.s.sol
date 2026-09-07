@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Script} from "forge-std/Script.sol";
+import {Stack} from "./Stack.sol";
 import {console2} from "forge-std/console2.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -206,9 +207,16 @@ contract Deploy is Script {
         if (predictedToken.code.length != 0) revert PredictedTokenTaken(predictedToken, salt);
 
         vm.startBroadcast(pk);
-        AssayVault vault = new AssayVault(IERC20(predictedToken), salvage);
+
+        // The whole stack, behind beacons the Guardian owns, assembled by script/Stack.sol. It is
+        // a library rather than lines here because the test fixture builds the same stack, and the
+        // ORDER matters — every proxy is initialized in the call that creates it, and the
+        // tournament/generator cycle is broken by predicting an address that only holds if those
+        // two CREATEs are adjacent. An order written in two places is an order that will eventually
+        // be written two ways, and the failure would be a live contract somebody else initialized.
+        //
         // The curator defaults to the deploying key and does not have to stay one. It is only ever
-        // a constructor argument, so pointing it at a multisig costs nothing — which matters,
+        // an initializer argument, so pointing it at a multisig costs nothing — which matters,
         // because a reviewer's first question about this design is whether one hot key that is
         // also the deployer decides which task the tax funds.
         //
@@ -216,43 +224,26 @@ contract Deploy is Script {
         // into `newVault` as `creator`, and the factory hands that straight to the vault. So a
         // multisig curator has to be the address that performs the launch, not just this argument.
         address curator = vm.envOr("CURATOR", deployer);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(registry), vault, minStake);
-
-        // The on-chain task generator, behind a beacon Flap owns. Drawing a good task is a question
-        // that will keep changing; what a settled task pays is not. This is the only upgradeable
-        // piece of the system, and the address that can upgrade it is the one the tournament and
-        // the vault already treat as the trusted operator — so it adds no party that was not
-        // already trusted, and the settlement contracts stay immutable behind it.
-        //
-        // It is deployed around the tournament rather than after it, because the two now name each
-        // other: `Tournament.generator` is immutable and the proxy's initializer takes the
-        // tournament. The cycle is broken by predicting the proxy's address rather than by
-        // deploying it uninitialized and calling `initialize` later — `TaskGenerator.initialize`
-        // has NO access control, and a forge broadcast is N separate transactions, so anyone
-        // watching could land `initialize(their own Tournament)` in the gap. The proxy would be
-        // permanently theirs, and with `generator` immutable and `fundTaskFromPool` the only exit
-        // from `rewardPool`, every BTCB the vault ever converts would be locked for good.
-        address generatorImpl = address(new TaskGenerator());
-        UpgradeableBeacon beacon = new UpgradeableBeacon(generatorImpl, _flapGuardian());
-
-        // The proxy must be the VERY NEXT deploy after the tournament for this to hold. Nothing
-        // between them may send a transaction from this key — the assertion below is what makes
-        // that a deploy-time failure rather than a silently mis-wired system.
-        address predictedGenerator = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-
-        Tournament tournament = new Tournament(vault, roster, curator, predictedGenerator);
-        address generator = address(new BeaconProxy(
-            address(beacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
-        ));
-        require(generator == predictedGenerator, "generator address prediction missed");
-        require(tournament.generator() == generator, "tournament points at the wrong generator");
+        Stack.Deployed memory st = Stack.deploy(
+            Stack.Params({
+                deployer: deployer,
+                guardian: _flapGuardian(),
+                asset: predictedToken,
+                salvage: salvage,
+                registry: registry,
+                minStake: minStake,
+                curator: curator
+            })
+        );
+        AssayVault vault = st.vault;
+        AgentRoster roster = st.roster;
+        Tournament tournament = st.tournament;
+        address generator = address(st.generator);
+        PriceGuard priceGuard = st.priceGuard;
+        address flapFactory = address(st.factory);
 
         // Custody wiring, then sealed. After `freeze()` no address can be added to the vault.
-        vault.addController(address(roster));
-        vault.addController(address(tournament));
-        vault.freeze();
-
-        roster.setConsumer(address(tournament));
+        Stack.wire(st);
 
         // The token layer. A protocol whose prize money comes from a token's trading tax is not
         // launched until that token exists, so this is part of the launch and not a second
@@ -263,8 +254,6 @@ contract Deploy is Script {
         // token back also produced no factory — and the factory is the contract Flap audits.
         // Pricing lives in its own contract because the factory embeds the vault's creation code
         // and sits under EIP-170. Deployed here so every vault this factory makes shares one.
-        PriceGuard priceGuard = new PriceGuard();
-        address flapFactory = address(new AssayFlapFactory(tournament, priceGuard));
         address taxToken;
         address flapVault;
 
@@ -338,9 +327,28 @@ contract Deploy is Script {
         vm.serializeUint(json, "minStake", minStake);
         vm.serializeAddress(json, "priceGuard", address(priceGuard));
         vm.serializeAddress(json, "taskGenerator", generator);
-        vm.serializeAddress(json, "taskGeneratorBeacon", address(beacon));
-        vm.serializeAddress(json, "taskGeneratorImpl", generatorImpl);
         vm.serializeAddress(json, "flapFactory", flapFactory);
+
+        // Every beacon and every implementation, because every contract is upgradeable now and an
+        // address alone no longer says what code runs at it. A reviewer asking "what can change,
+        // and who can change it" needs the beacon to read `owner()` from and the implementation to
+        // compare against source; the manifest used to record that pair for the one upgradeable
+        // contract and would otherwise have gone silent on the other six.
+        vm.serializeAddress(json, "beaconOwner", _flapGuardian());
+        vm.serializeAddress(json, "priceGuardBeacon", st.beacons.priceGuard);
+        vm.serializeAddress(json, "priceGuardImpl", st.impls.priceGuard);
+        vm.serializeAddress(json, "vaultBeacon", st.beacons.vault);
+        vm.serializeAddress(json, "vaultImpl", st.impls.vault);
+        vm.serializeAddress(json, "rosterBeacon", st.beacons.roster);
+        vm.serializeAddress(json, "rosterImpl", st.impls.roster);
+        vm.serializeAddress(json, "tournamentBeacon", st.beacons.tournament);
+        vm.serializeAddress(json, "tournamentImpl", st.impls.tournament);
+        vm.serializeAddress(json, "taskGeneratorBeacon", st.beacons.generator);
+        vm.serializeAddress(json, "taskGeneratorImpl", st.impls.generator);
+        vm.serializeAddress(json, "flapVaultBeacon", st.beacons.flapVault);
+        vm.serializeAddress(json, "flapVaultImpl", st.impls.flapVault);
+        vm.serializeAddress(json, "flapFactoryBeacon", st.beacons.factory);
+        vm.serializeAddress(json, "flapFactoryImpl", st.impls.factory);
         // The two values that make a SKIP_TOKEN deploy reproducible, and the reason the previous
         // mainnet manifest could not be. `AssayVault` is constructed with `predictedToken` — the
         // address this salt makes the token land on — so launching later under a different salt

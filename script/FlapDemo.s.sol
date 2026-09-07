@@ -4,17 +4,16 @@ pragma solidity 0.8.26;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {ClonesUpgradeable} from "@openzeppelin-contracts-upgradeable/proxy/ClonesUpgradeable.sol";
-import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+import {UpgradeableBeacon} from "@openzeppelin/proxy/beacon/UpgradeableBeacon.sol";
 
+import {Stack} from "./Stack.sol";
 import {TaxTokenMock} from "../test/TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
 import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapFactory} from "../src/AssayFlapFactory.sol";
-import {PriceGuard} from "../src/PriceGuard.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
-import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {IVaultPortal, IVaultPortalTypes} from "../src/flap/IVaultPortal.sol";
 import {IPortalTypes, IPortalCommonTypes} from "../src/flap/IPortal.sol";
 
@@ -82,16 +81,38 @@ contract FlapDemo is Script {
         vm.startBroadcast(pk);
 
         TaxTokenMock token = new TaxTokenMock(me, 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), me);
-        AgentRoster roster =
-            new AgentRoster(IIdentityRegistry(IDENTITY_REGISTRY_56), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, me, NO_DRAWN_LANE);
+
+        // Every contract is now an implementation behind a beacon Flap's Guardian owns, and every
+        // piece goes up through script/Stack.sol so this script cannot drift from Deploy.s.sol over
+        // how any one of them is assembled. Not `Stack.deploy` though: that builds the real
+        // tournament/generator cycle, and this fixture wants NO_DRAWN_LANE in the generator slot.
+        // The typed helpers are what let it keep saying that.
+        //
+        // The Guardian comes from `Stack.guardian()` rather than a constant here. This script only
+        // ever runs against a fork of chain 56, so a local constant would be right — but it would
+        // be a second copy of a fact whose wrong value is not a failing test, it is a beacon
+        // nobody at Flap can upgrade.
+        address guardian = Stack.guardian();
+        AssayVault custody = Stack.newVault(guardian, address(token), me, me);
+        AgentRoster roster = Stack.newRoster(guardian, IDENTITY_REGISTRY_56, custody, 1000e18, me);
+        Tournament tournament = Stack.newTournament(guardian, custody, roster, me, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
 
-        AssayFlapFactory factory = new AssayFlapFactory(tournament, new PriceGuard());
+        // The factory no longer carries the vault's creation code — it carries a beacon and creates
+        // a BeaconProxy per launch — so the beacon has to exist before the factory does. It gets an
+        // implementation and a beacon but no proxy of its own, which is why this is the one place
+        // that does not go through a `Stack.new*` helper: every helper ends in an initialized
+        // proxy, and a proxy here would be a second vault bound to a token that does not exist yet.
+        // The only vault proxy that should ever exist is the one Flap's portal makes this factory
+        // mint below, against the token it is about to create.
+        PriceGuard priceGuard = Stack.newPriceGuard(guardian);
+        address flapVaultBeacon =
+            address(new UpgradeableBeacon(address(new AssayFlapVault()), guardian));
+        AssayFlapFactory factory =
+            Stack.newFactory(guardian, tournament, priceGuard, flapVaultBeacon);
 
         bytes32 salt = _mineVanitySalt(uint256(keccak256(abi.encode("assay.demo", block.number))));
         address taxToken = IVaultPortal(VAULT_PORTAL).newTokenV6WithVault{value: 0}(

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Initializable} from "@openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
@@ -39,17 +40,26 @@ import {Tournament} from "./Tournament.sol";
 ///
 ///      Custody note: value that arrives here is assigned to a task the moment that task is
 ///      endowed, and `collect` — the path that pays it out — pays `msg.sender` and only when the
-///      tournament has recorded a score for them. There is no owner and no upgrade path.
+///      tournament has recorded a score for them. There is no owner.
+///
+///      There IS an upgrade path, and this sentence used to deny it. The vault is deployed as a
+///      beacon proxy whose beacon Flap's Guardian holds, because the platform requires that of
+///      everything it launches. That belongs in the same paragraph as the escape hatch below
+///      rather than in a footnote: the honest claim is that this contract holds no privilege over
+///      itself and names no owner of its own, not that nobody can reach it. Flap is the trust
+///      anchor either way — their portal already chooses where this token's tax is sent.
 ///
 ///      Two exceptions, stated here because the sentence above used to be written as absolute and
 ///      was not. `emergencyWithdrawToken` is `onlyGuardian` and moves the *entire* reward balance,
 ///      BTCB behind open bounties included, to an address the Guardian names, without reading or
-///      reducing `endowed`; Flap Rule 009 requires that exact signature of every non-upgradeable
-///      vault, so the gap is the price of the escape hatch and not an oversight. And
+///      reducing `endowed`; Flap Rule 009 requires that exact signature, and though the rule is
+///      written for vaults that cannot be upgraded and this one now can be, dropping a hatch the
+///      platform asks for is not a change an initialisation rewrite gets to make. So the gap is
+///      the price of the escape hatch and not an oversight. And
 ///      `withdrawUnconverted` sends tax that no conversion has bought yet to the fixed curator
 ///      address, which is not a scored miner either. `solvent()` is the reading that makes the
 ///      first gap visible from outside.
-contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
+contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     using SafeERC20 for IERC20;
 
     /// @notice How far back `stats()` looks when counting still-open tasks.
@@ -66,21 +76,35 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      taken from the bounty rather than from them. This bounds it to 3%.
     uint256 private constant MAX_ENDOW_SLIPPAGE_BPS = 300;
 
+    /// @dev The five variables below, and the three further down, were `immutable` until this
+    ///      vault moved behind a beacon proxy. An immutable is written into the implementation's
+    ///      own code by its constructor, and the proxy never runs that constructor — so behind a
+    ///      proxy an immutable is a value the proxy cannot see. They are ordinary storage now,
+    ///      written once by `initialize` and by nothing else. There is no setter for any of them,
+    ///      so "fixed at creation" is still true of every one; what enforces it is the
+    ///      `initializer` modifier rather than the compiler.
+    ///
+    ///      Their declaration order IS the storage layout, and the layout is permanent from the
+    ///      first proxy onwards. Inserting, removing or reordering one of them in a later
+    ///      implementation re-points every variable after it at the wrong slot — `curator` would
+    ///      read as `taxToken`, `endowed` as somebody's mapping — so an addition goes at the end,
+    ///      out of `__gap`, and nowhere else.
+
     /// @notice The asset every bounty is denominated in and paid out in.
-    IERC20 public immutable reward;
+    IERC20 public reward;
 
     /// @notice The router the tax is converted through.
-    IPancakeRouter02 public immutable router;
+    IPancakeRouter02 public router;
 
-    /// @notice Prices conversions and bounds their size. Fixed at construction: a caller-supplied
+    /// @notice Prices conversions and bounds their size. Fixed at initialisation: a caller-supplied
     ///         pricing contract would be a caller-supplied answer to "how much may I convert".
-    PriceGuard public immutable priceGuard;
+    PriceGuard public priceGuard;
 
     /// @notice The router's wrapped native token — the first hop of the conversion path.
-    address public immutable wrappedNative;
+    address public wrappedNative;
 
     /// @notice Flap's scheduler. The conversion is executed by its backend, not by the curator.
-    IFlapTriggerService public immutable triggerService;
+    IFlapTriggerService public triggerService;
 
     /// @notice A conversion that has been scheduled and not yet executed.
     struct ScheduledEndow {
@@ -136,13 +160,13 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     uint256 public constant CANCEL_GRACE = 1 hours;
 
     /// @notice The tournament whose verified scores this vault pays against.
-    Tournament public immutable tournament;
+    Tournament public tournament;
 
     /// @notice The tax token this vault belongs to, as told to us by the factory at creation.
-    address public immutable taxToken;
+    address public taxToken;
 
     /// @notice The fixed address `withdrawUnconverted` pays. Set at creation to the token's
-    ///         creator, and immutable.
+    ///         creator, and never written again.
     /// @dev    It holds no privilege at all beyond being that destination. It cannot `endow` —
     ///         that is the Guardian's alone — and it holds no special right over a scheduled
     ///         conversion: until `executeAfter + CANCEL_GRACE` only the Guardian may cancel, and
@@ -154,7 +178,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///         This line has been wrong twice, in opposite directions, and both times because the
     ///         permission moved and the sentence did not. `test/Permissions.t.sol` pins what is
     ///         actually true so the next move has somewhere to fail.
-    address public immutable curator;
+    address public curator;
 
     /// @notice BTCB assigned to a task's bounty, by task id.
     mapping(uint256 taskId => uint256) public bounty;
@@ -176,6 +200,17 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice How many miner payouts have been made.
     uint256 public payouts;
+
+    /// @dev Slots claimed now so a later implementation has somewhere to put new state.
+    ///
+    ///      Everything this contract inherits is laid out before `reward`, so nothing above can
+    ///      move. `payouts` is the end of this vault's own variables and therefore the end of the
+    ///      layout, which is exactly the place a future version would otherwise start writing —
+    ///      into slots that belong to nobody yet only because nobody has claimed them. Reserving
+    ///      fifty here means a new variable is added by shrinking this array by the same number of
+    ///      slots, which moves nothing, rather than by appending after a base contract that has
+    ///      meanwhile grown.
+    uint256[50] private __gap;
 
     event RevenueReceived(address indexed from, uint256 amount);
     event Endowed(uint256 indexed taskId, uint256 bnbIn, uint256 rewardOut, uint256 unassignedLeft);
@@ -200,12 +235,44 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      the protocol asks for both languages in the same one because there is no translation
     ///      layer between this contract and the screen.
 
-    /// @dev The reward token and the router are resolved from `block.chainid` and stored as
-    ///      immutables, never accepted as arguments. A vault that lets its caller name the
+    /// @dev Locks the implementation against being initialised directly. The implementation is
+    ///      reached only through a proxy's `delegatecall`; initialising the copy at this address
+    ///      would write state nothing reads and leave a second, fully-formed AssayFlapVault
+    ///      answering every view with a curator and a tournament somebody else chose.
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Sets this vault up. The proxy calls it once, at creation, and it cannot be called
+    ///         again afterwards.
+    ///
+    /// @dev The parameters are exactly the four the constructor took, in exactly that order,
+    ///      because `AssayFlapFactory` encodes this call as the proxy's init data — a reordering
+    ///      here is a silent mismatch there, not a compile error.
+    ///
+    ///      What replaces construction. A constructor could not run twice, so nothing in this
+    ///      contract ever had to say that its addresses were set once; the compiler said it.
+    ///      Initialisation behind a proxy is an ordinary external call, and an ordinary external
+    ///      call can be made a second time — by anyone, re-pointing `curator` at their own address,
+    ///      `priceGuard` at a contract that answers any impact question with zero, and the router
+    ///      at something that keeps the BNB. `initializer` is the whole of the replacement: it
+    ///      consumes a version number on first use, so the second call reverts.
+    ///
+    ///      No `msg.sender` is read here, and none was read in the constructor either. Every
+    ///      address this vault trusts arrives as an argument or is derived from `block.chainid`.
+    ///
+    ///      The reward token and the router are resolved from `block.chainid` and stored on the
+    ///      vault, never accepted as arguments. A vault that lets its caller name the
     ///      protocol addresses it will send value through is a vault anyone can drain by naming
-    ///      their own contract. Resolution happens once, at construction, so an unsupported
+    ///      their own contract. Resolution happens once, at initialisation, so an unsupported
     ///      chain fails the launch outright instead of producing a vault that cannot pay.
-    constructor(Tournament tournament_, address taxToken_, address curator_, PriceGuard priceGuard_) {
+    function initialize(
+        Tournament tournament_,
+        address taxToken_,
+        address curator_,
+        PriceGuard priceGuard_
+    ) external initializer {
         priceGuard = priceGuard_;
         tournament = tournament_;
         taxToken = taxToken_;
@@ -495,8 +562,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     ///      paragraph asserting the old one. A later round read the code and the comment and
     ///      reported them as contradicting, which they did.
     ///
-    ///      The entry is gated on the scheduler's own address, which is an immutable resolved
-    ///      from the chain id, so nothing else can drive this.
+    ///      The entry is gated on the scheduler's own address, which `initialize` resolved from
+    ///      the chain id and nothing can write again, so nothing else can drive this.
     ///
     ///      The record is deleted and `reserved` released BEFORE the swap, and they stay released
     ///      whether or not the swap succeeds. The old ordering had the same two statements, but a
@@ -795,7 +862,7 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
         // Anyone may call this, and it can only ever pay `curator`. Both halves are the point.
         //
         // The destination was never the objection — an empty window's tax belongs to the project
-        // by design, and that address is fixed at construction so no caller chooses it. Choosing
+        // by design, and that address is fixed at initialisation so no caller chooses it. Choosing
         // *when* to take it was the objection, and rightly: the old gate let the curator pull tax
         // out from under a task miners were still working on. So the condition is the epoch's, not
         // a permission: while the most recent task is still open this reverts for everybody,
@@ -869,8 +936,8 @@ contract AssayFlapVault is VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
 
     /// @notice Drains the vault's native balance to a safe address.
     ///
-    /// @dev Present because Flap requires it of every non-upgradeable vault, and it is worth
-    ///      being plain about what it means rather than filing it under "emergency": the
+    /// @dev Present because Flap Rule 009 requires it, and it is worth being plain about what it
+    ///      means rather than filing it under "emergency": the
     ///      Guardian is Flap's address, not ours, and this reaches the BTCB behind open
     ///      bounties as well as the unconverted tax. Everything else in this contract is
     ///      arranged so that money can only move to a miner the tournament scored; this is the

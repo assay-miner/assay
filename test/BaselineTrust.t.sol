@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
+import {Stack} from "../script/Stack.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
-import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {Bytecode} from "./Bytecode.sol";
 import {Crucible} from "../src/Crucible.sol";
@@ -21,6 +20,9 @@ contract BaselineTrustTest is Test {
     ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
     address internal constant NO_DRAWN_LANE = address(0xDEAD);
 
+    /// @dev Flap's Guardian on BSC testnet, which owns the beacon behind every contract here.
+    address internal constant GUARDIAN = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
+
     address constant CURATOR = address(0xC0);
     address constant SALVAGE = address(0x5A);
     address constant STRANGER = address(0x571A);
@@ -32,9 +34,9 @@ contract BaselineTrustTest is Test {
         vm.warp(1_800_000_000);
         harness = new CrucibleHarness();
         TaxTokenMock token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), SALVAGE);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1_000e18);
-        tournament = new Tournament(custody, roster, CURATOR, NO_DRAWN_LANE);
+        AssayVault custody = Stack.newVault(GUARDIAN, address(token), SALVAGE, address(this));
+        AgentRoster roster = Stack.newRoster(GUARDIAN, address(0), custody, 1_000e18, address(this));
+        tournament = Stack.newTournament(GUARDIAN, custody, roster, CURATOR, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();

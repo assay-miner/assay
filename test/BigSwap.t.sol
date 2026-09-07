@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {BaseTest} from "./Base.t.sol";
-import {PriceGuard} from "../src/PriceGuard.sol";
+import {Stack} from "../script/Stack.sol";
 import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 
 /// @notice Does a large accumulated balance actually fail to convert?
@@ -18,8 +18,15 @@ contract BigSwapTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
+        // Mainnet fork, so this is both the address `_getGuardian()` returns here — the only
+        // caller `endow` accepts — and the account that owns the beacons behind the two contracts
+        // built below.
         guardian = 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b;
+        // Its own PriceGuard rather than the fixture's: what is measured here is the pool, and a
+        // guard shared with the rest of the stack would be a second thing that could move.
+        flap = Stack.newFlapVault(
+            guardian, tournament, address(token), CURATOR, Stack.newPriceGuard(guardian)
+        );
     }
 
     function _convert(uint256 bnb) internal returns (uint256 out) {

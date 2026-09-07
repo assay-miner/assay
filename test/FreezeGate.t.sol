@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AssayVault} from "../src/AssayVault.sol";
@@ -22,7 +25,7 @@ contract FreezeGateTest is Test {
     function setUp() public {
         vm.prank(CURATOR);
         token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
-        vault = new AssayVault(IERC20(address(token)), SALVAGE);
+        vault = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
 
         // A standing allowance is what makes the gap worth attacking. Anyone who has ever
         // approved this vault is reachable by whoever holds a controller slot.

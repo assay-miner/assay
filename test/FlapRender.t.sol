@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
@@ -42,10 +45,10 @@ contract FlapRenderTest is Test {
         vm.createSelectFork(vm.rpcUrl("bsc"));
 
         TaxTokenMock token = new TaxTokenMock(address(this), 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), address(this));
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1000e18);
-        Tournament tournament = new Tournament(custody, roster, address(this), NO_DRAWN_LANE);
-        vault = new AssayFlapVault(tournament, address(token), address(this), new PriceGuard());
+        AssayVault custody = Stack.newVault(Guardians.TESTNET, address(token), address(this), address(this));
+        AgentRoster roster = Stack.newRoster(Guardians.TESTNET, address(0), custody, 1000e18, address(this));
+        Tournament tournament = Stack.newTournament(Guardians.TESTNET, custody, roster, address(this), NO_DRAWN_LANE);
+        vault = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), address(this), Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     /// @dev Flap's first bucket.

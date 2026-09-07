@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
 import {Bytecode} from "./Bytecode.sol";
@@ -31,14 +34,14 @@ contract GateBypassTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         TaxTokenMock token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
-        AssayVault custody = new AssayVault(IERC20(address(token)), SALVAGE);
-        AgentRoster roster = new AgentRoster(IIdentityRegistry(address(0)), custody, 1_000e18);
-        tournament = new Tournament(custody, roster, CURATOR, NO_DRAWN_LANE);
+        AssayVault custody = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
+        AgentRoster roster = Stack.newRoster(Guardians.TESTNET, address(0), custody, 1_000e18, address(this));
+        tournament = Stack.newTournament(Guardians.TESTNET, custody, roster, CURATOR, NO_DRAWN_LANE);
         custody.addController(address(roster));
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
-        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     function _vec() internal pure returns (bytes[] memory v) {

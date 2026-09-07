@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {UpgradeableBeacon} from "@openzeppelin/proxy/beacon/UpgradeableBeacon.sol";
+
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
@@ -36,8 +41,8 @@ contract FlapSpecTest is BaseTest {
         // and the vault refuses to exist anywhere they are not.
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
-        factory = new AssayFlapFactory(tournament, new PriceGuard());
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        factory = Stack.newFactory(Guardians.TESTNET, tournament, Stack.newPriceGuard(Guardians.TESTNET), address(new UpgradeableBeacon(address(new AssayFlapVault()), Guardians.TESTNET)));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
         portal = 0x027e3704fC5C16522e9393d04C60A3ac5c0d775f;
     }

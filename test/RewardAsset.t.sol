@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 import {BaseTest} from "./Base.t.sol";
@@ -30,7 +33,7 @@ contract RewardAssetTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
-        flap = new AssayFlapVault(tournament, address(token), CURATOR, new PriceGuard());
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     /// @dev Tax arrives the way Flap sends it: a plain native transfer.

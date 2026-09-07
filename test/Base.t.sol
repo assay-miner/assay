@@ -2,6 +2,8 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {Stack} from "../script/Stack.sol";
+import {PriceGuard} from "../src/PriceGuard.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
 import {AgentRoster} from "../src/AgentRoster.sol";
 import {Tournament} from "../src/Tournament.sol";
@@ -44,6 +46,8 @@ abstract contract BaseTest is Test {
     address internal generatorImpl;
     address internal constant _FLAP_GUARDIAN_97 = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     CrucibleHarness internal harness;
+    Stack.Deployed internal stack;
+    PriceGuard internal priceGuard;
 
     uint256 internal taskId;
     uint64 internal commitEnd;
@@ -63,24 +67,33 @@ abstract contract BaseTest is Test {
         vm.prank(CURATOR);
         token = new TaxTokenMock(CURATOR, 1_000_000_000e18);
 
-        // Custody is a separate contract; the logic contracts only ever instruct it.
-        vault = new AssayVault(IERC20(address(token)), SALVAGE);
-        roster = new AgentRoster(IIdentityRegistry(address(registry)), vault, MIN_STAKE);
-        // The generator is wired the way Deploy.s.sol wires it, prediction and all, so the drawn
-        // lane every funding test depends on is the real one rather than a stub.
-        generatorImpl = address(new TaskGenerator());
-        generatorBeacon = new UpgradeableBeacon(generatorImpl, _FLAP_GUARDIAN_97);
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
-        tournament = new Tournament(vault, roster, CURATOR, predicted);
-        generator = TaskGenerator(address(new BeaconProxy(
-            address(generatorBeacon), abi.encodeCall(TaskGenerator.initialize, (tournament))
-        )));
-        require(address(generator) == predicted, "generator prediction missed in the fixture");
-        vault.addController(address(roster));
-        vault.addController(address(tournament));
-        vault.freeze();
+        // The fixture builds the stack through the same library the deploy script does — beacons,
+        // Guardian-owned, every proxy initialized in the call that creates it. It used to
+        // reproduce Deploy.s.sol's wiring by hand and comment that it was "wired the way
+        // Deploy.s.sol wires it", which was true on the day it was written and is exactly the kind
+        // of claim that stops being true without failing. Now the two cannot disagree: if the
+        // deployment order is wrong, every test in this suite is running against the wrong order
+        // too, and the assertions inside Stack.deploy fire here first.
+        stack = Stack.deployCore(
+            Stack.Params({
+                deployer: address(this),
+                guardian: _FLAP_GUARDIAN_97,
+                asset: address(token),
+                salvage: SALVAGE,
+                registry: address(registry),
+                minStake: MIN_STAKE,
+                curator: CURATOR
+            })
+        );
+        vault = stack.vault;
+        roster = stack.roster;
+        tournament = stack.tournament;
+        generator = stack.generator;
+        priceGuard = stack.priceGuard;
+        generatorImpl = stack.impls.generator;
+        generatorBeacon = UpgradeableBeacon(stack.beacons.generator);
 
-        roster.setConsumer(address(tournament));
+        Stack.wire(stack);
 
         registry.mint(AGENT_ALICE, ALICE);
         registry.mint(AGENT_BOB, BOB);

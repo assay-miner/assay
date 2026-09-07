@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Stack} from "../script/Stack.sol" ;
+import {Guardians} from "./Guardians.sol";
+
 import {BaseTest} from "./Base.t.sol";
 import {AssayVault} from "../src/AssayVault.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
@@ -85,7 +88,7 @@ contract VaultTest is BaseTest {
 
         HostileController hostile = new HostileController(vault);
         // Give it the same standing as the real contracts.
-        AssayVault fresh = new AssayVault(IERC20(address(token)), SALVAGE);
+        AssayVault fresh = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
         fresh.addController(address(hostile));
         fresh.freeze();
 
@@ -105,7 +108,7 @@ contract VaultTest is BaseTest {
 
         // Deploy a vault where the hostile contract is a legitimate, frozen-in controller
         // alongside a victim that has real money in it.
-        AssayVault v = new AssayVault(IERC20(address(token)), SALVAGE);
+        AssayVault v = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
         HostileController victim = new HostileController(v);
         HostileController thief = new HostileController(v);
         v.addController(address(victim));
@@ -140,7 +143,7 @@ contract VaultTest is BaseTest {
 
     /// A controller cannot overdraw its own account by leaning on the vault's other holdings.
     function test_ControllerCannotOverdrawIntoOtherHoldings() public {
-        AssayVault v = new AssayVault(IERC20(address(token)), SALVAGE);
+        AssayVault v = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
         HostileController a = new HostileController(v);
         HostileController b = new HostileController(v);
         v.addController(address(a));
@@ -228,7 +231,7 @@ contract VaultTest is BaseTest {
     }
 
     function test_OnlyDeployerCouldEverHaveWired() public {
-        AssayVault v = new AssayVault(IERC20(address(token)), SALVAGE);
+        AssayVault v = Stack.newVault(Guardians.TESTNET, address(token), SALVAGE, address(this));
         vm.prank(BOB);
         vm.expectRevert(bytes(unicode"Not the deployer / 非部署者"));
         v.addController(BOB);
