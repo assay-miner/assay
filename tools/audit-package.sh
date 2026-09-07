@@ -79,8 +79,24 @@ cp tasks/*.json "$OUT/tasks/"
 # `pooledInto` flag IS the one-shot rule — the flag this submission's headline argument is about
 # having deleted. Two response documents in one archive contradicting each other is worse than one.
 cp SELF_CHECK.md SUBMISSION.md AUDIT_RESPONSE_SHORT.md foundry.toml "$OUT/"
-cp "$MANIFEST" "$OUT/deployments/"
-[ -s deployments/97-latest.json ] && cp deployments/97-latest.json "$OUT/deployments/"
+# The manifests go in WITHOUT their salt. `predictedToken` is a public consequence of the salt and
+# is safe to publish; the salt itself is the thing that lets somebody else deploy at that address
+# first. That is not hypothetical here — the launch address this project recorded until today had
+# been taken sixteen weeks earlier by an unrelated clone, and while that particular collision came
+# from mining at a fixed low offset rather than from anyone reading this archive, an archive that
+# carries the salt hands a stranger the one input needed to repeat it deliberately. Deploy's new
+# occupancy gate refuses a taken address at deploy time; it cannot help once the address is ours and
+# the launch is still ahead of us. So the salt does not leave the building.
+strip_salt() {
+  node -e '
+    const fs = require("fs");
+    const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    delete m.salt;
+    fs.writeFileSync(process.argv[2], JSON.stringify(m, Object.keys(m).sort(), 2) + "\n");
+  ' "$1" "$2"
+}
+strip_salt "$MANIFEST" "$OUT/deployments/$(basename "$MANIFEST")"
+[ -s deployments/97-latest.json ] && strip_salt deployments/97-latest.json "$OUT/deployments/97-latest.json"
 
 # The standard JSON is what makes the deployed bytecode reproducible by anyone.
 for C in AssayFlapFactory AssayFlapVault; do
