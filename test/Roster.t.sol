@@ -148,4 +148,151 @@ contract RosterTest is BaseTest {
 
         assertEq(roster.enrolmentOf(BOB).agentId, largest, "the largest fitting id was refused");
     }
+
+    // ------------------------------------------------ an identity that changed hands
+
+    /// @dev Selling the identity used to lock the buyer out for as long as the seller declined to
+    ///      withdraw. `minerOf[agentId]` was cleared in one place — `withdraw`, by the bound miner —
+    ///      so the only key that could release the binding was the one that had just sold it.
+    function test_ABuyerCanEnrolAnIdentityTheSellerNeverUnbound() public {
+        vm.startPrank(ALICE);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+        assertEq(roster.minerOf(AGENT_ALICE), ALICE, "the seller is bound");
+
+        // The identity changes hands. ALICE does not withdraw — nothing makes her.
+        registry.mint(AGENT_ALICE, BOB);
+        assertEq(roster.minerOf(AGENT_ALICE), ALICE, "the stale binding is still the seller's");
+
+        vm.startPrank(BOB);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        assertEq(roster.minerOf(AGENT_ALICE), BOB, "the buyer did not get the binding");
+        assertEq(roster.enrolmentOf(BOB).agentId, AGENT_ALICE, "the buyer is not enrolled");
+    }
+
+    /// @dev And the seller's stake is still theirs. The takeover deliberately leaves their enrolment
+    ///      alone — deleting it would strand what they put in — so `withdraw` still pays them.
+    function test_TheSellerCanStillWithdrawAfterLosingTheBinding() public {
+        vm.startPrank(ALICE);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        registry.mint(AGENT_ALICE, BOB);
+        vm.startPrank(BOB);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        uint256 before = token.balanceOf(ALICE);
+        vm.prank(ALICE);
+        roster.withdraw();
+        assertEq(token.balanceOf(ALICE) - before, MIN_STAKE, "the seller lost their stake");
+
+        // And that withdrawal must NOT have taken the buyer's binding with it, which an
+        // unconditional `delete minerOf[e.agentId]` would have done — leaving the buyer enrolled
+        // with nothing bound and looking as though they had never enrolled at all.
+        assertEq(roster.minerOf(AGENT_ALICE), BOB, "the seller's withdrawal took the buyer's binding");
+    }
+
+    /// @dev The other side of the rule: a holder who still holds the identity keeps the binding.
+    ///      Without this the release would be a way to take a live binding rather than a stale one.
+    function test_ALiveBindingCannotBeTaken() public {
+        vm.startPrank(ALICE);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        // CAROL is authorised for her own identity, not for ALICE's, and ALICE still holds hers.
+        vm.startPrank(CAROL);
+        token.approve(address(vault), type(uint256).max);
+        vm.expectRevert(bytes(unicode"Agent already bound / agent 已被绑定"));
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        assertEq(roster.minerOf(AGENT_ALICE), ALICE, "a live binding was taken");
+    }
+
+    /// @dev The replay the released holder could otherwise run, and the line that stops it.
+    ///
+    ///      Releasing a stale binding leaves the old holder's enrolment in place on purpose — their
+    ///      stake is in it. That made one identity able to back two live enrolments, and
+    ///      `Tournament.commit` places no uniqueness constraint on `commitment` across miners while
+    ///      `submissions` is public. So the released holder could copy the new holder's commitment
+    ///      verbatim, wait for them to reveal, and replay the same `(runtime, salt)` — which
+    ///      verifies, because `reveal` hashes against `s.agentId` and both carried the same one.
+    ///
+    ///      Measured before the guard: one leg took 44.6% of the pot for no work.
+    ///
+    ///      This does not need a sale. `AgentRoster`'s own header recommends mining from a
+    ///      disposable hot key with the identity in cold storage, and every rotation of that key is
+    ///      exactly the release condition — so a rotated-out key kept a replay channel against its
+    ///      own owner's new one.
+    function test_AReleasedHolderCannotCommitAgain() public {
+        address hot1 = makeAddr("hot1");
+        address hot2 = makeAddr("hot2");
+        vm.startPrank(CURATOR);
+        token.transfer(hot1, MIN_STAKE * 2);
+        token.transfer(hot2, MIN_STAKE * 2);
+        vm.stopPrank();
+
+        registry.authorize(AGENT_ALICE, hot1, true);
+        vm.startPrank(hot1);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        // The owner rotates the hot key, exactly as the header recommends.
+        registry.authorize(AGENT_ALICE, hot1, false);
+        registry.authorize(AGENT_ALICE, hot2, true);
+
+        vm.startPrank(hot2);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+        assertEq(roster.minerOf(AGENT_ALICE), hot2, "the new key did not take the binding");
+
+        // hot1's enrolment survives — that is deliberate, the stake is in it — but it no longer
+        // carries the right to mine, which is what closes the replay.
+        assertEq(roster.enrolmentOf(hot1).agentId, AGENT_ALICE, "the old key's enrolment was deleted");
+        vm.prank(hot1);
+        vm.expectRevert(bytes(unicode"Binding was released / 绑定已被释放"));
+        tournament.commit(taskId, keccak256("anything"));
+
+        // And the stake is still hot1's to take back.
+        uint256 before = token.balanceOf(hot1);
+        vm.prank(hot1);
+        roster.withdraw();
+        assertEq(token.balanceOf(hot1) - before, MIN_STAKE, "the released key lost its stake");
+    }
+
+    /// @dev A registry that cannot answer must not release anything. The query runs before the
+    ///      "already bound" refusal, so a registry reverting on demand would otherwise have been a
+    ///      way to release every binding — an unanswerable query is not an answer that the holder
+    ///      lost the identity.
+    function test_AnUnanswerableRegistryReleasesNothing() public {
+        vm.startPrank(ALICE);
+        token.approve(address(vault), type(uint256).max);
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        vm.mockCallRevert(
+            address(registry),
+            abi.encodeWithSelector(registry.isAuthorizedOrOwner.selector, ALICE, AGENT_ALICE),
+            bytes("ERC721: invalid token ID")
+        );
+
+        registry.authorize(AGENT_ALICE, CAROL, true);
+        vm.startPrank(CAROL);
+        token.approve(address(vault), type(uint256).max);
+        vm.expectRevert(bytes(unicode"Agent already bound / agent 已被绑定"));
+        roster.enroll(AGENT_ALICE, MIN_STAKE);
+        vm.stopPrank();
+
+        assertEq(roster.minerOf(AGENT_ALICE), ALICE, "an unanswerable registry released a binding");
+    }
 }

@@ -51,6 +51,9 @@ contract AgentRoster {
     event Enrolled(address indexed miner, uint256 indexed agentId, uint256 stake);
     event StakeIncreased(address indexed miner, uint256 amount, uint256 total);
     event StakeLocked(address indexed miner, uint64 lockedUntil);
+    /// @notice A binding was taken from a holder the registry no longer authorises for that id.
+    event BindingReleased(uint256 indexed agentId, address indexed from, address indexed to);
+
     event Withdrawn(address indexed miner, uint256 indexed agentId, uint256 amount);
     event ConsumerSet(address indexed consumer);
 
@@ -95,7 +98,38 @@ contract AgentRoster {
         require(agentId <= type(uint64).max, unicode"Agent id too large / agent 编号过大");
         require(_enrolments[msg.sender].agentId == 0, unicode"Already enrolled / 已注册");
 
+        // A binding survives only while its holder still holds the identity.
+        //
+        // `minerOf` used to be cleared in exactly one place — `withdraw`, by the bound miner — so an
+        // identity sold to somebody else stayed bound to the seller for as long as the seller
+        // declined to withdraw. The buyer passed `isAuthorizedOrOwner` and was refused anyway, and
+        // there was nothing they could do about it: the only key that could release the binding was
+        // the one that had just sold them the identity.
+        //
+        // So the binding is re-checked against the registry rather than trusted. A holder who still
+        // has the identity keeps it, which is what stops this from being a way to take a live
+        // binding; a holder who no longer does loses it to whoever the registry now authorises.
+        // The seller's own enrolment is left alone — their stake is in it, and it stays theirs to
+        // withdraw.
         address bound = minerOf[agentId];
+        if (bound != address(0)) {
+            // Wrapped, and the catch keeps the binding rather than releasing it. The registry is a
+            // contract we do not control and an OZ ERC-721 reverts on a burned id, so an
+            // unanswerable query would otherwise surface as its error instead of "Agent already
+            // bound" — and, far worse, a registry that reverts on demand would be a way to release
+            // every binding. A query we cannot make is not an answer that the holder lost the
+            // identity.
+            bool stillTheirs = true;
+            try identityRegistry.isAuthorizedOrOwner(bound, agentId) returns (bool ok) {
+                stillTheirs = ok;
+            } catch {
+                // Unanswerable, so nothing is released.
+            }
+            if (!stillTheirs) {
+                emit BindingReleased(agentId, bound, msg.sender);
+                bound = address(0);
+            }
+        }
         require(bound == address(0), unicode"Agent already bound / agent 已被绑定");
         require(
             identityRegistry.isAuthorizedOrOwner(msg.sender, agentId),
@@ -140,7 +174,11 @@ contract AgentRoster {
         require(block.timestamp >= e.lockedUntil, unicode"Stake is locked / 质押锁定中");
 
         delete _enrolments[msg.sender];
-        delete minerOf[e.agentId];
+        // Only if it is still ours. Once an identity has moved on and somebody else has bound it,
+        // this withdrawal must not take THEIR binding with it — which is precisely what an
+        // unconditional delete here would do, and it would look like the new owner had never
+        // enrolled.
+        if (minerOf[e.agentId] == msg.sender) delete minerOf[e.agentId];
 
         vault.payOut(KIND_STAKE, bytes32(uint256(uint160(msg.sender))), msg.sender, e.stake);
         emit Withdrawn(msg.sender, e.agentId, e.stake);
@@ -150,6 +188,24 @@ contract AgentRoster {
     function requireEnrolled(address miner) external view returns (uint256 agentId) {
         agentId = _enrolments[miner].agentId;
         require(agentId != 0, unicode"Not enrolled / 未注册");
+        // The binding, not just the enrolment. Releasing a stale binding in `enroll` deliberately
+        // leaves the old holder's enrolment alone — their stake is in it — and this is the line that
+        // stops that from becoming a second way to mine the same identity.
+        //
+        // Without it one id backed any number of live enrolments, and the damage was not dilution.
+        // `Tournament.commit` places no uniqueness constraint on `commitment` across miners and
+        // `submissions` is a public mapping, so the released holder could copy the current holder's
+        // commitment verbatim, wait for them to reveal, and replay the same (runtime, salt). It
+        // verifies, because `reveal` hashes against `s.agentId` and both carried the same one.
+        // Measured on the fixture: one leg took 44.6% of the pot for no work, three took 70.8%.
+        //
+        // `Tournament`'s own NatSpec is what this restores — "a stolen (runtime, salt) pair hashes
+        // to a different commitment under a different agent id" was true only while an id had one
+        // enrolled miner.
+        //
+        // It does not touch the stake: `withdraw` does not come through here, so a released holder
+        // keeps everything they put in and can take it out. They simply cannot commit again.
+        require(minerOf[agentId] == miner, unicode"Binding was released / 绑定已被释放");
     }
 
     function enrolmentOf(address miner) external view returns (Enrolment memory) {
