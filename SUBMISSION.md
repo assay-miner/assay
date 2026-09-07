@@ -48,8 +48,8 @@ worst place to keep numbers nothing measures.
 | | |
 |---|---|
 | `receive()` gas | measured by `test_ReceiveStaysUnderTheGasCeiling`, which asserts the Rule 005 ceiling rather than restating a figure |
-| `AssayFlapVault` runtime | 22,062 bytes |
-| `AssayFlapFactory` runtime | 2,637 bytes |
+| `AssayFlapVault` runtime | 21,925 bytes |
+| `AssayFlapFactory` runtime | 4,364 bytes |
 | `vaultUISchema()` methods | 12 |
 <!-- measured:end -->
 
@@ -125,12 +125,12 @@ Repository at `abfa000`.
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0x09410940e6ffb6F31195fBF84b50344A066Ca70D` |
+| Factory (the contract Flap audits) | `0x0dEcCDEb5816773Ce962e4F6b4f74fa0de7E9663` |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0xfb758f1FAeDF978cDe416c5d1D47908F7C07f2cB` |
-| Custody ledger | `0xBC3Fe16a8a2Ce2535158dF27E032822eEaF0AFA1` |
-| Roster | `0x273c802566245473fD5aEd1EFA88A853B3adbFD3` |
+| Tournament | `0xC1707fDDc579339061DC47Edbd912687903EC916` |
+| Custody ledger | `0x720F48484Bfe5D22BAe679c531B53C70607A62dD` |
+| Roster | `0xdef12257719A1f36072fa8132673bb65CC4A370B` |
 | Deployer | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 | Curator (`withdrawUnconverted` pays here; same key as the deployer) | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 

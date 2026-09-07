@@ -127,64 +127,101 @@ red by removing the binding check from `requireEnrolled`: exactly
 
 ---
 
-## Also disclosed this round — not in your report
+## Requested change — every contract is now upgradeable, Guardian-owned
 
-**Our recorded launch address was already occupied, and the deploy had no gate that would notice.**
-`script/MineSalt.s.sol` — the script an operator actually runs to produce `SALT` — defaulted its
-search offset to `1`. Scanning from a fixed low offset returns the *first* salt on the venue whose
-predicted clone ends in `0x7777`, which is the salt every identical scan returns: `0x…0002dc5c`,
-landing on `0x7516947d…957777`. That address has held an EIP-1167 clone of Flap's taxed-V3
-implementation since block 98,443,003 (2026-05-15), sixteen weeks before our deploy. `Deploy.s.sol`
-already derived its own offset from the deployer; the second call site did not, and
-`mineVanitySalt`'s NatSpec had warned about exactly this fixed start without any code enforcing it.
+> *All contracts should be made upgradeable, with the upgrade authority assigned to the Guardian.*
 
-It was not caught at deploy time because the only check compared a *launched* token against the
-prediction, and with `SKIP_TOKEN=true` there is no launch to compare. Meanwhile `AssayVault` takes
-`predictedToken` in its constructor and holds it in an immutable, so the previous deployment's
-custody contract was permanently bound to a token this project does not control.
+Done. Every contract is an implementation behind an `UpgradeableBeacon` whose `owner()` is Flap's
+Guardian, `0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b`. `TaskGenerator` already had this shape; the
+other six now use exactly the same one — `Initializable`, `_disableInitializers()` in the
+constructor, and an `initialize` carrying the old constructor's body unchanged.
 
-Three changes, all in `script/`, none touching the audited contracts:
+**Beacon rather than UUPS**, for a measurable reason: `Tournament` was 22,814 bytes against
+EIP-170's 24,576, and UUPS puts its upgrade machinery in the implementation. A beacon keeps it in
+the beacon. Converting six immutables to storage cost 286 bytes, and it now sits at 23,100 with
+1,476 to spare. `AssayFlapVault` came out 137 bytes *smaller*.
 
-- `Deploy.s.sol` refuses the entire deploy if `predictedToken.code.length != 0`
-  (`PredictedTokenTaken`). Confirmed red: re-running with the old salt reverts before any broadcast.
-- `mineVanitySalt` is `view` rather than `pure` and skips any predicted address that already holds
-  code — whether an address is free is a question only the chain can answer.
-- `MineSalt.s.sol` derives its default offset from the deployer, the same way `Deploy.s.sol` does.
+**`AssayVaultDeployer` is deleted.** It existed only because `new AssayFlapVault(...)` inside
+`AssayFlapFactory.newVault` put the vault's entire creation code into the factory's runtime. The
+factory creates a `BeaconProxy` now, so the problem it was invented for does not exist.
 
-The addresses in the table below are a fresh deployment on a re-mined salt, and its
-`predictedToken` returns empty from `eth_getCode`.
+**Every proxy is constructed with its initializer calldata.** None of these initializers has access
+control, and a `forge script` broadcast is N separate transactions, so a proxy deployed with empty
+init data would sit uninitialized across a block boundary with `initialize` open to anyone. The one
+genuine cycle — `Tournament` and `TaskGenerator` name each other — is resolved by predicting the
+generator proxy's address rather than by deferring its initialization, so no gap opens there either.
+
+**Verified on chain, not asserted.** For all seven: `beacon.owner()` is the Guardian,
+`beacon.implementation()` matches the manifest, and each proxy's ERC-1967 beacon slot points at its
+own beacon. Every implementation's deployed runtime is **byte-for-byte identical** to the local
+artifact — with the immutables gone there are no immutable slots left, so the comparison is exact
+rather than "differences fall inside declared slots".
+
+`test/UpgradeAuthority.t.sol` asserts this about the stack the deploy script actually builds: all
+seven behind beacons, the Guardian owning every one, no other address able to upgrade any of them,
+an upgrade preserving state, and no implementation initializable on its own.
+
+| Contract | Proxy (use this) | Beacon | Implementation |
+|---|---|---|---|
+| `Tournament` | `0xC1707fDDc579339061DC47Edbd912687903EC916` | `0x049d28b81821cF719e3811B4666fC8Ed2D50B965` | `0x6CA9bdd3749aB51a4E08631126ca63b464B90ab5` |
+| `AssayVault` | `0x720F48484Bfe5D22BAe679c531B53C70607A62dD` | `0xd07FE44376bE3563131C0bD5C32b7007B3F7f4d8` | `0xB3718fabb7DA3043490b3C9a43EC8B45c92F747e` |
+| `AgentRoster` | `0xdef12257719A1f36072fa8132673bb65CC4A370B` | `0xc059Ae8110055e03978093bE291fE4f07AEf5c99` | `0x567785326d9A22469D899B72FE8E068B352E13ca` |
+| `PriceGuard` | `0xD33451cD95A8b513a69227e4cB53d391de5895Fb` | `0x70A0341df82dC334D72650F6014EaC6540cC684C` | `0x25C1810Ab6D5a7370E91830D19704e45EE1f446C` |
+| `TaskGenerator` | `0x1660623253ceCd17d4db986563Bd8Ac65D1824dC` | `0xe16C524F936fD924Ff18E866067DCe1B72b546e1` | `0x2F2F1C92Eba9469efd67379e5760DeA38Df68656` |
+| `AssayFlapFactory` | `0x0dEcCDEb5816773Ce962e4F6b4f74fa0de7E9663` | `0xAFDC4519E793A40970dFD4CB82b9ca4d8FA4597b` | `0x155855Fd0c07057aba0c41F53f713D3Fe2E53c84` |
+| `AssayFlapVault` | one per token, minted by the factory | `0x111998780B5d4aa390C928c8357eF62A5baD3EBD` | `0x42774E431670745f058778f54792205B3b3b9301` |
+
+Beacon owner on every row: `0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b`.
+
+---
+
+## Also disclosed — our recorded launch address was already occupied
+
+`script/MineSalt.s.sol` — the script an operator runs to produce `SALT` — defaulted its search
+offset to `1`. Scanning from a fixed low offset returns the *first* salt on the venue whose predicted
+clone ends in `0x7777`, which is the salt every identical scan returns: `0x…0002dc5c`, landing on
+`0x7516947d…957777`. That address has held an EIP-1167 clone of Flap's taxed-V3 implementation since
+block 98,443,003 (2026-05-15). `Deploy.s.sol` already derived its own offset from the deployer; the
+second call site did not.
+
+It was not caught at deploy time because the only occupancy check compared a *launched* token
+against the prediction, and with `SKIP_TOKEN=true` there is no launch to compare — while
+`AssayVault` takes `predictedToken` in its initializer and holds it, so custody would have been
+bound to a token this project does not control.
+
+Three changes, all in `script/`, none touching the audited contracts: `Deploy.s.sol` refuses the
+entire deploy if `predictedToken.code.length != 0` (confirmed red — re-running with the old salt
+reverts before any broadcast); `mineVanitySalt` is `view` and skips occupied addresses; and
+`MineSalt.s.sol` derives its offset the way `Deploy.s.sol` does. The deployment below is on a
+re-mined salt whose `predictedToken` returns empty from `eth_getCode`.
 
 ---
 
 ## Status
 
-- **275 tests pass across 36 suites.**
-- **BSC mainnet redeployed and carries exactly this source.** Every *contract* address in the
-  manifest holds code, asked of the chain rather than assumed: the eight this deploy created, plus
-  the third-party ERC-8004 `identityRegistry` they point at. The manifest's remaining entries are
-  not contracts — `curator`, `deployer` and `salvage` are one EOA, and `flapVault` and `taxToken`
-  are the zero address. `AgentRoster`'s deployed runtime was compared byte for byte against the
-  local artifact: 214 bytes differ and **all 214 fall inside the immutable regions** the artifact
-  declares — four immutable values (`identityRegistry`, `vault`, `minStake`, `deployer`) embedded at
-  twelve code offsets — so the code itself is identical. `tournament.curator()` returns the
-  deployer; deployer, curator and salvage are one key, not three addresses.
+- **279 tests pass across 37 suites.**
+- **BSC mainnet redeployed and carries exactly this source.** Every beacon's `owner()` is Flap's
+  Guardian, every beacon's `implementation()` matches the manifest, and every proxy's ERC-1967
+  beacon slot points at its own beacon — all read from the chain. Each of the seven implementations
+  is **byte-for-byte identical** to its local artifact: with the immutables converted to storage
+  there are no immutable slots left, so this is an exact comparison rather than "differences fall
+  inside declared slots". `tournament.curator()` returns the deployer; deployer, curator and salvage
+  are one key.
 - **BSC testnet: nothing of ours deployed.** The chain-97 manifest records a deploy whose
   transactions never landed. `eth_getCode` is empty for every contract that manifest says *we*
   deployed; the one address in it that does hold code is the third-party ERC-8004 registry we read
-  (`script/Deploy.s.sol:70`), not something we deployed. `tools/sync-submission.mjs` asks the chain
-  and labels that table accordingly rather than presenting it as a proof deployment.
+  (`script/Deploy.s.sol:70`).
 - **No token is launched.** `SKIP_TOKEN=true`; `taxToken` and `flapVault` are both the zero address
-  in `deployments/56-latest.json`, and `predictedToken` `0x0570411C…907777` is empty on chain. A
-  rehearsal token from an earlier round exists on testnet at
-  `0x769EfAbeFc18317A846A1E2BdeB831Ba659f7777`, which `test/DepositParity.t.sol` forks chain 97 to
-  assert against on every run.
+  in `deployments/56-latest.json`, and `predictedToken` `0x0570411CACDc4dD29DE229321EFb75153e907777` is empty on chain.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | not deployed | `0x09410940e6ffb6F31195fBF84b50344A066Ca70D` |
-| `Tournament` | not deployed | `0xfb758f1FAeDF978cDe416c5d1D47908F7C07f2cB` |
-| `AssayVault` (approve this) | not deployed | `0xBC3Fe16a8a2Ce2535158dF27E032822eEaF0AFA1` |
-| `AgentRoster` | not deployed | `0x273c802566245473fD5aEd1EFA88A853B3adbFD3` |
-| `TaskGenerator` | not deployed | `0x2db55A8D9BEcf73d173726330985d342fc3a888A` |
+| `AssayFlapFactory` | not deployed | `0x0dEcCDEb5816773Ce962e4F6b4f74fa0de7E9663` |
+| `Tournament` | not deployed | `0xC1707fDDc579339061DC47Edbd912687903EC916` |
+| `AssayVault` (approve this) | not deployed | `0x720F48484Bfe5D22BAe679c531B53C70607A62dD` |
+| `AgentRoster` | not deployed | `0xdef12257719A1f36072fa8132673bb65CC4A370B` |
+| `TaskGenerator` | not deployed | `0x1660623253ceCd17d4db986563Bd8Ac65D1824dC` |
+| `PriceGuard` | not deployed | `0xD33451cD95A8b513a69227e4cB53d391de5895Fb` |
 | Curator (`withdrawUnconverted` pays) | — | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
-| Tax token | rehearsal token, see above | not launched |
+| Beacon owner (upgrade authority) | — | `0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b` |
+| Tax token | — | not launched |
