@@ -103,13 +103,16 @@ contract AssayFlapFactory is VaultFactoryBaseV2, Initializable {
         );
 
         // Deployed and initialized in one call, so there is no block in which a vault exists with
-        // an unset tournament for somebody else to claim. The arguments are exactly the ones the
-        // vault's constructor took, in the order it took them; nothing about the vault's own
+        // an unset tournament for somebody else to claim. Nothing about the vault's own
         // configuration is decided here, and nothing is supplied by the launcher.
+        //
+        // `creator` is no longer among the arguments. The vault used to record it as `curator` and
+        // pay it through `withdrawUnconverted`; that function is gone, so the launcher's address
+        // has nothing left to decide here and is not stored.
         vault = address(
             new BeaconProxy(
                 vaultBeacon,
-                abi.encodeCall(AssayFlapVault.initialize, (tournament, taxToken, creator, priceGuard))
+                abi.encodeCall(AssayFlapVault.initialize, (tournament, taxToken, priceGuard))
             )
         );
         emit VaultCreated(vault, taxToken, creator);

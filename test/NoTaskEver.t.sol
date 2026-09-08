@@ -18,10 +18,13 @@ import {TaxTokenMock} from "./TaxTokenMock.sol";
 /// @notice The case the whole design rests on and no test had ever run: a window in which nothing
 ///         was published at all.
 ///
-/// @dev The withdrawal is gated on the most recent task having settled. With no task ever posted
-///      there is no "most recent", and reasoning that `latestRevealEnd()` returns zero so the
-///      comparison passes is not the same as watching the money arrive. Every other test in this
-///      repo builds a tournament that already has a task in it, so this path had never executed.
+/// @dev This file was written when a finished window paid its idle tax out to a curator, and the
+///      question was whether a tournament with no task in it ever counted as finished. There is no
+///      such payment any more: tax stays in the vault, becomes BTCB in `rewardPool`, and is put
+///      behind the drawn task for miners to collect. So the question this file asks now is what an
+///      empty tournament does to that route — whether the money waits, or is lost, or can be
+///      reached by somebody while it waits. Every other test in this repo builds a tournament that
+///      already has a task in it, so these paths still execute nowhere else.
 contract NoTaskEverTest is Test {
     /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
     ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
@@ -31,6 +34,8 @@ contract NoTaskEverTest is Test {
     address constant SALVAGE = address(0x5A);
     address constant TAXPAYER = address(0x7A);
     address constant STRANGER = address(0x571A);
+    address constant BTCB = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8;
+    address constant TRIGGER = 0x560E9830926C9e0EB98a59c6b9902383Fc0D9Eb2;
 
     Tournament internal tournament;
     AssayFlapVault internal flap;
@@ -47,7 +52,7 @@ contract NoTaskEverTest is Test {
         custody.freeze();
         roster.setConsumer(address(tournament));
 
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     function _tax(uint256 amount) internal {
@@ -57,39 +62,65 @@ contract NoTaskEverTest is Test {
         require(ok, "tax transfer failed");
     }
 
-    /// A window nobody published a task into settles to the project, immediately.
-    function test_TaxIsWithdrawableWhenNoTaskWasEverPosted() public {
+    /// A window nobody published a task into leaves the tax exactly where it is, and there is no
+    /// call that would move it out. The one there used to be paid a curator, and it is gone.
+    ///
+    /// Asserted by selector: this file cannot name a function the vault no longer declares, and the
+    /// vault has no `fallback`, so an unimplemented selector reverts for every caller.
+    function test_TaxStaysInTheVaultWhenNoTaskWasEverPosted() public {
         assertEq(tournament.taskCount(), 0, "the fixture already has a task");
         assertEq(tournament.latestRevealEnd(), 0, "there is no epoch to wait for");
 
         _tax(0.05 ether);
         uint256 before = CURATOR.balance;
 
-        vm.prank(CURATOR);
-        uint256 sent = flap.withdrawUnconverted(0);
+        bytes memory gone = abi.encodeWithSignature("withdrawUnconverted(uint256)", uint256(0));
+        address[3] memory callers = [CURATOR, STRANGER, Guardians.TESTNET];
+        for (uint256 i; i < callers.length; ++i) {
+            vm.prank(callers[i]);
+            (bool ok,) = address(flap).call(gone);
+            assertFalse(ok, "the withdrawal is still reachable");
+        }
 
-        assertEq(sent, 0.05 ether, "the window did not settle in full");
-        assertEq(CURATOR.balance, before + 0.05 ether, "the project did not receive it");
-        assertEq(address(flap).balance, 0, "something was left behind");
+        assertEq(address(flap).balance, 0.05 ether, "the tax did not stay in the vault");
+        assertEq(flap.freeTax(), 0.05 ether, "and it is not free to be converted");
+        assertEq(CURATOR.balance, before, "the tax reached the curator");
     }
 
-    /// And a stranger can settle it too — they just cannot keep any of it.
-    function test_AStrangerMaySettleAWindowWithNoTask() public {
+    /// And a stranger can still set it moving — they just cannot keep any of it, and with no task
+    /// in existence the proceeds wait in the pool rather than going anywhere.
+    function test_AStrangerMayConvertAWindowWithNoTaskAndKeepsNoneOfIt() public {
         _tax(0.05 ether);
         uint256 before = CURATOR.balance;
-        uint256 strangerBefore = STRANGER.balance;
+        uint256 strangerBtcb = IERC20(BTCB).balanceOf(STRANGER);
 
+        uint256 fee = flap.schedulerFee();
+        // Dealt exactly the fee, so any BNB they hold afterwards came out of the vault.
+        vm.deal(STRANGER, fee);
         vm.prank(STRANGER);
-        flap.withdrawUnconverted(0);
+        uint256 id = flap.triggerConversion{value: fee}();
+        assertGt(id, 0, "an empty tournament stopped the conversion being armed");
 
-        assertEq(CURATOR.balance, before + 0.05 ether, "the project did not receive it");
-        assertEq(STRANGER.balance, strangerBefore, "the caller kept some of it");
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        assertGt(flap.rewardPool(), 0, "the tax did not become prize money");
+        assertEq(flap.endowed(), flap.rewardPool(), "the pool is not what the ledger says it is");
+        assertTrue(flap.solvent(), "the vault cannot cover what its ledger claims");
+        assertEq(STRANGER.balance, 0, "the caller was paid out of the tax");
+        assertEq(IERC20(BTCB).balanceOf(STRANGER), strangerBtcb, "the caller took the proceeds");
+        assertEq(CURATOR.balance, before, "the tax reached the curator");
+
+        // Waiting, not lost: there is simply no task yet to put it behind.
+        vm.expectRevert(bytes(unicode"No such task / 该任务不存在"));
+        flap.fundTaskFromPool(1);
     }
 
-    /// How long a withdrawal can be held up, at the worst. The gate waits on the most recent
-    /// task's reveal, so the answer is whatever the longest legal task is — and that is bounded.
-    /// Without MAX_TASK_SPAN a single task could have pinned this open forever.
-    function test_TheLongestAWindowCanBeHeldOpenIsBounded() public {
+    /// A task holding the longest legal window used to hold the withdrawal shut with it, so the
+    /// worst-case delay was whatever MAX_TASK_SPAN allowed. Nothing waits on a task now — the
+    /// conversion path never reads the tournament at all — so the ceiling bounds only how long one
+    /// task may lock a miner's stake. Asserted here so a change to it is still noticed.
+    function test_ALongTaskNoLongerHoldsTheTaxAtAll() public {
         _tax(0.05 ether);
         uint64 span = tournament.MAX_TASK_SPAN();
 
@@ -98,18 +129,16 @@ contract NoTaskEverTest is Test {
             uint64(block.timestamp + 600), uint64(block.timestamp) + span, 0
         );
 
-        // Held, right up to the bound.
-        vm.warp(block.timestamp + span - 1);
-        vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
-        flap.withdrawUnconverted(0);
-
-        // And released at it. Thirty days is the ceiling, not forever.
-        vm.warp(block.timestamp + 1);
-        uint256 before = CURATOR.balance;
+        // Right in the middle of a thirty-day task, and the tax converts anyway.
+        vm.warp(block.timestamp + span / 2);
+        uint256 fee = flap.schedulerFee();
+        vm.deal(STRANGER, fee);
         vm.prank(STRANGER);
-        flap.withdrawUnconverted(0);
-        assertEq(CURATOR.balance, before + 0.05 ether, "the window never released");
+        uint256 id = flap.triggerConversion{value: fee}();
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        assertGt(flap.rewardPool(), 0, "a live task held the conversion");
         assertEq(uint256(span), 30 days, "the ceiling moved");
     }
 
@@ -123,16 +152,30 @@ contract NoTaskEverTest is Test {
         e[0] = keccak256(abi.encodePacked(uint256(4)));
     }
 
-    /// Tax that keeps arriving with nothing published keeps being withdrawable. It cannot pile up
-    /// unreachable, which is the failure this whole path exists to prevent.
-    function test_TaxKeepsSettlingWindowAfterWindow() public {
+    /// Tax that keeps arriving with nothing published accumulates, and stays convertible the whole
+    /// time. It cannot pile up unreachable, which is the failure this path exists to prevent — and
+    /// "reachable" now means it can still be turned into prize money, not that somebody can take it.
+    function test_TaxKeepsAccumulatingAndStaysConvertible() public {
         for (uint256 i; i < 5; ++i) {
             _tax(0.01 ether);
             vm.warp(block.timestamp + 1200); // one epoch
-            vm.prank(CURATOR);
-            uint256 sent = flap.withdrawUnconverted(0);
-            assertEq(sent, 0.01 ether, "an epoch did not settle");
+            assertEq(address(flap).balance, 0.01 ether * (i + 1), "an epoch's tax went missing");
         }
-        assertEq(address(flap).balance, 0, "tax accumulated out of reach");
+
+        uint256 fee = flap.schedulerFee();
+        vm.deal(STRANGER, fee);
+        vm.prank(STRANGER);
+        uint256 id = flap.triggerConversion{value: fee}();
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        assertGt(flap.rewardPool(), 0, "five windows of tax could not be converted");
+        // Whatever the pool's depth left unconverted is still free for the next conversion: the
+        // failure being ruled out is BNB stranded behind an accounting entry, not BNB still here.
+        assertEq(
+            flap.freeTax() + flap.reserved(),
+            address(flap).balance,
+            "tax accumulated out of reach"
+        );
     }
 }

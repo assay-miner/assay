@@ -24,9 +24,7 @@ contract BigSwapTest is BaseTest {
         guardian = 0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b;
         // Its own PriceGuard rather than the fixture's: what is measured here is the pool, and a
         // guard shared with the rest of the stack would be a second thing that could move.
-        flap = Stack.newFlapVault(
-            guardian, tournament, address(token), CURATOR, Stack.newPriceGuard(guardian)
-        );
+        flap = Stack.newFlapVault(guardian, tournament, address(token), Stack.newPriceGuard(guardian));
     }
 
     function _convert(uint256 bnb) internal returns (uint256 out) {

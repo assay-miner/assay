@@ -4,28 +4,7 @@
 export const tournamentAbi = [
   {
     "type": "constructor",
-    "inputs": [
-      {
-        "name": "vault_",
-        "type": "address",
-        "internalType": "contract AssayVault"
-      },
-      {
-        "name": "roster_",
-        "type": "address",
-        "internalType": "contract AgentRoster"
-      },
-      {
-        "name": "curator_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "generator_",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "inputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -383,6 +362,34 @@ export const tournamentAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "vault_",
+        "type": "address",
+        "internalType": "contract AssayVault"
+      },
+      {
+        "name": "roster_",
+        "type": "address",
+        "internalType": "contract AgentRoster"
+      },
+      {
+        "name": "curator_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "generator_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1039,6 +1046,19 @@ export const tournamentAbi = [
   },
   {
     "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Reclaimed",
     "inputs": [
       {
@@ -1171,23 +1191,7 @@ export const tournamentAbi = [
 export const agentrosterAbi = [
   {
     "type": "constructor",
-    "inputs": [
-      {
-        "name": "registry",
-        "type": "address",
-        "internalType": "contract IIdentityRegistry"
-      },
-      {
-        "name": "vault_",
-        "type": "address",
-        "internalType": "contract AssayVault"
-      },
-      {
-        "name": "minStake_",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "inputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -1324,6 +1328,34 @@ export const agentrosterAbi = [
   },
   {
     "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "registry",
+        "type": "address",
+        "internalType": "contract IIdentityRegistry"
+      },
+      {
+        "name": "vault_",
+        "type": "address",
+        "internalType": "contract AssayVault"
+      },
+      {
+        "name": "minStake_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deployer_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "lockUntil",
     "inputs": [
       {
@@ -1445,6 +1477,31 @@ export const agentrosterAbi = [
   },
   {
     "type": "event",
+    "name": "BindingReleased",
+    "inputs": [
+      {
+        "name": "agentId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "from",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ConsumerSet",
     "inputs": [
       {
@@ -1477,6 +1534,19 @@ export const agentrosterAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
       }
     ],
     "anonymous": false
@@ -1555,28 +1625,7 @@ export const agentrosterAbi = [
 export const assayflapvaultAbi = [
   {
     "type": "constructor",
-    "inputs": [
-      {
-        "name": "tournament_",
-        "type": "address",
-        "internalType": "contract Tournament"
-      },
-      {
-        "name": "taxToken_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "curator_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "priceGuard_",
-        "type": "address",
-        "internalType": "contract PriceGuard"
-      }
-    ],
+    "inputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -1744,19 +1793,6 @@ export const assayflapvaultAbi = [
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "curator",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1946,6 +1982,29 @@ export const assayflapvaultAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "tournament_",
+        "type": "address",
+        "internalType": "contract Tournament"
+      },
+      {
+        "name": "taxToken_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "priceGuard_",
+        "type": "address",
+        "internalType": "contract PriceGuard"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -2434,25 +2493,6 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "function",
-    "name": "withdrawUnconverted",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "sent",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "wrappedNative",
     "inputs": [],
     "outputs": [
@@ -2704,6 +2744,19 @@ export const assayflapvaultAbi = [
   },
   {
     "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RevenueReceived",
     "inputs": [
       {
@@ -2755,25 +2808,6 @@ export const assayflapvaultAbi = [
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UnconvertedWithdrawn",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
       },
       {
         "name": "amount",

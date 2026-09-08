@@ -440,24 +440,5 @@ export const vaultAbi = [
       }
     ],
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "withdrawUnconverted",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "sent",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
   }
 ] as const;

@@ -54,7 +54,7 @@ contract FlapVaultDemo is Script {
         PriceGuard priceGuard = Stack.newPriceGuard(guardian);
         // taxToken is recorded, never called — the portal passes a predicted address too.
         AssayFlapVault flapVault =
-            Stack.newFlapVault(guardian, tournament, address(token), me, priceGuard);
+            Stack.newFlapVault(guardian, tournament, address(token), priceGuard);
         vm.stopBroadcast();
 
         string memory json = "d";

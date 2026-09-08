@@ -48,9 +48,9 @@ worst place to keep numbers nothing measures.
 | | |
 |---|---|
 | `receive()` gas | measured by `test_ReceiveStaysUnderTheGasCeiling`, which asserts the Rule 005 ceiling rather than restating a figure |
-| `AssayFlapVault` runtime | 21,925 bytes |
-| `AssayFlapFactory` runtime | 4,364 bytes |
-| `vaultUISchema()` methods | 12 |
+| `AssayFlapVault` runtime | 21,051 bytes |
+| `AssayFlapFactory` runtime | 4,361 bytes |
+| `vaultUISchema()` methods | 11 |
 <!-- measured:end -->
 
 ## 4. Integration tests — **done**
@@ -125,14 +125,14 @@ Repository at `abfa000`.
 
 | | |
 |---|---|
-| Factory (the contract Flap audits) | `0x0dEcCDEb5816773Ce962e4F6b4f74fa0de7E9663` |
+| Factory (the contract Flap audits) | `0x116670f9Fc9B3D02BA8BDEc7a04b27F504c99F3F` |
 | Flap vault | not deployed |
 | Tax token | not launched — the factory is what Flap audits, and a launch claims an address permanently |
-| Tournament | `0xC1707fDDc579339061DC47Edbd912687903EC916` |
-| Custody ledger | `0x720F48484Bfe5D22BAe679c531B53C70607A62dD` |
-| Roster | `0xdef12257719A1f36072fa8132673bb65CC4A370B` |
+| Tournament | `0xfc50F53B744270C41eC9AD9f7562aC6A9117cf93` |
+| Custody ledger | `0xd484dFd9b1c53f13263eCa03A812A02559BD054F` |
+| Roster | `0xedB1D8E93A8Ad072D251E2512F14cF6F88DfDE49` |
 | Deployer | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
-| Curator (`withdrawUnconverted` pays here; same key as the deployer) | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
+| Curator (posts the tournament's curated lane; paid nothing; same key as the deployer) | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 
 ## BNB Smart Chain testnet (97) — NOT deployed: every address below is empty on chain
 

@@ -218,11 +218,12 @@ contract Deploy is Script {
         // The curator defaults to the deploying key and does not have to stay one. It is only ever
         // an initializer argument, so pointing it at a multisig costs nothing — which matters,
         // because a reviewer's first question about this design is whether one hot key that is
-        // also the deployer decides which task the tax funds.
+        // also the deployer holds the lane that may post outside the open window.
         //
-        // The vault's curator cannot be set here: Flap's portal passes whoever launches the token
-        // into `newVault` as `creator`, and the factory hands that straight to the vault. So a
-        // multisig curator has to be the address that performs the launch, not just this argument.
+        // This is the TOURNAMENT's curator, and the only one left. The vault used to take a
+        // curator of its own — Flap's portal passes whoever launches the token into `newVault` as
+        // `creator`, and the factory handed that straight through — but the vault pays no address
+        // any more, so it takes no such argument.
         address curator = vm.envOr("CURATOR", deployer);
         Stack.Deployed memory st = Stack.deploy(
             Stack.Params({
@@ -319,9 +320,12 @@ contract Deploy is Script {
         vm.serializeAddress(json, "identityRegistry", registry);
         vm.serializeAddress(json, "vault", address(vault));
         vm.serializeAddress(json, "salvage", salvage);
-        // The curator is the immutable address `withdrawUnconverted` pays, and it was not recorded
-        // here — invisible while it defaulted to the deployer, and a hole the moment they differ.
-        // They differ whenever the key paying for gas is not the key that should receive the tax.
+        // The curator is the tournament's curated-lane poster: the one address besides the
+        // Guardian that may post outside the open window. It is paid nothing — the vault has no
+        // withdrawal, and tax leaves it only as a drawn task's bounty a miner collects — but it is
+        // still a privileged key, and it was not recorded here: invisible while it defaults to the
+        // deployer, and a hole the moment the two differ, which they do whenever the key paying
+        // for gas is not the key meant to hold that power.
         vm.serializeAddress(json, "curator", curator);
         vm.serializeAddress(json, "roster", address(roster));
         vm.serializeUint(json, "minStake", minStake);

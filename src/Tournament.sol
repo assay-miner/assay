@@ -98,14 +98,16 @@ contract Tournament is Initializable {
 
     /// @notice The longest window a task posted by nobody in particular may run for.
     /// @dev Anyone may post once the previous task has settled, which is what keeps the protocol
-    ///      running if the curator goes quiet. The project's tax is no longer what this protects:
-    ///      the vault's withdrawal waits on `latestCuratedRevealEnd`, which an open post does not
-    ///      advance. A DRAWN post does — see the note beside that assignment — and
-    ///      `TaskGenerator.generateAndPost` is permissionless, so the mark is not curator-only in
-    ///      practice. That is the open half of finding 027 and it is acknowledged, not overlooked. What the cap still bounds is how long one open post can keep
-    ///      the next poster out, since `latestRevealEnd` is a high-water mark no later post can
-    ///      walk back. A stranger gets ten minutes; the curator and the Guardian keep the full
-    ///      range.
+    ///      running if the curator goes quiet. The project's tax is not what this protects, and
+    ///      nothing else is either now: the vault has no withdrawal left to hold shut. Idle tax
+    ///      stays in the vault, `triggerConversion` turns it into the reward pool, and
+    ///      `fundTaskFromPool` puts it behind the drawn task for miners to collect — a lane an
+    ///      open post cannot reach at any window length. That also settles the open half of
+    ///      finding 027: a permissionless drawn post still advances `latestCuratedRevealEnd`, but
+    ///      the mark no longer decides anything. What the cap still bounds is how long one open
+    ///      post can keep the next poster out, since `latestRevealEnd` is a high-water mark no
+    ///      later post can walk back. A stranger gets ten minutes; the curator and the Guardian
+    ///      keep the full range.
     uint64 public constant OPEN_POST_MAX_SPAN = 10 minutes;
 
     /// @notice The three addresses this tournament is wired to, fixed at initialization.
@@ -146,25 +148,31 @@ contract Tournament is Initializable {
     uint256 public taskCount;
 
     /// @notice The furthest reveal deadline any task has ever carried, or zero before the first.
-    /// @dev The vault gates its withdrawal on this, and it is a high-water mark rather than a
-    ///      lookup of the newest task for a reason: a task posted later can close earlier. Reading
+    /// @dev The open-post gate waits on this, and it is a high-water mark rather than a lookup of
+    ///      the newest task for a reason: a task posted later can close earlier. Reading
     ///      tasks[taskCount].revealEnd meant posting a short task beside a long one moved the
     ///      pointer to the short one, and the gate opened while the long task was still accepting
-    ///      reveals — the tax it was protecting could be withdrawn out from under a working miner.
-    ///      Monotonic, so no ordering of posts can walk it backwards.
+    ///      reveals — while the vault still had a withdrawal reading this mark, that meant the tax
+    ///      it was protecting could be taken out from under a working miner. The withdrawal is
+    ///      gone; what the mark still does is keep the stranger lane shut until the last epoch has
+    ///      settled. Monotonic, so no ordering of posts can walk it backwards.
     uint64 public latestRevealEnd;
 
     /// @notice The same high-water mark, but counting only tasks this project or the Guardian
-    ///         published.
-    /// @dev The vault's withdrawal used to wait on `latestRevealEnd`, which any stranger can push
-    ///      forward by posting. OPEN_POST_MAX_SPAN caps a single open post at ten minutes, and that
-    ///      is what makes one post survivable — but nothing caps how often somebody posts. An
-    ///      attacker who takes the boundary block each cycle keeps the mark permanently ahead and
-    ///      the project can never reclaim tax from windows nobody mined.
+    ///         published. Informational — nothing on chain reads it.
+    /// @dev It exists because the vault used to pay idle tax out to a curator and had to wait for
+    ///      our own epoch to close first. Waiting on `latestRevealEnd` was not enough: any
+    ///      stranger can push that forward by posting, and while OPEN_POST_MAX_SPAN makes one such
+    ///      post survivable, nothing caps how often somebody posts. So a second mark, moved only
+    ///      by the lanes the project controls.
     ///
-    ///      A stranger's task cannot be funded from the reward pool, so unconverted tax is not
-    ///      holding anything up for it. Only our own open task has a claim on waiting, and this is
-    ///      the mark that expresses that. Monotonic for the same reason as the one above.
+    ///      That withdrawal no longer exists. Idle tax stays in the vault, becomes reward pool,
+    ///      and leaves only to a miner collecting a funded task or to Flap's Guardian in an
+    ///      emergency — so this mark gates nothing at all. It is kept for two reasons: a client
+    ///      can read it to show when the last epoch this project or the Guardian posted closes,
+    ///      which `latestRevealEnd` cannot answer since strangers move that one; and it is a live
+    ///      storage slot under a beacon, so deleting it would re-position everything declared
+    ///      below. Monotonic for the same reason as the one above.
     uint64 public latestCuratedRevealEnd;
     mapping(uint256 taskId => Task) public tasks;
     mapping(uint256 taskId => Crucible.Vector[]) private _vectors;
@@ -271,9 +279,9 @@ contract Tournament is Initializable {
     /// @dev The curator and the Guardian may post at any time, across the full MAX_TASK_SPAN. A
     ///      stranger may post too, but only in the gap between epochs and only inside
     ///      OPEN_POST_MAX_SPAN, so a lost or compromised curator key cannot end task creation.
-    ///      An open post does not advance `latestCuratedRevealEnd`, so a stranger holding the
-    ///      open slot cannot hold the vault's withdrawal shut. A drawn post does advance it, and
-    ///      the drawn lane is permissionless — the open half of finding 027, acknowledged there.
+    ///      No lane a stranger can take reaches the vault's money: converted tax is only ever
+    ///      placed behind the drawn task, and there is no withdrawal left for whoever holds the
+    ///      open slot to keep shut.
     ///
     ///      What is still ahead is the ERC-8183 escrow path: a task
     ///      becomes a job, the pot becomes the bounty, and this contract becomes the evaluator
@@ -409,8 +417,10 @@ contract Tournament is Initializable {
 
         if (revealEnd > latestRevealEnd) latestRevealEnd = revealEnd;
 
-        // A drawn task advances the curated mark, so `withdrawUnconverted` keeps waiting on our own
-        // epochs and a stranger still cannot hold it shut. It deliberately does NOT gate on
+        // The curated mark, advanced by our own posts and by the drawn lane. It decides nothing
+        // now — the withdrawal it was built to gate is gone, and idle tax leaves the vault only as
+        // a drawn task's bounty — so this is bookkeeping a client can read to see when the last
+        // epoch we posted closes. The drawn lane still deliberately does NOT gate on
         // `latestRevealEnd` above when posting: the funding lane must not be blockable by whoever
         // wins a race to occupy the open slot, which is the mechanism finding 023 is about.
         if ((drawn || curated) && revealEnd > latestCuratedRevealEnd) {

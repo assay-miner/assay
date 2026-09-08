@@ -41,7 +41,7 @@ contract FlapSpecTest is BaseTest {
         // and the vault refuses to exist anywhere they are not.
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
         factory = Stack.newFactory(Guardians.TESTNET, tournament, Stack.newPriceGuard(Guardians.TESTNET), address(new UpgradeableBeacon(address(new AssayFlapVault()), Guardians.TESTNET)));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
         portal = 0x027e3704fC5C16522e9393d04C60A3ac5c0d775f;
@@ -232,18 +232,28 @@ contract FlapSpecTest is BaseTest {
         VaultUISchema memory schema = flap.vaultUISchema();
         assertGt(bytes(schema.vaultType).length, 0, "vaultType is empty");
         assertGt(bytes(schema.description).length, 0, "schema description is empty");
-        assertEq(schema.methods.length, 12, "method count drifted");
+        // Eleven and five, down from twelve and six: `withdrawUnconverted` was a write method and
+        // was removed at Flap's request, since it was the one path that moved vault funds to an
+        // address the project controls. Both numbers are bumped together deliberately — a schema
+        // that loses a write method and keeps the write count would still pass the first assertion.
+        assertEq(schema.methods.length, 11, "method count drifted");
 
         uint256 writes;
         for (uint256 i; i < schema.methods.length; ++i) {
             assertGt(bytes(schema.methods[i].name).length, 0, "a method has no name");
             assertGt(bytes(schema.methods[i].description).length, 0, "a method has no description");
+            // The removal, asserted rather than assumed. A count can be restored by adding
+            // something else; this fails only if that particular method comes back.
+            assertTrue(
+                keccak256(bytes(schema.methods[i].name)) != keccak256("withdrawUnconverted"),
+                "withdrawUnconverted is back in the schema"
+            );
             if (schema.methods[i].isWriteMethod) {
                 ++writes;
                 assertEq(schema.methods[i].outputs.length, 0, "a write method declares outputs");
             }
         }
-        assertEq(writes, 6, "the write methods drifted");
+        assertEq(writes, 5, "the write methods drifted");
     }
 
     /// @dev The spec fixes the vocabulary: only these field types, 18 decimals for an amount and
@@ -296,7 +306,20 @@ contract FlapSpecTest is BaseTest {
         address created = factory.newVault(address(token), address(0), CURATOR, "");
         assertTrue(created != address(0), "the portal could not create a vault");
         assertEq(AssayFlapVault(payable(created)).taxToken(), address(token), "wrong token bound");
-        assertEq(AssayFlapVault(payable(created)).curator(), CURATOR, "wrong curator bound");
+        // The launcher is no longer bound to anything. It used to arrive as `creator` and be stored
+        // as the vault's `curator`, the one address `withdrawUnconverted` paid; both are gone, so
+        // what this asserts now is that the launcher CANNOT put anything of their choosing into the
+        // vault — the two references it holds are the ones the factory decides.
+        assertEq(
+            address(AssayFlapVault(payable(created)).tournament()),
+            address(tournament),
+            "the vault is bound to a tournament the launcher chose"
+        );
+        assertEq(
+            address(AssayFlapVault(payable(created)).priceGuard()),
+            address(factory.priceGuard()),
+            "the vault is bound to a price guard the launcher chose"
+        );
     }
 
     function test_FactoryTakesNativeQuoteOnly() public view {

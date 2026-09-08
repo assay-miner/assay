@@ -22,7 +22,9 @@ import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 ///
 ///      All five answer no, and the tests below are how that is known rather than asserted.
 contract CustodyTest is BaseTest {
-    /// The curator's only powers are posting tasks and being the address `withdrawUnconverted` pays.
+    /// The curator's only power is posting on the tournament's curated lane. It is not a role on
+/// the Flap vault at all — that vault names no curator, and the value it holds leaves only to a
+/// miner the tournament scored or, in an emergency, through Flap's Guardian.
 /// Naming the tournament is the DEPLOYER's — `AgentRoster.setConsumer` and `AssayVault.addController`
 /// both check `msg.sender == deployer`, and both are sealed at deploy.
     function test_CuratorCannotTakeMinerStake() public {

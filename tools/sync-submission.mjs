@@ -21,7 +21,7 @@ const LABELS = [
   ["vault", "Custody ledger"],
   ["roster", "Roster"],
   ["deployer", "Deployer"],
-  ["curator", "Curator (`withdrawUnconverted` pays here; same key as the deployer)"],
+  ["curator", "Curator (posts the tournament's curated lane; paid nothing; same key as the deployer)"],
 ];
 const ZERO = "0x0000000000000000000000000000000000000000";
 

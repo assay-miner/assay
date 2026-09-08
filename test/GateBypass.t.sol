@@ -15,10 +15,16 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 import {IIdentityRegistry} from "../src/interfaces/IIdentityRegistry.sol";
 import {TaxTokenMock} from "./TaxTokenMock.sol";
 
-/// @notice The withdrawal gate waits on `latestCuratedRevealEnd`, a high-water mark, rather than on
-///         "the most recent task". Those are not the same claim — a task posted later can close
-///         earlier — and reading the mark is what makes the difference safe. A stranger's post does
-///         not advance it; a curated or a drawn one does.
+/// @notice The open-post gate waits on `latestRevealEnd`, a high-water mark, rather than on "the
+///         most recent task". Those are not the same claim — a task posted later can close earlier
+///         — and reading the mark is what makes the difference safe.
+///
+/// @dev This gate used to guard the vault's tax as well, through `withdrawUnconverted` and the
+///      curated twin of this mark. That withdrawal is gone: idle tax stays in the vault, converts
+///      into the reward pool and lands behind the drawn task for miners to collect, and the only
+///      way it reaches a non-miner is Flap's Guardian. So the tests below assert the mark where it
+///      still decides something — who may post, and when — and assert of the money that no
+///      arrangement of tasks moves a wei of it out of the vault at all.
 contract GateBypassTest is Test {
     /// @dev This fixture never posts on the drawn lane, so the generator is a placeholder.
     ///      Naming it says that on purpose rather than leaving a bare address to be read as real.
@@ -27,6 +33,7 @@ contract GateBypassTest is Test {
     address constant CURATOR = address(0xC0);
     address constant SALVAGE = address(0x5A);
     address constant TAXPAYER = address(0x7A);
+    address constant STRANGER = address(0x571A);
 
     Tournament internal tournament;
     AssayFlapVault internal flap;
@@ -41,7 +48,7 @@ contract GateBypassTest is Test {
         custody.addController(address(tournament));
         custody.freeze();
         roster.setConsumer(address(tournament));
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     function _vec() internal pure returns (bytes[] memory v) {
@@ -54,11 +61,16 @@ contract GateBypassTest is Test {
         e[0] = keccak256(abi.encodePacked(uint256(4)));
     }
 
-    /// A long task is open and a miner is working in it. The curator posts a second, short task
-    /// and waits two minutes for that one to close. The gate must stay shut, because the first
-    /// task has not settled — it did not, until latestRevealEnd became a high-water mark instead
-    /// of a lookup of the newest task, and the tax walked out from under a working miner.
-    function test_AShortTaskCannotOpenTheGateOnALongOneStillRunning() public {
+    /// A long task is open and a stranger wants the lane. They post a second, short task through
+    /// the curator and wait two minutes for that one to close. The gate must stay shut, because
+    /// the first task has not settled — it did not, until `latestRevealEnd` became a high-water
+    /// mark instead of a lookup of the newest task.
+    ///
+    /// And the tax is not part of this any more, which the second half asserts: whatever the tasks
+    /// do, the BNB that arrived stays in the vault. There is no call that pays it out to the
+    /// curator, so no ordering of posts can time one.
+    function test_AShortTaskCannotOpenTheStrangerLaneOnALongOneStillRunning() public {
+        uint256 curatorBefore = CURATOR.balance;
         vm.deal(TAXPAYER, 1 ether);
         vm.prank(TAXPAYER);
         (bool ok,) = payable(address(flap)).call{value: 0.5 ether}("");
@@ -70,9 +82,9 @@ contract GateBypassTest is Test {
         );
 
         // The gate holds, as intended.
-        vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
-        flap.withdrawUnconverted(0);
+        vm.prank(STRANGER);
+        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
 
         // Task 2: posted later, closes sooner.
         vm.prank(CURATOR);
@@ -82,25 +94,42 @@ contract GateBypassTest is Test {
         (,, uint64 longReveal,,,,,,) = tournament.tasks(long_);
         assertGt(uint256(longReveal), block.timestamp, "task 1 must still be open for this to be the bug");
 
-        // The gate stays shut for everyone while task 1 runs.
-        vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"Epoch open / 本期未结束"));
-        flap.withdrawUnconverted(0);
+        // The gate stays shut while task 1 runs.
+        //
+        // `vm.getBlockTimestamp()` rather than `block.timestamp` from here on. Under via-IR the
+        // compiler hoists a `block.timestamp` read above the `vm.warp` that precedes it and reuses
+        // the pre-warp value, so the windows below were being built from the time this test
+        // started rather than from the time it had warped to. The cheatcode returns data and
+        // cannot be folded away.
+        uint64 nowTs = uint64(vm.getBlockTimestamp());
+        vm.prank(STRANGER);
+        vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
+        tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, nowTs + 60, nowTs + 120, 0);
 
         // And opens once the long task actually settles.
         vm.warp(uint256(longReveal));
-        uint256 before = CURATOR.balance;
-        vm.prank(CURATOR);
-        uint256 sent = flap.withdrawUnconverted(0);
-        assertEq(sent, 0.5 ether, "the gate never opened");
-        assertEq(CURATOR.balance, before + 0.5 ether, "the project did not receive it");
+        nowTs = uint64(vm.getBlockTimestamp());
+        vm.prank(STRANGER);
+        assertGt(
+            tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, nowTs + 60, nowTs + 120, 0),
+            0,
+            "the gate never opened"
+        );
+
+        // The money did not move at any point in that sequence, and there is nothing to call that
+        // would have moved it: `withdrawUnconverted` was the one path out to a non-miner and it is
+        // gone. The selector is asserted absent rather than argued about — the vault has no
+        // fallback, so a call to a function it does not have reverts.
+        (bool gone,) = address(flap).call(abi.encodeWithSignature("withdrawUnconverted(uint256)", uint256(0)));
+        assertFalse(gone, "the withdrawal is still reachable");
+        assertEq(address(flap).balance, 0.5 ether, "the tax did not stay in the vault");
+        assertEq(CURATOR.balance, curatorBefore, "the tax reached the curator");
     }
 
     /// Anyone may post once the previous task has settled. This is what keeps the tournament
     /// running if the curator goes quiet, and it is the reviewer's own suggestion.
     function test_AStrangerMayPostOnceNothingIsLive() public {
-        address stranger = address(0x571A);
-        vm.prank(stranger);
+        vm.prank(STRANGER);
         uint256 id = tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0
         );
         assertGt(id, 0, "a stranger could not post into an empty gap");
@@ -111,29 +140,31 @@ contract GateBypassTest is Test {
         vm.prank(CURATOR);
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 600), uint64(block.timestamp + 1200), 0);
 
-        vm.prank(address(0x571A));
+        vm.prank(STRANGER);
         vm.expectRevert(bytes(unicode"Not the curator / 非策展方"));
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp + 120), 0);
     }
 
     /// And not for a window long enough to matter.
     ///
-    /// This is the whole reason open posting is bounded — though the withdrawal no longer waits on
-    /// this mark. `latestRevealEnd` is a high-water mark no later post can walk back, so a stranger posting MAX_TASK_SPAN would freeze the project's own
-    /// tax for thirty days for the price of gas, with nothing able to undo it.
-    function test_AStrangerCannotFreezeTheTaxWithALongWindow() public {
+    /// This is the whole reason open posting is bounded. `latestRevealEnd` is a high-water mark no
+    /// later post can walk back, so without the cap a stranger posting MAX_TASK_SPAN would hold the
+    /// lane shut against every other poster for thirty days for the price of gas, with nothing able
+    /// to undo it. The tax is no longer among the things that would have been held: it stays in the
+    /// vault whatever is posted, and the conversion path never reads this mark at all.
+    function test_AStrangerCannotHoldTheLaneWithALongWindow() public {
         // Both views read before any prank or expectRevert: a view call sitting in the argument
         // list is the next call, and it consumes them.
         uint64 maxSpan = tournament.MAX_TASK_SPAN();
         uint64 openSpan = tournament.OPEN_POST_MAX_SPAN();
 
-        vm.prank(address(0x571A));
+        vm.prank(STRANGER);
         vm.expectRevert(bytes(unicode"Bad window / 时间窗口不合法"));
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + maxSpan, 0
         );
 
         // Ten minutes is the most they can hold it, and the curator keeps the full range.
-        vm.prank(address(0x571A));
+        vm.prank(STRANGER);
         tournament.postTask(_vec(), _exp(), Bytecode.tight(), 100_000, uint64(block.timestamp + 60), uint64(block.timestamp) + openSpan, 0
         );
         assertLe(

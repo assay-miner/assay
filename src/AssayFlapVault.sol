@@ -55,10 +55,11 @@ import {Tournament} from "./Tournament.sol";
 ///      reducing `endowed`; Flap Rule 009 requires that exact signature, and though the rule is
 ///      written for vaults that cannot be upgraded and this one now can be, dropping a hatch the
 ///      platform asks for is not a change an initialisation rewrite gets to make. So the gap is
-///      the price of the escape hatch and not an oversight. And
-///      `withdrawUnconverted` sends tax that no conversion has bought yet to the fixed curator
-///      address, which is not a scored miner either. `solvent()` is the reading that makes the
-///      first gap visible from outside.
+///      the price of the escape hatch and not an oversight. It is now the ONLY way value leaves
+///      this vault to anybody who is not a scored miner: `withdrawUnconverted` used to send
+///      unconverted tax to a fixed project address and was removed at Flap's request, so tax that
+///      no conversion has bought yet simply stays here until a conversion buys it. `solvent()` is
+///      the reading that makes the remaining gap visible from outside.
 contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITriggerReceiver {
     using SafeERC20 for IERC20;
 
@@ -165,20 +166,6 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
     /// @notice The tax token this vault belongs to, as told to us by the factory at creation.
     address public taxToken;
 
-    /// @notice The fixed address `withdrawUnconverted` pays. Set at creation to the token's
-    ///         creator, and never written again.
-    /// @dev    It holds no privilege at all beyond being that destination. It cannot `endow` —
-    ///         that is the Guardian's alone — and it holds no special right over a scheduled
-    ///         conversion: until `executeAfter + CANCEL_GRACE` only the Guardian may cancel, and
-    ///         after that the curator may do exactly what any address may and nothing more.
-    ///         Cancelling frees BNB back into `freeTax()`, which is what `withdrawUnconverted`
-    ///         pays it, so an account that profits from a conversion never happening must not be
-    ///         able to stop a live one.
-    ///
-    ///         This line has been wrong twice, in opposite directions, and both times because the
-    ///         permission moved and the sentence did not. `test/Permissions.t.sol` pins what is
-    ///         actually true so the next move has somewhere to fail.
-    address public curator;
 
     /// @notice BTCB assigned to a task's bounty, by task id.
     mapping(uint256 taskId => uint256) public bounty;
@@ -225,7 +212,6 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
     event BountyReclaimed(uint256 indexed taskId, address indexed to, uint256 amount);
     event BountyRolledOver(uint256 indexed fromTaskId, uint256 amount);
     event Converted(uint256 bnbAmount, uint256 rewardOut, uint256 unassignedLeft);
-    event UnconvertedWithdrawn(address indexed to, uint256 amount);
     event EmergencyWithdrawNative(address indexed to, uint256 amount);
     event EmergencyWithdrawToken(address indexed token, address indexed to, uint256 amount);
 
@@ -270,13 +256,11 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
     function initialize(
         Tournament tournament_,
         address taxToken_,
-        address curator_,
         PriceGuard priceGuard_
     ) external initializer {
         priceGuard = priceGuard_;
         tournament = tournament_;
         taxToken = taxToken_;
-        curator = curator_;
 
         uint256 chainId = block.chainid;
         address rewardToken;
@@ -706,11 +690,12 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
         require(s.bnbAmount > 0, unicode"No such request / 无此请求");
 
         // The curator used to be able to cancel anything, at any time, which is a lever it should
-        // never have had: cancelling frees the BNB back into freeTax(), and freeTax() is what
-        // withdrawUnconverted pays to the curator. Cancel every conversion as it is armed and no
-        // BTCB ever forms — the tournament advertises prizes, miners stake and optimise, and the
-        // whole tax settles to one address. That the vault is FOR turning tax into prizes is
-        // exactly why that path had to close.
+        // never have had: cancel every conversion as it is armed and no BTCB ever forms — the
+        // tournament advertises prizes, miners stake and optimise, and nothing is ever paid. The
+        // reason that mattered most was that freeTax() was withdrawable to a project address, and
+        // it is not any more; but the lever is still wrong without it, because a vault that never
+        // converts is a vault that never pays a miner. That the vault is FOR turning tax into
+        // prizes is exactly why that path had to close.
         //
         // The reason cancellation exists at all is a request that can no longer succeed, and that
         // is a condition, not a judgement: the scheduler's moment has come and gone. Once a request
@@ -844,48 +829,6 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
 
         reward.safeTransfer(msg.sender, amount);
         emit BountyPaid(taskId, msg.sender, amount);
-    }
-
-    /// @notice Takes back tax that was never placed behind a task.
-    ///
-    /// @dev The other half of not being stuck, and the half that bites first. Tax accrues here
-    ///      continuously; a task is posted for a window. Tax that arrives while no task is open,
-    ///      or that is simply more than the curator chose to put up, was reachable by nothing —
-    ///      not `collect`, which needs a score, and not any curator path, because every one of
-    ///      them only converted *into* a task. It sat here until Flap's Guardian moved it.
-    ///
-    ///      Nothing is owed out of it. A miner's claim attaches when tax is converted and booked
-    ///      behind a task, and that step is still one-way: `endowed` is untouchable here, and
-    ///      this can only ever move native value, which by construction is the unconverted part.
-    ///      What it changes is who bears an empty window — the project, rather than nobody.
-    function withdrawUnconverted(uint256 amount) external nonReentrant returns (uint256 sent) {
-        // Anyone may call this, and it can only ever pay `curator`. Both halves are the point.
-        //
-        // The destination was never the objection — an empty window's tax belongs to the project
-        // by design, and that address is fixed at initialisation so no caller chooses it. Choosing
-        // *when* to take it was the objection, and rightly: the old gate let the curator pull tax
-        // out from under a task miners were still working on. So the condition is the epoch's, not
-        // a permission: while the most recent task is still open this reverts for everybody,
-        // including the curator and the Guardian, and once it has settled it works for anybody.
-        //
-        // With no task ever posted there is nothing to wait for, which is exactly the case the
-        // rule is about: a window in which nothing was published belongs to the project.
-        // Our own open task is the only one that has a claim on this tax. Waiting on the
-        // all-tasks high-water mark let a stranger hold the gate shut forever: OPEN_POST_MAX_SPAN
-        // caps one open post at ten minutes, but nothing caps how often somebody posts, so taking
-        // the boundary block each cycle keeps the mark permanently ahead. A stranger's task cannot
-        // be funded from the pool, so unconverted tax is not holding anything up for it.
-        require(
-            block.timestamp >= tournament.latestCuratedRevealEnd(),
-            unicode"Epoch open / 本期未结束"
-        );
-        uint256 free = freeTax();
-        sent = amount == 0 || amount > free ? free : amount;
-        require(sent > 0, unicode"No unconverted tax / 无未兑换的税");
-
-        (bool ok,) = curator.call{value: sent}("");
-        require(ok, unicode"Transfer failed / 转账失败");
-        emit UnconvertedWithdrawn(curator, sent);
     }
 
     /// @notice Returns a finished task's unclaimed remainder to the pool. Callable by anyone.
@@ -1091,7 +1034,7 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
     function vaultUISchema() public pure override returns (VaultUISchema memory schema) {
         schema.vaultType = "AssayVault";
         schema.description = unicode"Tax becomes BTCB prizes / 税变 BTCB 奖金";
-        schema.methods = new VaultMethodSchema[](12);
+        schema.methods = new VaultMethodSchema[](11);
 
         // 0 — the headline numbers, argument-free so every UI can read them.
         VaultMethodSchema memory m = schema.methods[0];
@@ -1197,18 +1140,8 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
 
-        // 8 — an empty window's tax goes back to the project rather than nowhere.
+        // 8 — a bounty nobody won, on the tournament's own terms.
         m = schema.methods[8];
-        m.name = "withdrawUnconverted";
-        m.description = unicode"Take back tax / 取回未投入税";
-        m.inputs = new FieldDescriptor[](1);
-        m.inputs[0] = FieldDescriptor("amount", "uint256", unicode"BNB, 0 for all / BNB,0 表示全部", 18);
-        m.outputs = new FieldDescriptor[](0);
-        m.approvals = new ApproveAction[](0);
-        m.isWriteMethod = true;
-
-        // 9 — a bounty nobody won, on the tournament's own terms.
-        m = schema.methods[9];
         m.name = "reclaimBounty";
         m.description = unicode"Return bounty / 收回无人赢的赏金";
         m.inputs = new FieldDescriptor[](1);
@@ -1217,8 +1150,8 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
         m.approvals = new ApproveAction[](0);
         m.isWriteMethod = true;
 
-        // 10 — how much the pool can take right now, so nobody has to guess.
-        m = schema.methods[10];
+        // 9 — how much the pool can take right now, so nobody has to guess.
+        m = schema.methods[9];
         m.name = "maxConvertible";
         m.description = unicode"Max convertible / 最多能兑换";
         m.inputs = new FieldDescriptor[](0);
@@ -1226,8 +1159,8 @@ contract AssayFlapVault is Initializable, VaultBaseV2, ReentrancyGuard, ITrigger
         m.outputs[0] = FieldDescriptor("bnbAmount", "uint256", unicode"Amount / 数量", 18);
         m.approvals = new ApproveAction[](0);
 
-        // 11 — the price beside the Guardian-only `endow` control.
-        m = schema.methods[11];
+        // 10 — the price beside the Guardian-only `endow` control.
+        m = schema.methods[10];
         m.name = "quote";
         m.description = unicode"Converts to / 能换到多少";
         m.inputs = new FieldDescriptor[](1);

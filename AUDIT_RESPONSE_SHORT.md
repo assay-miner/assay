@@ -2,9 +2,9 @@
 
 Generated: 2026-09-07 · Project: ASSAY (`AssayFlapVault`)
 
-Both findings are real. One is fixed. One was already accepted in an earlier round, and this round
-found that the test carrying that acceptance did not measure what it claimed — that is corrected
-below rather than restated.
+Both findings are real and both are now fixed. Finding 1 was Acknowledged in an earlier round; the
+function it concerns has since been removed at your reviewer's request, so the disposition changed
+with the code rather than with an argument.
 
 ---
 
@@ -19,58 +19,29 @@ below rather than restated.
   - `src/Tournament.sol:postTask (latestCuratedRevealEnd assignment)`
   - `src/TaskGenerator.sol:generateAndPost`
 
-> **Status:** `[ ]` TP　`[ ]` FP　`[ ]` By Design　`[x]` Acknowledged
-> **Reason (if FP / By Design / Acknowledged):** Correct. The mechanism is `Tournament.sol:373`'s `if ((drawn || curated) && revealEnd > latestCuratedRevealEnd)` on a lane anyone can post to. Not fixed because the only fix — hold the withdrawal for a *funded* epoch — reads `bounty[]`, which a stranger can write with one wei through the permissionless `sponsor` over exactly the interval the freeze covers. That is finding 025's shape moved onto a different gate, not a repair of it. What is frozen is the curator's claim on tax from windows nobody mined; conversions, bounties and the Guardian's hatch are unaffected, and `test/WithdrawalFreeze.t.sol` fails if that stops being true.
+> **Status:** `[x]` TP　`[ ]` FP　`[ ]` By Design　`[ ]` Acknowledged
+> **Reason (if FP / By Design / Acknowledged):** Fixed by removal. `withdrawUnconverted` no longer exists: your later review asked that vault funds never move to an address the project controls, so the function this finding is about — the only path that sent vault value to a project address — was deleted, along with the vault's `curator` field and its schema entry. There is nothing left for a griefer to hold shut.
 
-**The boundary is an ordering race, not a closed gate.** Both gates are `>=` —
-`src/AssayFlapVault.sol:812` for the withdrawal, `src/Tournament.sol:292` for the drawn lane — so
-the next drawn post is legal in the very block the last one ends and the griefer never has to skip
-a block. But at exactly `block.timestamp == latestCuratedRevealEnd` the withdrawal gate *passes*
-too. Holding it shut therefore costs the griefer winning that same-block ordering race once per
-epoch, not merely paying gas. `test_AtTheBoundaryTheWithdrawalIsCallable` is new this round and
-withdraws successfully at precisely that instant, so the cost is written down as a test rather than
-asserted as a closed door.
+**What replaced it.** Nothing. Idle native tax stays in the vault, `triggerConversion` turns it into
+BTCB in `rewardPool`, `fundTaskFromPool` places it behind the drawn task, and miners take it with
+`collect`. The only way value now leaves this vault to anybody who is not a scored miner is Flap's
+Guardian, through `emergencyWithdrawNative` / `emergencyWithdrawToken`.
 
-**Correcting our own previous evidence.** In the earlier round we cited
-`test_AStrangerKeepsTheWithdrawalShutAcrossEpochs` as reproducing this. It did not.
-`TaskGenerator`'s windows are `COMMIT_SECONDS + REVEAL_SECONDS` = twenty minutes, while
-`Base.t.sol:109`'s *curated* fixture task holds `latestCuratedRevealEnd` two hours out, so all
-three of the stranger's drawn posts ended inside that mark and never cleared the `>` at
-`Tournament.sol:373`. The three reverts were caused by the curator's own task; the test passed with
-`generateAndPost` contributing nothing. It now starts past the curated mark and asserts each round
-that the stranger's post is what moved it — confirmed by deleting `generateAndPost` from the loop,
-which fails exactly that test and leaves the other four in the file green.
+**One bound worth stating plainly.** `_arm` declines to convert while free tax is at or below
+`FEE_COVER_MULTIPLE * fee` — ten times the scheduler's fee. Below that the balance waits for more
+tax to push it over the threshold rather than converting; it is a working balance, not a permanently
+stranded one, and at end of life it is the Guardian's to sweep. That is the arrangement your review
+asked for, stated so it is not discovered later.
 
-**And no attacker is needed.** `test_TheProtocolsOwnLoopShutsItToo` posts only what the project
-posts for itself, and the curator's `withdrawUnconverted` reverts across the whole window, opening
-only when the project's own curated reveal elapses. What a griefer adds is keeping it shut in the
-one state where it would otherwise open — when the protocol has stopped running.
+**Verified on chain, not just in source.** In the deployed implementation
+(`0xC310Ae2e2235797Daf0390249f2e5db1888a64bB`): the selector `0x560952f4` does not appear, `curator()` does not appear, and the
+`UnconvertedWithdrawn` topic does not appear.
 
-**Why no fix ships.** The obvious one is to hold the withdrawal only for a drawn epoch that was
-actually funded. That reads `bounty[]`, and `bounty[]` has two writers: `fundTaskFromPool`, and
-`sponsor` at `src/AssayFlapVault.sol:671`, which is `external` and permissionless. Its gates are
-`nonReentrant`, `require(amount > 0)`, `_requireTask(taskId)`, and — since the fix we shipped for
-your earlier `sponsor` finding — `require(block.timestamp < revealEnd)`. **None of them binds this
-attack**: that last gate is open over exactly the interval the withdrawal is frozen, because a drawn
-post sets `latestCuratedRevealEnd = revealEnd` (`src/Tournament.sol:373-374`) and the freeze holds
-while `block.timestamp < latestCuratedRevealEnd` (`src/AssayFlapVault.sol:812`). One wei of BTCB per
-drawn epoch rebuilds the freeze exactly. The marginal cost is one `sponsor(taskId, 1)` call —
-measured in-test at 82,019 gas on the first epoch and 38,219 on each one after, excluding the
-transaction floor; the figure moves with warm/cold state and we quote it as an order of magnitude
-rather than a constant. This repository already carries
-`test_DustSponsorshipCannotBlockPoolFunding` because one wei of somebody else's BTCB could make a
-task permanently unfundable — the same dust-jam primitive, moved onto a different gate. **A gate
-that reads a value a stranger can write is the shape of finding 025, not a fix for it.**
-
-**The accepted cost is bounded and asserted.** The gate that shuts the withdrawal is
-`tournament.latestCuratedRevealEnd()`, and `triggerConversion` never reads it, so tax keeps becoming
-BTCB — one conversion per `CONVERSION_INTERVAL` — while the withdrawal is shut, reaching miners
-instead of the curator, which is the direction this protocol exists to move money.
-`test_AFrozenWithdrawalDoesNotStopConversions` fires a conversion from a stranger in exactly the
-frozen state, and `test_TheGuardiansHatchIsUnaffected` takes the tax out through
-`emergencyWithdrawNative` while the curator's own call is reverting. The accurate statement of the
-cost is *beyond the curator's reach*, not *beyond reach*. If a future change makes a frozen
-withdrawal also stop conversions, that file goes red and this disposition expires with it.
+**The tests kept their coverage rather than losing it.** The suites that exercised this function now
+call it by raw selector and assert the call fails, so the removal is a property under test — the
+count of schema methods alone would not catch it coming back, and one assertion checks for that
+method by name. `test/WithdrawalFreeze.t.sol`, whose entire subject was the freeze, asserts instead
+that the value has no path out except to miners and the Guardian.
 
 ### Finding 2: AgentRoster reverse index is never cleared on identity transfer, locking a new NFT owner out of enrolment
 - **Severity:** Low
@@ -127,6 +98,32 @@ red by removing the binding check from `requireEnrolled`: exactly
 
 ---
 
+## Requested change — no vault funds move to a project-controlled address
+
+> *Funds in the vault should not be transferred to any centralized address. Ideally, they should
+> remain in the vault and continue to be used for users as intended. If an emergency withdrawal is
+> necessary, it should be carried out through the Flap Guardian.*
+
+Done, by deletion rather than by restriction. Removed from `AssayFlapVault`:
+
+- `withdrawUnconverted(uint256)` — the only function that sent vault value to a project address
+- the `curator` storage variable, and its parameter in `initialize`
+- the `UnconvertedWithdrawn` event
+- the `withdrawUnconverted` entry in `vaultUISchema()` (eleven methods now, five of them writes)
+
+`AssayFlapFactory.newVault` no longer passes Flap's `creator` into the vault. That argument existed
+only to become `curator`, so the launcher now supplies nothing the vault stores — the two references
+it holds, its tournament and its price guard, are both the factory's.
+
+`script/Exit.s.sol`, the project's own recovery script, lost its unconverted-tax leg with it. What
+it still recovers is ASSAY the project posted as a task pot and nobody won, through
+`Tournament.reclaim` — that was never vault tax.
+
+Confirmed against the deployed implementation `0xC310Ae2e2235797Daf0390249f2e5db1888a64bB`: the selector `0x560952f4`,
+`curator()`, and the `UnconvertedWithdrawn` topic are all absent from its runtime.
+
+---
+
 ## Requested change — every contract is now upgradeable, Guardian-owned
 
 > *All contracts should be made upgradeable, with the upgrade authority assigned to the Guardian.*
@@ -163,13 +160,13 @@ an upgrade preserving state, and no implementation initializable on its own.
 
 | Contract | Proxy (use this) | Beacon | Implementation |
 |---|---|---|---|
-| `Tournament` | `0xC1707fDDc579339061DC47Edbd912687903EC916` | `0x049d28b81821cF719e3811B4666fC8Ed2D50B965` | `0x6CA9bdd3749aB51a4E08631126ca63b464B90ab5` |
-| `AssayVault` | `0x720F48484Bfe5D22BAe679c531B53C70607A62dD` | `0xd07FE44376bE3563131C0bD5C32b7007B3F7f4d8` | `0xB3718fabb7DA3043490b3C9a43EC8B45c92F747e` |
-| `AgentRoster` | `0xdef12257719A1f36072fa8132673bb65CC4A370B` | `0xc059Ae8110055e03978093bE291fE4f07AEf5c99` | `0x567785326d9A22469D899B72FE8E068B352E13ca` |
-| `PriceGuard` | `0xD33451cD95A8b513a69227e4cB53d391de5895Fb` | `0x70A0341df82dC334D72650F6014EaC6540cC684C` | `0x25C1810Ab6D5a7370E91830D19704e45EE1f446C` |
-| `TaskGenerator` | `0x1660623253ceCd17d4db986563Bd8Ac65D1824dC` | `0xe16C524F936fD924Ff18E866067DCe1B72b546e1` | `0x2F2F1C92Eba9469efd67379e5760DeA38Df68656` |
-| `AssayFlapFactory` | `0x0dEcCDEb5816773Ce962e4F6b4f74fa0de7E9663` | `0xAFDC4519E793A40970dFD4CB82b9ca4d8FA4597b` | `0x155855Fd0c07057aba0c41F53f713D3Fe2E53c84` |
-| `AssayFlapVault` | one per token, minted by the factory | `0x111998780B5d4aa390C928c8357eF62A5baD3EBD` | `0x42774E431670745f058778f54792205B3b3b9301` |
+| `Tournament` | `0xfc50F53B744270C41eC9AD9f7562aC6A9117cf93` | `0xF33fcE0A7540Ac3BA09855f653531a475688bA45` | `0x8ba7070308B8fffff45143A66355d36757e77569` |
+| `AssayVault` | `0xd484dFd9b1c53f13263eCa03A812A02559BD054F` | `0x6208d9ec11b1d8E0e26f809E7a7151630E39dc0C` | `0x7bD87282B751A2Cbd256c2C62ab4451665d3D3C1` |
+| `AgentRoster` | `0xedB1D8E93A8Ad072D251E2512F14cF6F88DfDE49` | `0x9F700057F8D0df6e0B87F9927A650DB3D657Bd9A` | `0xb40cc0b5337018381bCb3766cE36f034a01638F3` |
+| `PriceGuard` | `0x375efbF542CbD6B317517463AE1005d64E925505` | `0x81D93413dB9807C9AfeeC24526768a41e9452267` | `0x284C15741a7AdcB5852b17D41276ab6753E47754` |
+| `TaskGenerator` | `0xe73D5A1B8C5fF18C7066F3e44abeF0430705994A` | `0x21A97Dd5bCE45E838c674ff7C5f4A7aF51906d2a` | `0xC8A8fBad237a3a969cFcb29892fb1BEC40C7e01a` |
+| `AssayFlapFactory` | `0x116670f9Fc9B3D02BA8BDEc7a04b27F504c99F3F` | `0x5d13D641e5a819C290eFFD293706FbeB12D6Ed82` | `0x0AEbD4A79c652F516b96fbe79D748A19039D006F` |
+| `AssayFlapVault` | one per token, minted by the factory | `0x1837214d5B5b4FeFef371f26E72E87218A08e3d2` | `0xC310Ae2e2235797Daf0390249f2e5db1888a64bB` |
 
 Beacon owner on every row: `0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b`.
 
@@ -216,12 +213,12 @@ re-mined salt whose `predictedToken` returns empty from `eth_getCode`.
 
 | | BSC testnet (97) | BSC mainnet (56) |
 |---|---|---|
-| `AssayFlapFactory` | not deployed | `0x0dEcCDEb5816773Ce962e4F6b4f74fa0de7E9663` |
-| `Tournament` | not deployed | `0xC1707fDDc579339061DC47Edbd912687903EC916` |
-| `AssayVault` (approve this) | not deployed | `0x720F48484Bfe5D22BAe679c531B53C70607A62dD` |
-| `AgentRoster` | not deployed | `0xdef12257719A1f36072fa8132673bb65CC4A370B` |
-| `TaskGenerator` | not deployed | `0x1660623253ceCd17d4db986563Bd8Ac65D1824dC` |
-| `PriceGuard` | not deployed | `0xD33451cD95A8b513a69227e4cB53d391de5895Fb` |
-| Curator (`withdrawUnconverted` pays) | — | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
+| `AssayFlapFactory` | not deployed | `0x116670f9Fc9B3D02BA8BDEc7a04b27F504c99F3F` |
+| `Tournament` | not deployed | `0xfc50F53B744270C41eC9AD9f7562aC6A9117cf93` |
+| `AssayVault` (approve this) | not deployed | `0xd484dFd9b1c53f13263eCa03A812A02559BD054F` |
+| `AgentRoster` | not deployed | `0xedB1D8E93A8Ad072D251E2512F14cF6F88DfDE49` |
+| `TaskGenerator` | not deployed | `0xe73D5A1B8C5fF18C7066F3e44abeF0430705994A` |
+| `PriceGuard` | not deployed | `0x375efbF542CbD6B317517463AE1005d64E925505` |
+| Curator (posts on the curated lane) | — | `0x9E591947199091D4ff23DCF9Ab1C88576bd550e8` |
 | Beacon owner (upgrade authority) | — | `0x9e27098dcD8844bcc6287a557E0b4D09C86B8a4b` |
 | Tax token | — | not launched |

@@ -35,7 +35,7 @@ contract PoolDrainTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
@@ -302,19 +302,23 @@ contract PoolDrainTest is BaseTest {
         );
     }
 
-    /// @dev A stranger cannot hold the withdrawal gate shut forever. OPEN_POST_MAX_SPAN caps one
-    ///      open post at ten minutes, which is what makes a single post survivable — but nothing
-    ///      caps how often somebody posts, and taking the boundary block each cycle keeps the
-    ///      all-tasks high-water mark permanently ahead of the withdrawal. The gate reads the
-    ///      curated mark now, which only our own posts advance. Point it back at `latestRevealEnd`
-    ///      and this fails.
-    function test_AStrangerCannotHoldTheWithdrawalGateShut() public {
+    /// @dev A stranger cannot hold the tax back from the miners. OPEN_POST_MAX_SPAN caps one open
+    ///      post at ten minutes, but nothing caps how often somebody posts, so an attacker taking
+    ///      the boundary block each cycle keeps the all-tasks high-water mark permanently ahead of
+    ///      now. That used to hold the vault's withdrawal shut; the withdrawal is gone, and what is
+    ///      behind that mark now is the money's route to miners, which is a worse thing to be able
+    ///      to jam. It cannot be jammed: the drawn lane waits on the DRAWN task's own reveal, and
+    ///      `fundTaskFromPool` reads `latestGeneratedTaskId` and that task's commit window. Neither
+    ///      reads `latestRevealEnd`. Point either of them at it and this test stops getting a task
+    ///      to fund.
+    function test_AStrangerCannotHoldTheTaxBackFromTheMiners() public {
+        uint256 curatorBefore = CURATOR.balance;
         vm.warp(revealEnd + 1);
         assertLe(
             tournament.latestCuratedRevealEnd(), block.timestamp, "our own epoch is closed"
         );
 
-        // Unconverted tax for the withdrawal to have something to move.
+        // Unconverted tax, waiting for a task to be put behind.
         vm.deal(TAXPAYER, 0.02 ether);
         vm.prank(TAXPAYER);
         (bool ok,) = payable(address(flap)).call{value: 0.02 ether}("");
@@ -335,13 +339,21 @@ contract PoolDrainTest is BaseTest {
             "the stranger did push the all-tasks mark ahead"
         );
 
-        // The assertion that matters is the withdrawal itself, not the two marks. An earlier
-        // version compared latestRevealEnd against latestCuratedRevealEnd and passed with the
-        // vault still reading the wrong one — it was testing Tournament, not the gate.
-        uint256 before = CURATOR.balance;
-        uint256 sent = flap.withdrawUnconverted(0);
-        assertGt(sent, 0, "a stranger's task held the withdrawal shut");
-        assertEq(CURATOR.balance - before, sent, "the tax did not reach the curator");
+        // The drawn lane opens anyway, because it never asked about that mark.
+        _postDrawnFixture();
+        uint256 pool = _fillPool(0.02 ether);
+        assertGt(pool, 0, "the stranger's post stopped the conversion");
+
+        uint256 funded = flap.fundTaskFromPool(drawnTaskId);
+        assertEq(funded, pool, "the stranger's post held the pool off the drawn task");
+        assertEq(flap.bounty(drawnTaskId), pool, "and it is not on the bounty");
+
+        // And none of it went anywhere else on the way. The one path that used to take idle tax
+        // out to a non-miner is not merely gated now, it is absent — asserted by selector, since
+        // this file cannot name a function the vault no longer declares.
+        (bool gone,) = address(flap).call(abi.encodeWithSignature("withdrawUnconverted(uint256)", uint256(0)));
+        assertFalse(gone, "the withdrawal is still reachable");
+        assertEq(CURATOR.balance, curatorBefore, "the tax reached the curator");
     }
 
     /// @dev The protocol's own fallback poster sits on the stranger side of the funding gate.

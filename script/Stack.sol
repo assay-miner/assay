@@ -222,13 +222,12 @@ library Stack {
         address guardian_,
         Tournament tournament,
         address taxToken,
-        address curator,
         PriceGuard priceGuard
     ) internal returns (AssayFlapVault) {
         (, address proxy) = behindBeacon(
             address(new AssayFlapVault()),
             guardian_,
-            abi.encodeCall(AssayFlapVault.initialize, (tournament, taxToken, curator, priceGuard))
+            abi.encodeCall(AssayFlapVault.initialize, (tournament, taxToken, priceGuard))
         );
         return AssayFlapVault(payable(proxy));
     }

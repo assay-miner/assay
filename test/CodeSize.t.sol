@@ -96,10 +96,10 @@ contract CodeSizeTest is Test {
             })
         );
         // The factory's own vault beacon, reached through the library rather than by hand, with a
-        // placeholder tax token and curator: `receive()` reads neither, so nothing here has to be
-        // the fixture's own token.
+        // placeholder tax token: `receive()` never reads it, so nothing here has to be the
+        // fixture's own token.
         launchedVault = Stack.newFlapVault(
-            Stack.guardian(), stack.tournament, address(1), address(2), stack.priceGuard
+            Stack.guardian(), stack.tournament, address(1), stack.priceGuard
         );
     }
 

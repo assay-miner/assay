@@ -33,7 +33,7 @@ contract RewardAssetTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc"));
         super.setUp();
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     /// @dev Tax arrives the way Flap sends it: a plain native transfer.

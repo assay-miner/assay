@@ -48,7 +48,7 @@ contract FlapRenderTest is Test {
         AssayVault custody = Stack.newVault(Guardians.TESTNET, address(token), address(this), address(this));
         AgentRoster roster = Stack.newRoster(Guardians.TESTNET, address(0), custody, 1000e18, address(this));
         Tournament tournament = Stack.newTournament(Guardians.TESTNET, custody, roster, address(this), NO_DRAWN_LANE);
-        vault = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), address(this), Stack.newPriceGuard(Guardians.TESTNET));
+        vault = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
     }
 
     /// @dev Flap's first bucket.

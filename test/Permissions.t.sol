@@ -16,7 +16,10 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 ///      call something, contradicted by the `require` that decides it. Every time, the permission
 ///      had moved in an earlier round and the prose had not followed. The `curator` NatSpec was
 ///      wrong twice, in opposite directions — first claiming a right it never had, then keeping one
-///      it had lost.
+///      it had lost. It cannot be wrong a third time: the vault names no curator at all now. The
+///      address this file calls CURATOR is the TOURNAMENT's curator, who may post on the curated
+///      lane and is nothing whatever to this contract — which is exactly what the tests below
+///      assert, one refused call at a time.
 ///
 ///      Comments cannot be executed, so they drift silently. This file is the version that cannot:
 ///      when a permission moves, the assertion here fails, and whoever moved it has to come and
@@ -25,6 +28,8 @@ import {AssayFlapVault} from "../src/AssayFlapVault.sol";
 ///      down in a form that runs.
 contract PermissionsTest is BaseTest {
     address internal constant STRANGER = address(0xBEEF);
+    address internal constant BTCB = 0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8;
+    address internal constant TRIGGER = 0x560E9830926C9e0EB98a59c6b9902383Fc0D9Eb2;
 
     AssayFlapVault internal flap;
     address internal guardian;
@@ -32,14 +37,14 @@ contract PermissionsTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
-    // ------------------------------------------------------------------ the curator holds nothing
+    // --------------------------------------------------- the tournament's curator holds nothing
 
-    /// @dev The curator is a destination, not a role. It is where `withdrawUnconverted` pays, and
-    ///      that is the whole of it — which is exactly what its NatSpec now says.
+    /// @dev Not a destination either, since the withdrawal that paid one was removed. The vault
+    ///      stores no curator, so this account is a stranger to it with a familiar name.
     function test_TheCuratorMayNotEndow() public {
         vm.prank(CURATOR);
         vm.expectRevert(bytes(unicode"Only the guardian / 仅限守护者"));
@@ -108,26 +113,63 @@ contract PermissionsTest is BaseTest {
         assertGt(flap.triggerConversion{value: fee}(), 0, "a stranger could not schedule");
     }
 
-    function test_AStrangerMayWithdrawUnconvertedToTheCurator() public {
+    // ------------------------------------------------------- and this one is open to nobody
+
+    /// @notice Idle tax has no way out to a non-miner except the Guardian's hatch. Not the
+    ///         curator's, not a stranger's, and not the Guardian's by any other route.
+    /// @dev `withdrawUnconverted(uint256)` used to pay the vault's own curator, and both are gone —
+    ///      the function and the stored address. What replaces the old "who may call it" assertion
+    ///      is the strongest form of it: there is no such call. The vault has no `fallback`, so a
+    ///      call carrying a selector it does not implement reverts for every caller, and the
+    ///      balance is still there afterwards to prove nothing leaked on the way.
+    ///
+    ///      Asserted by selector rather than by compiling the call, because the compiler will not
+    ///      let this file name a function that does not exist — and a test that cannot be written
+    ///      is not the same as a test that passes.
+    function test_NobodyMayTakeIdleTaxOutOfTheVault() public {
         vm.deal(address(flap), 0.02 ether);
         vm.warp(uint256(revealEnd) + 1);
 
-        uint256 before = CURATOR.balance;
-        vm.prank(STRANGER);
-        uint256 sent = flap.withdrawUnconverted(0);
-        assertGt(sent, 0, "a stranger could not trigger the withdrawal");
-        assertEq(CURATOR.balance - before, sent, "it did not pay the curator");
+        uint256 curatorBefore = CURATOR.balance;
+        uint256 strangerBefore = STRANGER.balance;
+
+        bytes memory gone = abi.encodeWithSignature("withdrawUnconverted(uint256)", uint256(0));
+        address[3] memory callers = [STRANGER, CURATOR, guardian];
+        for (uint256 i; i < callers.length; ++i) {
+            vm.prank(callers[i]);
+            (bool ok,) = address(flap).call(gone);
+            assertFalse(ok, "the withdrawal is still reachable");
+        }
+
+        assertEq(address(flap).balance, 0.02 ether, "the tax did not stay in the vault");
+        assertEq(CURATOR.balance, curatorBefore, "the tax reached the curator");
+        assertEq(STRANGER.balance, strangerBefore, "the tax reached the caller");
     }
 
-    /// @dev And the destination is not the caller's to choose, which is what makes the call safe to
-    ///      leave open.
-    function test_TheWithdrawalAlwaysPaysTheCuratorAndNobodyElse() public {
-        vm.deal(address(flap), 0.02 ether);
-        vm.warp(uint256(revealEnd) + 1);
+    /// @dev The conversion is the call that is open to anyone now, and what makes leaving it open
+    ///      safe is the same property the withdrawal used to need: the caller cannot name where the
+    ///      proceeds go. They pay a fee, the scheduler executes at a moment they did not pick, and
+    ///      the BTCB lands in the pool — which pays the drawn task, and from there only miners the
+    ///      tournament scored.
+    function test_TheCallerOfAConversionCannotDirectAWeiOfIt() public {
+        vm.deal(address(flap), 0.05 ether);
+        uint256 fee = flap.schedulerFee();
+        uint256 strangerBtcb = IERC20(BTCB).balanceOf(STRANGER);
+        uint256 curatorBtcb = IERC20(BTCB).balanceOf(CURATOR);
+        // Dealt exactly the fee, so any BNB they hold afterwards came out of the vault.
+        vm.deal(STRANGER, fee);
 
-        uint256 strangerBefore = STRANGER.balance;
         vm.prank(STRANGER);
-        flap.withdrawUnconverted(0);
-        assertEq(STRANGER.balance, strangerBefore, "the caller paid themselves");
+        uint256 id = flap.triggerConversion{value: fee}();
+        assertGt(id, 0, "nothing was armed, so this asserts nothing");
+
+        vm.prank(TRIGGER);
+        flap.trigger(id);
+
+        assertGt(flap.rewardPool(), 0, "the conversion did not reach the pool");
+        assertEq(IERC20(BTCB).balanceOf(STRANGER), strangerBtcb, "the caller took the proceeds");
+        assertEq(IERC20(BTCB).balanceOf(CURATOR), curatorBtcb, "the proceeds reached the curator");
+        assertEq(STRANGER.balance, 0, "the caller was paid out of the tax");
+        assertTrue(flap.solvent(), "the ledger no longer covers what it claims");
     }
 }

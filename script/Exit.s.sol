@@ -27,23 +27,17 @@ contract ExitAll is Script {
 
         vm.startBroadcast(pk);
 
-        // The tax that was never converted comes out first, because it is the only money here that
-        // needs nobody's permission and no tournament outcome: `withdrawUnconverted` pays the fixed
-        // curator address whatever BNB is not already promised to a scheduled swap. It reverts
-        // while a task is still open, which is a wait and not a defect, so it cannot be allowed to
-        // stop the reclaims below.
+        // There is no unconverted-tax leg any more, and its absence is the point. Flap's review
+        // asked that vault funds never move to an address the project controls: what accumulates
+        // there stays there, becomes BTCB through `triggerConversion`, and reaches miners through
+        // `collect`. `withdrawUnconverted` was the path out to the curator and it is deleted, so
+        // this script no longer touches the flap vault at all.
         //
-        // Only the unconverted leg is recoverable this way. BTCB that a conversion already bought
-        // leaves only through `collect`, to a miner the tournament scored — there is no path back
-        // to the curator, by design.
-        address flapVaultAddr = vm.envOr("FLAP_VAULT", address(0));
-        if (flapVaultAddr != address(0)) {
-            try AssayFlapVault(payable(flapVaultAddr)).withdrawUnconverted(0) returns (uint256 sent) {
-                console2.log("unconverted BNB", sent);
-            } catch {
-                console2.log("unconverted BNB", "none free, or an epoch is still open");
-            }
-        }
+        // What it still recovers is the project's own money: ASSAY posted as a task pot, returned
+        // by `reclaim` on tasks nobody won. That never was vault tax.
+        //
+        // If value ever has to leave the vault, it leaves through Flap's Guardian —
+        // `emergencyWithdrawNative` / `emergencyWithdrawToken` — and not through anything here.
 
         for (uint256 id = 1; id <= count; ++id) {
             try tournament.reclaim(id) returns (uint256 amount) {

@@ -78,7 +78,7 @@ contract TriggerEndowTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
@@ -632,11 +632,14 @@ contract TriggerEndowTest is BaseTest {
         assertEq(flap.freeTax(), 0.05 ether, "the tax moved on a cancelled request");
     }
 
-    /// @dev The curator must NOT be able to cancel. Cancelling frees the BNB back into freeTax(),
-    ///      and freeTax() is what withdrawUnconverted pays to the curator — so a curator who cancels
-    ///      every conversion as it is armed starves the prize pool and takes the whole tax, while
-    ///      miners stake and optimise for a bounty that never forms. Restore `msg.sender == curator`
-    ///      to the guard and this fails.
+    /// @dev The curator must NOT be able to cancel. It used to be able to take what cancelling
+    ///      freed: cancelling puts the BNB back into freeTax(), and freeTax() was what
+    ///      `withdrawUnconverted` paid to the curator, so cancelling every conversion as it was
+    ///      armed collected the whole tax. That withdrawal is gone and the money now has nowhere
+    ///      to go but a miner — which removes the profit and leaves the denial: cancel every armed
+    ///      conversion and no BTCB ever forms, while miners stake and optimise for a bounty that
+    ///      never arrives. So the guard stays exactly where it was. Restore `msg.sender == curator`
+    ///      to it and this fails.
     function test_TheCuratorCannotCancelAConversion() public {
         _tax(0.05 ether);
         uint256 id = _schedule(_within(0.05 ether));

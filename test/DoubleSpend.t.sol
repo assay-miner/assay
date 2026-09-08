@@ -23,7 +23,7 @@ contract DoubleSpendTest is BaseTest {
     function setUp() public override {
         vm.createSelectFork(vm.rpcUrl("bsc_testnet"));
         super.setUp();
-        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), CURATOR, Stack.newPriceGuard(Guardians.TESTNET));
+        flap = Stack.newFlapVault(Guardians.TESTNET, tournament, address(token), Stack.newPriceGuard(Guardians.TESTNET));
         guardian = 0x76Fa8C526f8Bc27ba6958B76DeEf92a0dbE46950;
     }
 
@@ -93,12 +93,17 @@ contract DoubleSpendTest is BaseTest {
         assertTrue(flap.solvent(), "the vault cannot cover what its ledger claims");
     }
 
-    /// @notice BNB already promised to a scheduled conversion must not be withdrawable.
-    /// @dev `unassigned()` is the raw balance and `scheduleEndow` escrows nothing, so a withdrawal
-    ///      could pull the BNB out from under an armed request. The scheduler's callback then
-    ///      reverts, its fee is spent for nothing, and tax that was on its way to a miner's bounty
-    ///      becomes project revenue instead.
-    function test_WithdrawingCannotStrandAnArmedConversion() public {
+    /// @notice BNB already promised to a scheduled conversion must not be spendable a second time.
+    /// @dev `freeTax()` is the raw balance less `reserved`, and arming escrows nothing — the BNB
+    ///      simply stays in the vault — so without that subtraction the same coins could be
+    ///      committed twice. The second spender used to be `withdrawUnconverted`, which is gone;
+    ///      it is now `endow`, the Guardian's direct conversion, and the failure it would cause is
+    ///      unchanged: the scheduler's callback finds less BNB than it priced, the swap fails, the
+    ///      fee is spent for nothing and an epoch's tax misses its task's commit window.
+    ///
+    ///      Asserted against `endow` because that is the path that still exists. Delete the
+    ///      `reserved` subtraction in `freeTax()` and the Guardian is handed the armed BNB again.
+    function test_AnArmedConversionCannotBeSpentTwice() public {
         _tax(0.05 ether);
         uint256 size = _within(0.02 ether);
         uint256 floor_ = (flap.quote(size) * 97) / 100; // before the prank: a view consumes it
@@ -108,15 +113,17 @@ contract DoubleSpendTest is BaseTest {
         vm.prank(CURATOR);
         flap.triggerConversion{value: fee}();
 
-        // The whole balance must no longer be free: `size` of it is spoken for.
-        // A finished window is the precondition now, not a permission — see
-        // test_NobodyMayWithdrawWhileTheEpochIsOpen.
-        vm.warp(revealEnd);
-        // An armed conversion now reserves the whole window, so there is nothing free to take —
-        // which is the same property stated more strongly than when it reserved only part.
-        vm.prank(CURATOR);
-        vm.expectRevert(bytes(unicode"No unconverted tax / 无未兑换的税"));
-        flap.withdrawUnconverted(0);
+        // An armed conversion reserves the whole window, so nothing is free — which is the same
+        // property stated more strongly than when it reserved only part.
+        assertEq(flap.freeTax(), 0, "the armed BNB is still counted as free");
+        assertEq(flap.reserved(), 0.05 ether, "the reservation was not recorded");
+
+        // A conversion the Guardian could otherwise price and execute itself, refused on the one
+        // ground that matters: the BNB it would spend is already spoken for.
+        vm.prank(guardian);
+        vm.expectRevert(bytes(unicode"Exceeds unconverted tax / 超过未兑换的税"));
+        flap.endow(size, floor_);
+
         assertGe(address(flap).balance, size, "the armed conversion can no longer be funded");
     }
 
