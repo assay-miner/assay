@@ -41,12 +41,28 @@ node tools/sync-ui-addresses.mjs --check || {
   exit 1
 }
 
-# Their freshness gate refuses to package against a template behind the published commit, and it is
-# worth failing here with that message rather than midway through their pipeline.
-( cd "$TEMPLATE" && node scripts/check-template-fresh.mjs >/dev/null ) || {
-  echo "the Flap template is not up to date; git pull in $TEMPLATE" >&2
+# Flap packages only from the official template head. Their own check is explicit about it, and
+# "ahead" is blocking to them just as "behind" is:
+#
+#   "This flap-vault-ui-template checkout is ahead of origin/main; validation and packaging must
+#    run from the official template head."   severity: blocking
+#
+# So our vault's four files live in that clone as WORKING-TREE changes and are never committed
+# there. I committed them once, reasoning that a registration nobody recorded is a registration
+# nobody can reproduce — which was the right worry and the wrong place to answer it. It put the
+# clone one commit past origin/main permanently, and from that moment their packager refused every
+# build. The reproducibility answer is this script: it copies the files in and registers them, so
+# the record lives in the repository that owns the files rather than in a clone of theirs.
+#
+# I then widened this gate to accept "ahead", which made it agree with me instead of with them.
+# It refuses anything that is not up-to-date now, and the message says which direction is wrong.
+FRESH=$( cd "$TEMPLATE" && node scripts/check-template-fresh.mjs 2>&1 || true )
+if ! printf '%s' "$FRESH" | grep -q '"status": *"up-to-date"'; then
+  echo "the Flap template checkout is not at the official head; packaging will be refused" >&2
+  printf '%s' "$FRESH" | grep -oE '"(status|error|fixHint)": *"[^"]*"' >&2
+  echo "  (ahead usually means something was committed into $TEMPLATE — reset it; our files belong there uncommitted)" >&2
   exit 1
-}
+fi
 
 mkdir -p "$TEMPLATE/src/vaults/assay"
 cp flap-ui/Component.tsx flap-ui/VaultABI.ts flap-ui/i18n.json flap-ui/manifest.json \

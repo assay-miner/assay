@@ -240,7 +240,16 @@ export default function AssayVaultUi(_props: VaultComponentProps) {
                 <div className="animate-shimmer bg-gradient-to-r from-[#8a6e22] via-[#eac652] to-[#8a6e22] bg-[length:200%_auto] bg-clip-text font-mono text-2xl uppercase leading-none tracking-[0.42em] text-transparent sm:text-3xl">
                   {t("title")}
                 </div>
-                <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.3em] text-[#8d8a80] sm:text-[11px]">{t("subtitle")}</div>
+                {/* The subtitle is a full sentence now, not an eyebrow. Left uppercase at 0.3em
+                    tracking it wrapped into three ragged lines and read as a caption rather than a
+                    claim, so it gets sentence case and normal tracking; the accent line below it
+                    keeps the mono-eyebrow treatment the header was built around. */}
+                <div className="mt-2 max-w-[52ch] text-[12px] leading-[1.6] text-[#b6b2a5] sm:text-[13px]">
+                  {t("subtitle")}
+                </div>
+                <div className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.3em] text-[#eac652] sm:text-[11px]">
+                  {t("tagline")}
+                </div>
               </div>
             </div>
           </div>
@@ -255,7 +264,7 @@ export default function AssayVaultUi(_props: VaultComponentProps) {
           {riskLevel === null ? <Alert tone="danger">{t("notices.riskMissing")}</Alert> : null}
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
-            <Readout lead label={t("labels.behind")} value={stats ? btcb(stats[3]) : "—"} hint="BTCB" />
+            <Readout lead label={t("labels.behind")} value={stats ? btcb(stats[3]) : "—"} hint={t("hints.pot")} />
             <Readout label={t("labels.paid")} value={stats ? btcb(stats[4]) : "—"} hint={`${stats ? String(stats[5]) : "—"} · ${t("labels.payouts")}`} />
             <Readout label={t("labels.open")} value={stats ? `${String(stats[1])} / ${String(stats[0])}` : "—"} hint={t("labels.tasks")} />
           </div>
