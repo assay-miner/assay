@@ -25,9 +25,21 @@ const LABELS = [
 ];
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-const RPCS = {
-  56: "https://bsc-dataseed.binance.org",
-  97: "https://bsc-testnet-rpc.publicnode.com",
+// A pool per chain, not one endpoint. Public BSC nodes time out often enough that a single one
+// decides whether this file gets a "could not be checked" line, and that line is content — so a
+// timeout became a diff, and the diff became a stale-file verdict from a gate that meant nothing of
+// the sort.
+const RPC_POOL = {
+  56: [
+    "https://bsc-dataseed.binance.org",
+    "https://bsc-dataseed1.defibit.io",
+    "https://bsc-mainnet.public.blastapi.io",
+  ],
+  97: [
+    "https://bsc-testnet-rpc.publicnode.com",
+    "https://data-seed-prebsc-1-s1.binance.org:8545",
+    "https://data-seed-prebsc-2-s1.bnbchain.org:8545",
+  ],
 };
 
 /**
@@ -42,9 +54,29 @@ const RPCS = {
  * Returns null when the chain cannot be reached, and a null is never reported as "no code" — an
  * unreachable endpoint is not evidence of an empty address.
  */
+/**
+ * Asks whether an address holds code, trying every endpoint before giving up.
+ *
+ * One endpoint used to be the whole answer, and a single timeout wrote a line into SUBMISSION.md
+ * saying the check could not be made. That line's presence therefore depended on whether a public
+ * node felt like answering, so `--check` compared a file written during a hiccup against a file
+ * written when the network was fine and called the difference drift. The gate reported staleness
+ * and meant packet loss, which is worse than not checking: it trains you to re-run it until it
+ * agrees.
+ *
+ * Returns true/false when some endpoint answers, null only when none of them did.
+ */
 async function hasCode(chainId, address) {
-  const rpc = RPCS[chainId];
-  if (!rpc) return null;
+  const endpoints = RPC_POOL[chainId];
+  if (!endpoints || endpoints.length === 0) return null;
+  for (const rpc of endpoints) {
+    const answer = await probe(rpc, address);
+    if (answer !== null) return answer;
+  }
+  return null;
+}
+
+async function probe(rpc, address) {
   try {
     const res = await fetch(rpc, {
       method: "POST",
