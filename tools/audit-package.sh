@@ -24,6 +24,11 @@ forge build >/dev/null
 # The self-describing schema is what a generic UI builds its forms from, and a field that
 # disagrees with the ABI produces a form that collects the wrong type. Nothing in the contract
 # tests reads the schema, so this is the only place that comparison happens.
+bash tools/check-all.sh || {
+  echo "refusing to package: a gate is red — see above" >&2
+  exit 1
+}
+
 node tools/check-schema.mjs || {
   echo "refusing to package: a vaultUISchema field disagrees with the ABI" >&2
   exit 1
@@ -99,10 +104,30 @@ strip_salt "$MANIFEST" "$OUT/deployments/$(basename "$MANIFEST")"
 [ -s deployments/97-latest.json ] && strip_salt deployments/97-latest.json "$OUT/deployments/97-latest.json"
 
 # The standard JSON is what makes the deployed bytecode reproducible by anyone.
-for C in AssayFlapFactory AssayFlapVault; do
+#
+# All seven, not two. Every contract sits behind a beacon now, so a reviewer holding seven addresses
+# and two inputs can reproduce two of them.
+#
+# And the two OpenZeppelin contracts, because they are what is actually AT the addresses people use.
+# This is the trap the pairing creates and it is worth being blunt about: the factory address Flap's
+# portal calls holds 291 bytes of `BeaconProxy`, not 4,361 bytes of `AssayFlapFactory`. Verifying
+# that address against AssayFlapFactory's input fails, correctly, and looks like our source is wrong.
+# The factory's code lives at `flapFactoryImpl`. ADDRESSES.md, written below, is the mapping.
+for C in AssayFlapFactory AssayFlapVault Tournament AssayVault AgentRoster PriceGuard TaskGenerator; do
   forge verify-contract --show-standard-json-input \
     0x0000000000000000000000000000000000000000 "src/$C.sol:$C" > "$OUT/standard-json/$C.json"
 done
+for P in "lib/openzeppelin-contracts/contracts/proxy/beacon/BeaconProxy.sol:BeaconProxy" \
+         "lib/openzeppelin-contracts/contracts/proxy/beacon/UpgradeableBeacon.sol:UpgradeableBeacon"; do
+  N="${P##*:}"
+  forge verify-contract --show-standard-json-input \
+    0x0000000000000000000000000000000000000000 "$P" > "$OUT/standard-json/$N.json"
+done
+
+# Which address is which contract, and which input verifies it. Generated from the manifest, so it
+# cannot describe a previous deployment. A separate script rather than an inline `node -e`: the
+# first version was inline and bash ate the markdown's backticks as command substitution.
+node tools/write-addresses.mjs "$MANIFEST" "$OUT/ADDRESSES.md"
 
 # Flattened single files. Some audit intake portals accept only one self-contained .sol per
 # contract, and a flatten that does not compile is worthless — these are built by `forge flatten`

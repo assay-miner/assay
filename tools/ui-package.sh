@@ -32,6 +32,11 @@ TEMPLATE="${FLAP_TEMPLATE:-$(cd .. && pwd)/flap-vault-component-template}"
 
 # The ABI slice is ours and is derived from vaultUISchema(); a stale slice is silent, so it is
 # checked before anything is copied anywhere.
+bash tools/check-all.sh || {
+  echo "refusing to package: a gate is red — see above" >&2
+  exit 1
+}
+
 node tools/sync-flap-ui-abi.mjs --check
 
 # The binding addresses, derived from deployments/*-latest.json rather than hand-maintained. This

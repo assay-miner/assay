@@ -104,12 +104,12 @@ red by removing the binding check from `requireEnrolled`: exactly
 > remain in the vault and continue to be used for users as intended. If an emergency withdrawal is
 > necessary, it should be carried out through the Flap Guardian.*
 
-Done, by deletion rather than by restriction. Removed from `AssayFlapVault`:
+Done, by deletion rather than by restriction. Removed from `AssayFlapVault` <!-- check-symbols:allow -->:
 
-- `withdrawUnconverted(uint256)` — the only function that sent vault value to a project address
+- `withdrawUnconverted(uint256)` — removed; it was the only function that sent vault value to a project address
 - the `curator` storage variable, and its parameter in `initialize`
-- the `UnconvertedWithdrawn` event
-- the `withdrawUnconverted` entry in `vaultUISchema()` (eleven methods now, five of them writes)
+- the `UnconvertedWithdrawn` event, removed with it
+- its `vaultUISchema()` entry, removed too — eleven methods now, five of them writes
 
 `AssayFlapFactory.newVault` no longer passes Flap's `creator` into the vault. That argument existed
 only to become `curator`, so the launcher now supplies nothing the vault stores — the two references

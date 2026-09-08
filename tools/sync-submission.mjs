@@ -110,7 +110,7 @@ const body = (await Promise.all([
  * The facts SUBMISSION.md states under "Measured, not estimated" — derived here rather than typed.
  *
  * They were typed, and every one of them was wrong: the vault's runtime was quoted at 16,464 bytes
- * against a real 22,062, the factory at 19,526 against a real 2,637 (the AssayVaultDeployer split
+ * against a real 22,062, the factory at 19,526 against a real 2,637 (the AssayVaultDeployer split, since deleted,
  * moved the vault's creation code out of it and the figure never followed), and the schema was said
  * to declare 8 methods against a real 12. A heading that asserts the numbers were measured is the
  * worst place to keep numbers nothing measures.
