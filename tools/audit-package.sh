@@ -69,7 +69,18 @@ cp -R test/. "$OUT/test/"
 # archive into an empty directory and building it the way a reviewer would, which is the only way
 # a missing file shows up — the build in this repository has them either way.
 mkdir -p "$OUT/script"
-cp script/*.sol "$OUT/script/"
+# NOT every script. The same-block launch bundle — how the launch transaction and the buys are
+# ordered so nobody lands between them — is the one thing in this repository that is worth less the
+# more people have read it, and it leaks through two files: LaunchCalldata.s.sol emits the calldata
+# the bundle carries, and the launch-params test explains the sequencing in its comments. An audit
+# of the vault does not need either. They are excluded here AND untracked in git, because an archive
+# built from a clean checkout and one built from this tree must not differ in what they publish.
+for f in script/*.sol; do
+  case "$(basename "$f")" in
+    LaunchCalldata.s.sol) continue ;;
+  esac
+  cp "$f" "$OUT/script/"
+done
 
 # MachineOnly.t.sol reads the shipped task spec off disk rather than restating it, which is the
 # point of that suite — so the spec travels with it. Found the same way as script/: by extracting

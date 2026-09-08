@@ -137,9 +137,8 @@ contract Deploy is Script {
         p.migratorType = IPortalTypes.MigratorType.V2_MIGRATOR;
         p.quoteToken = address(0);
         // The creation buy, in native BNB. Zero means the whole supply goes into the pool and the
-        // launcher holds none, which is what every launch so far did. It is configurable because a
-        // same-block bundle needs it: the bundle runner refuses a launch whose value is zero, since
-        // a launch that buys nothing gives it nothing to sequence the first buys behind.
+        // launcher holds none, which is what every launch so far did. It is configurable because
+        // the launch tooling requires a non-zero declared buy.
         p.quoteAmt = vm.envOr("DEV_BUY_WEI", uint256(0));
         p.dexId = IPortalTypes.DEXId.DEX0;
         // 200 bps each way. The rate is what funds every bounty this protocol pays, so it is

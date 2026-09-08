@@ -68,7 +68,7 @@ contract LaunchParamsTest is Test {
     /// `quoteAmt` says how much of the launch is a developer buy and `msg.value` is what actually
     /// funds it. They are set from the same environment variable so they cannot drift — a launch
     /// declaring a buy it did not pay for either reverts at the Portal or mints against nothing,
-    /// and a same-block bundle is built on the assumption that this value is real.
+    /// and downstream tooling is built on the assumption that this value is real.
     function test_TheDeclaredDeveloperBuyIsTheValueSent() public {
         // Self-contained: set it on every iteration and leave it at zero, so neither this test nor
         // any other depends on the order they run in.
@@ -82,9 +82,9 @@ contract LaunchParamsTest is Test {
         vm.setEnv("DEV_BUY_WEI", "0");
     }
 
-    /// And the bundle's own floor: it refuses a launch whose value is zero, so a dev buy of zero
-    /// is a launch that cannot be sniped in the same block. Recorded here so the two stay in view.
-    function test_AZeroDeveloperBuyCannotBeBundled() public {
+    /// And the floor our launch tooling enforces: it refuses a launch whose declared buy is zero.
+    /// Recorded here so the contract-side value and the tooling's requirement stay in view.
+    function test_AZeroDeveloperBuyIsRefusedByTheLaunchTooling() public {
         vm.setEnv("DEV_BUY_WEI", "0");
         IVaultPortalTypes.NewTokenV6WithVaultParams memory p =
             deploy.launchParams(address(this), bytes32(uint256(1)), "Assay", "ASSAY");

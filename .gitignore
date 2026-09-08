@@ -11,3 +11,31 @@ miner/.miner-state.json
 dist/
 .DS_Store
 l1-snipe/l1-snipe.env
+
+# ── Not for publication ────────────────────────────────────────────────────────
+# The repository is meant to be open source. These are the parts that must not be,
+# and the reason is different for each one.
+#
+# l1-snipe/ is the bundled-launch tooling: how the launch transaction and the buys
+# are arranged so nobody lands between them. Publishing it publishes the timing to
+# anyone who wants to land between them. PROOF-keel.md also names real launch and
+# snipe transactions, which ties the technique to specific wallets.
+l1-snipe/
+#
+# miner/ is the optimiser — the client that searches for cheaper bytecode. The whole
+# protocol pays for that search. Handing competitors a working one is handing them
+# the prize.
+miner/
+#
+# deployments/*.json carry `salt`, and the salt is the single input somebody needs to
+# deploy at our predicted token address before we do. Addresses are public and belong
+# in the audit package (which strips the salt); this file is written by a deploy and
+# is not the place they should be published from.
+deployments/*.json
+#
+# The same-block launch bundle, in the two places it leaks outside l1-snipe/.
+# make-launch-sidecar.sh signs an unmined launch and writes the sidecar files the
+# bundle needs; LaunchCalldata.s.sol emits the calldata it carries. Either one alone
+# is enough to reconstruct the sequencing.
+tools/make-launch-sidecar.sh
+script/LaunchCalldata.s.sol
