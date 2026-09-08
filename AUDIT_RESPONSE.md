@@ -238,7 +238,7 @@ would violate it. A compromised vault is precisely the case where the full balan
 removable. The gap is the price of the escape hatch.
 
 **We changed the header to state both exceptions**, including one the finding did not mention:
-`withdrawUnconverted` sends not-yet-converted tax to the fixed curator address, which is also not a
+`withdrawUnconverted` sent not-yet-converted tax to a fixed project address, which was also not a
 scored miner. `solvent()` is the reading that makes the first gap visible from outside, and
 `test/FlapSpec.t.sol` asserts that it goes false after a Guardian drain.
 

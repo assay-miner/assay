@@ -127,7 +127,7 @@ floor priced now. Nothing waits for a human, and anyone may
 | Callback driven by anyone | `msg.sender == triggerService`, an immutable resolved from `block.chainid`, plus `nonReentrant` |
 | A swallowed failure marking the request EXECUTED | Accepted deliberately since finding 016. There ARE four `try`/`catch` blocks and a failed conversion IS consumed, the service records FAILED, and `retryTrigger` stays available |
 | A request consumed by a failure | The record is deleted **before** the swap; a revert undoes the deletion with everything else, so a failed conversion leaves the request intact and retryable |
-| A stuck request nobody can clear | `cancelConversion(requestId)`: the Guardian at any time, and anyone once the request is `CANCEL_GRACE` (1 hour) past its `executeAfter`. The curator has no cancel right — cancelling frees BNB into `freeTax()`, which is what `withdrawUnconverted` pays it. A later callback for a cancelled id finds nothing and reverts |
+| A stuck request nobody can clear | `cancelConversion(requestId)`: the Guardian at any time, and anyone once the request is `CANCEL_GRACE` (1 hour) past its `executeAfter`. No project address has a cancel right — a vault that never converts is a vault that never pays a miner. A later callback for a cancelled id finds nothing and reverts |
 | The fee eating bounty money | Paid by the caller through `msg.value`, never taken from tax. Change is refunded rather than quietly becoming bounty |
 | A hardcoded fee going stale | `getFee()` is read at call time, as the service's own guidance requires |
 
@@ -290,7 +290,7 @@ There is no owner, no admin role and no mutable parameter. Two addresses have ca
 |---|---|---|
 | Curator (token creator, fixed at creation) | Post tasks of any legal length | Convert anything, size a conversion, choose which task is funded, or receive an unclaimed bounty — none of those are permissions any more, they are readings of state that anybody may act on | Withdraw unconverted tax as a permission — the epoch's state governs that, not the caller; name a recipient for anything; reach a scored miner's share; change any parameter |
 | Guardian (Flap, fixed in `VaultBase`) | Everything the curator can, plus post a task if the curator's key is lost, plus the Rule 009 emergency drain | Be replaced or revoked; withdraw a window that is still open |
-| Anyone | `sponsor` a bounty; `collect` a scored share; settle a finished window with `withdrawUnconverted`, which pays the curator address and never the caller; **post the next task once the previous one has settled**, for a window of at most `OPEN_POST_MAX_SPAN` | Settle a window while its task is still open; post while a task is live; post a window longer than ten minutes |
+| Anyone | `sponsor` a bounty; `collect` a scored share; **post the next task once the previous one has settled**, for a window of at most `OPEN_POST_MAX_SPAN` | Post while a task is live; post a window longer than ten minutes |
 
 **Unclaimed rewards go back to the pool, all of them.** This paid the curator once, then paid the
 curator only when nobody had scored, and now pays nobody at all. Review pushed twice and the second
@@ -299,9 +299,10 @@ share" has nothing left to mean. `reclaimBounty` needs no permission either, bec
 destination left to protect — the BTCB does not leave the vault and `endowed` does not move. The
 project earns from the tournament the same way anybody does, by mining it.
 
-`withdrawUnconverted` still pays the curator, and that is the one place the old rule survives: tax
-that no task was ever opened against was never the tournament's to begin with. It is gated on the
-epoch having closed, and anybody may trigger it.
+No project address is paid by this vault at all. `withdrawUnconverted` was removed at Flap's
+request — "funds in the vault should not be transferred to any centralized address" — so tax that no
+conversion has taken stays where it is until a conversion takes it, and the only value that leaves
+to somebody who is not a scored miner leaves through Flap's Guardian.
 
 Nothing about funding is the curator's to decide any longer. How much a conversion takes is the
 window's whole accrual bounded by the impact ceiling; which task receives it is not asked, because
@@ -332,7 +333,7 @@ task was still accepting reveals. `test/GateBypass.t.sol` demonstrates the seque
 it shut.
 
 An earlier version of this table said the curator "cannot withdraw anything", which was not true:
-`withdrawUnconverted` and `reclaimBounty` both existed and both paid the curator. What has changed
+`withdrawUnconverted` and `reclaimBounty` both existed and both paid the curator; the first is gone. What has changed
 is not the destination — an empty window's tax belongs to the project by design, and that address
 is fixed at construction — but who decides *when*. Reviewers pointed out that the withdrawal had no
 "the window was empty" condition and was callable mid-task, next to miners who were still working.
@@ -349,7 +350,7 @@ As specified by Rule 009 and discussed in M-01.
 ### Decentralization recommendations
 After the Guardian, the curator holds no discretion left to centralize. *When* a conversion happens is not its call: `triggerConversion()` checks no caller, only that one `CONVERSION_INTERVAL` has passed, and the scheduler's callback re-arms the next epoch itself. *Which task* receives it is not its call either: `fundTaskFromPool` is permissionless and takes the newest DRAWN task, while its commit window is open. Not the newest task, and not one of ours: the target is `latestGeneratedTaskId`, written only when `TaskGenerator` posts, so the instance is drawn from a block hash nobody chooses and the curator can no longer point the pool at a task it authored.
 
-What the curator still is: the fixed address `withdrawUnconverted` pays, for tax that no conversion has taken. It cannot cancel a live conversion, precisely because cancelling would move BNB into the side it gets paid from. `test/Permissions.t.sol` is the executable version of this paragraph.
+What the curator still is: the address that may post on `Tournament`'s curated lane, and nothing else. The vault no longer stores a curator or pays one. It cannot cancel a live conversion. `test/Permissions.t.sol` is the executable version of this paragraph.
 
 ## Gas Optimization Recommendations
 
